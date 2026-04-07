@@ -1,0 +1,189 @@
+generator client {
+  provider = "prisma-client-js"
+}
+
+datasource db {
+  provider = "postgresql"
+}
+
+model Firm {
+  id        String   @id @default(cuid())
+  name      String
+  createdAt DateTime @default(now())
+  updatedAt DateTime @updatedAt
+
+  users User[]
+  cases RolloverCase[]
+}
+
+model User {
+  id          String   @id @default(cuid())
+  firstName   String
+  lastName    String
+  email       String   @unique
+  password    String
+  role        Role     @default(OPS)
+  firmId      String
+  preferences Json?
+  createdAt   DateTime @default(now())
+  updatedAt   DateTime @updatedAt
+
+  firm             Firm           @relation(fields: [firmId], references: [id])
+  assignedCases    RolloverCase[] @relation("AssignedAdvisor")
+  ownedCases       RolloverCase[] @relation("AssignedOps")
+  activityEvents   ActivityEvent[]
+  notes            Note[]
+  assignedTasks    Task[]         @relation("AssignedTasks")
+  createdTasks     Task[]         @relation("CreatedTasks")
+  uploadedDocuments Document[]
+}
+
+enum Role {
+  ADMIN
+  OPS
+  ADVISOR
+}
+
+model RolloverCase {
+  id                   String        @id @default(cuid())
+  clientFirstName      String
+  clientLastName       String
+  clientEmail          String
+  sourceProvider       String
+  destinationCustodian String
+  accountType          AccountType
+  status               CaseStatus    @default(INTAKE)
+  highPriority         Boolean       @default(false)
+  internalNotes        String?
+  assignedAdvisorId    String?
+  assignedOpsId        String?
+  firmId               String
+  statusUpdatedAt      DateTime      @default(now())
+  createdAt            DateTime      @default(now())
+  updatedAt            DateTime      @updatedAt
+
+  firm             Firm            @relation(fields: [firmId], references: [id])
+  assignedAdvisor  User?           @relation("AssignedAdvisor", fields: [assignedAdvisorId], references: [id])
+  assignedOps      User?           @relation("AssignedOps", fields: [assignedOpsId], references: [id])
+  activityEvents   ActivityEvent[]
+  notes            Note[]
+  tasks            Task[]
+  checklistItems   ChecklistItem[]
+  documents        Document[]
+}
+
+enum CaseStatus {
+  INTAKE
+  AWAITING_CLIENT_ACTION
+  READY_TO_SUBMIT
+  SUBMITTED
+  PROCESSING
+  IN_TRANSIT
+  COMPLETED
+}
+
+enum AccountType {
+  TRADITIONAL_IRA_401K
+  ROTH_IRA_401K
+  IRA_403B
+  OTHER
+}
+
+model ActivityEvent {
+  id           String    @id @default(cuid())
+  caseId       String
+  actorUserId  String
+  eventType    EventType
+  eventDetails String?
+  createdAt    DateTime  @default(now())
+
+  case  RolloverCase @relation(fields: [caseId], references: [id], onDelete: Cascade)
+  actor User         @relation(fields: [actorUserId], references: [id])
+}
+
+enum EventType {
+  CASE_CREATED
+  CASE_UPDATED
+  STATUS_CHANGED
+  NOTE_ADDED
+  OWNER_CHANGED
+  TASK_CREATED
+  TASK_COMPLETED
+  TASK_REOPENED
+  FILE_UPLOADED
+  FILE_DELETED
+  CHECKLIST_ITEM_UPDATED
+}
+
+model Task {
+  id           String     @id @default(cuid())
+  caseId       String
+  title        String
+  description  String?
+  assigneeId   String?
+  dueDate      DateTime?
+  status       TaskStatus @default(OPEN)
+  createdById  String
+  createdAt    DateTime   @default(now())
+  updatedAt    DateTime   @updatedAt
+
+  case      RolloverCase @relation(fields: [caseId], references: [id], onDelete: Cascade)
+  assignee  User?        @relation("AssignedTasks", fields: [assigneeId], references: [id])
+  createdBy User         @relation("CreatedTasks", fields: [createdById], references: [id])
+}
+
+enum TaskStatus {
+  OPEN
+  COMPLETED
+  BLOCKED
+}
+
+model Note {
+  id           String   @id @default(cuid())
+  caseId       String
+  authorUserId String
+  body         String
+  createdAt    DateTime @default(now())
+
+  case   RolloverCase @relation(fields: [caseId], references: [id], onDelete: Cascade)
+  author User         @relation(fields: [authorUserId], references: [id])
+}
+
+model ChecklistItem {
+  id        String          @id @default(cuid())
+  caseId    String
+  name      String
+  required  Boolean         @default(true)
+  status    ChecklistStatus @default(NOT_STARTED)
+  notes     String?
+  sortOrder Int             @default(0)
+  createdAt DateTime        @default(now())
+  updatedAt DateTime        @updatedAt
+
+  case      RolloverCase @relation(fields: [caseId], references: [id], onDelete: Cascade)
+  documents Document[]
+}
+
+enum ChecklistStatus {
+  NOT_STARTED
+  REQUESTED
+  RECEIVED
+  REVIEWED
+  COMPLETE
+}
+
+model Document {
+  id              String   @id @default(cuid())
+  caseId          String
+  checklistItemId String?
+  name            String
+  storagePath     String
+  fileType        String
+  fileSize        Int
+  uploadedById    String
+  createdAt       DateTime @default(now())
+
+  case          RolloverCase   @relation(fields: [caseId], references: [id], onDelete: Cascade)
+  checklistItem ChecklistItem? @relation(fields: [checklistItemId], references: [id])
+  uploadedBy    User           @relation(fields: [uploadedById], references: [id])
+}
