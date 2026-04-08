@@ -36,96 +36,140 @@ const STATUS_LABELS: Record<string, string> = {
 };
 
 export default function DashboardWidgets({ myTasks, staleCases }: Props) {
-  const overdue = myTasks.filter(
-    (t) => t.dueDate && new Date(t.dueDate) < new Date()
-  );
+  const overdue = myTasks.filter((t) => t.dueDate && new Date(t.dueDate) < new Date());
 
   return (
-    <div className="grid grid-cols-1 md:grid-cols-2 gap-4 mb-8">
+    <div className="grid grid-cols-1 md:grid-cols-2 gap-4 mb-6">
       {/* My Open Tasks */}
-      <div className="bg-white rounded-xl border border-gray-200 p-5">
-        <div className="flex items-center justify-between mb-3">
-          <h2 className="text-sm font-semibold text-gray-900">My Open Tasks</h2>
-          <div className="flex items-center gap-2">
+      <div className="bg-white rounded-xl border border-gray-200 overflow-hidden" style={{ boxShadow: "var(--shadow-xs)" }}>
+        <div className="flex items-center justify-between px-5 pt-4 pb-3 border-b border-gray-100">
+          <div className="flex items-center gap-2.5">
+            <div className="w-7 h-7 rounded-lg bg-blue-50 flex items-center justify-center flex-shrink-0">
+              <svg width="14" height="14" viewBox="0 0 14 14" fill="none" className="text-blue-600">
+                <rect x="1.5" y="1.5" width="11" height="11" rx="2" stroke="currentColor" strokeWidth="1.4"/>
+                <path d="M4.5 7l2 2 3-3" stroke="currentColor" strokeWidth="1.4" strokeLinecap="round" strokeLinejoin="round"/>
+              </svg>
+            </div>
+            <span className="text-sm font-semibold text-gray-900">My Open Tasks</span>
+          </div>
+          <div className="flex items-center gap-1.5">
             {overdue.length > 0 && (
-              <span className="text-xs bg-red-100 text-red-600 rounded-full px-2 py-0.5">
+              <span className="inline-flex items-center gap-1 text-xs bg-red-50 text-red-600 rounded-full px-2 py-0.5 font-medium">
+                <span className="w-1.5 h-1.5 rounded-full bg-red-500 flex-shrink-0" />
                 {overdue.length} overdue
               </span>
             )}
-            <span className="text-xs text-gray-400">{myTasks.length} total</span>
+            <span className="text-xs text-gray-400 bg-gray-100 rounded-full px-2 py-0.5">{myTasks.length}</span>
           </div>
         </div>
 
-        {myTasks.length === 0 ? (
-          <p className="text-sm text-gray-400">No open tasks assigned to you.</p>
-        ) : (
-          <ul className="space-y-2">
-            {myTasks.slice(0, 5).map((task) => {
-              const pastDue = task.dueDate && new Date(task.dueDate) < new Date();
-              return (
-                <li key={task.id}>
-                  <Link
-                    href={`/dashboard/cases/${task.case.id}`}
-                    className="flex items-start justify-between gap-2 group"
-                  >
-                    <div className="min-w-0">
-                      <p className="text-sm text-gray-800 truncate group-hover:text-blue-600">
-                        {task.title}
-                      </p>
-                      <p className="text-xs text-gray-400">
-                        {task.case.clientFirstName} {task.case.clientLastName}
-                      </p>
-                    </div>
-                    {task.dueDate && (
-                      <span className={`text-xs flex-shrink-0 ${pastDue ? "text-red-500 font-medium" : "text-gray-400"}`}>
-                        {pastDue ? "Overdue · " : ""}{formatDate(task.dueDate)}
-                      </span>
-                    )}
-                  </Link>
+        <div className="px-5 py-3">
+          {myTasks.length === 0 ? (
+            <div className="py-5 text-center">
+              <div className="w-8 h-8 rounded-full bg-emerald-50 flex items-center justify-center mx-auto mb-2">
+                <svg width="14" height="14" viewBox="0 0 14 14" fill="none" className="text-emerald-500">
+                  <path d="M2 7l3.5 3.5L12 3" stroke="currentColor" strokeWidth="1.6" strokeLinecap="round" strokeLinejoin="round"/>
+                </svg>
+              </div>
+              <p className="text-sm text-gray-500 font-medium">All caught up</p>
+              <p className="text-xs text-gray-400 mt-0.5">No open tasks assigned to you.</p>
+            </div>
+          ) : (
+            <ul className="space-y-0 divide-y divide-gray-50">
+              {myTasks.slice(0, 5).map((task) => {
+                const pastDue = task.dueDate && new Date(task.dueDate) < new Date();
+                return (
+                  <li key={task.id}>
+                    <Link
+                      href={`/dashboard/cases/${task.case.id}`}
+                      className="flex items-start justify-between gap-3 py-2.5 group"
+                    >
+                      <div className="flex items-start gap-2.5 min-w-0">
+                        <div className={`mt-0.5 w-3.5 h-3.5 rounded flex-shrink-0 border ${pastDue ? "border-red-300 bg-red-50" : "border-gray-200"}`} />
+                        <div className="min-w-0">
+                          <p className="text-sm text-gray-800 truncate group-hover:text-blue-600 transition-colors">
+                            {task.title}
+                          </p>
+                          <p className="text-xs text-gray-400 mt-0.5">
+                            {task.case.clientFirstName} {task.case.clientLastName}
+                          </p>
+                        </div>
+                      </div>
+                      {task.dueDate && (
+                        <span className={`text-xs flex-shrink-0 font-medium ${pastDue ? "text-red-500" : "text-gray-400"}`}>
+                          {pastDue ? "Overdue" : formatDate(task.dueDate)}
+                        </span>
+                      )}
+                    </Link>
+                  </li>
+                );
+              })}
+              {myTasks.length > 5 && (
+                <li className="pt-2.5">
+                  <p className="text-xs text-gray-400">+{myTasks.length - 5} more task{myTasks.length - 5 !== 1 ? "s" : ""}</p>
                 </li>
-              );
-            })}
-            {myTasks.length > 5 && (
-              <li className="text-xs text-gray-400 pt-1">+{myTasks.length - 5} more tasks</li>
-            )}
-          </ul>
-        )}
+              )}
+            </ul>
+          )}
+        </div>
       </div>
 
       {/* Stale Cases */}
-      <div className="bg-white rounded-xl border border-gray-200 p-5">
-        <div className="flex items-center justify-between mb-3">
-          <h2 className="text-sm font-semibold text-gray-900">No Activity (7+ days)</h2>
-          <span className="text-xs text-gray-400">{staleCases.length} case{staleCases.length !== 1 ? "s" : ""}</span>
+      <div className="bg-white rounded-xl border border-gray-200 overflow-hidden" style={{ boxShadow: "var(--shadow-xs)" }}>
+        <div className="flex items-center justify-between px-5 pt-4 pb-3 border-b border-gray-100">
+          <div className="flex items-center gap-2.5">
+            <div className="w-7 h-7 rounded-lg bg-orange-50 flex items-center justify-center flex-shrink-0">
+              <svg width="14" height="14" viewBox="0 0 14 14" fill="none" className="text-orange-500">
+                <circle cx="7" cy="7" r="5.5" stroke="currentColor" strokeWidth="1.4"/>
+                <path d="M7 4v3.5l2 1.5" stroke="currentColor" strokeWidth="1.4" strokeLinecap="round" strokeLinejoin="round"/>
+              </svg>
+            </div>
+            <span className="text-sm font-semibold text-gray-900">No Activity (7+ days)</span>
+          </div>
+          <span className="text-xs text-gray-400 bg-gray-100 rounded-full px-2 py-0.5">
+            {staleCases.length}
+          </span>
         </div>
 
-        {staleCases.length === 0 ? (
-          <p className="text-sm text-gray-400">All cases have recent activity.</p>
-        ) : (
-          <ul className="space-y-2">
-            {staleCases.slice(0, 5).map((c) => (
-              <li key={c.id}>
-                <Link
-                  href={`/dashboard/cases/${c.id}`}
-                  className="flex items-center justify-between gap-2 group"
-                >
-                  <div className="min-w-0">
-                    <p className="text-sm text-gray-800 truncate group-hover:text-blue-600">
-                      {c.clientFirstName} {c.clientLastName}
-                    </p>
-                    <p className="text-xs text-gray-400">{STATUS_LABELS[c.status] ?? c.status}</p>
-                  </div>
-                  <span className="text-xs text-orange-500 font-medium flex-shrink-0">
-                    {c.daysSinceActivity}d idle
-                  </span>
-                </Link>
-              </li>
-            ))}
-            {staleCases.length > 5 && (
-              <li className="text-xs text-gray-400 pt-1">+{staleCases.length - 5} more</li>
-            )}
-          </ul>
-        )}
+        <div className="px-5 py-3">
+          {staleCases.length === 0 ? (
+            <div className="py-5 text-center">
+              <div className="w-8 h-8 rounded-full bg-emerald-50 flex items-center justify-center mx-auto mb-2">
+                <svg width="14" height="14" viewBox="0 0 14 14" fill="none" className="text-emerald-500">
+                  <path d="M2 7l3.5 3.5L12 3" stroke="currentColor" strokeWidth="1.6" strokeLinecap="round" strokeLinejoin="round"/>
+                </svg>
+              </div>
+              <p className="text-sm text-gray-500 font-medium">All cases active</p>
+              <p className="text-xs text-gray-400 mt-0.5">No cases idle for 7+ days.</p>
+            </div>
+          ) : (
+            <ul className="space-y-0 divide-y divide-gray-50">
+              {staleCases.slice(0, 5).map((c) => (
+                <li key={c.id}>
+                  <Link
+                    href={`/dashboard/cases/${c.id}`}
+                    className="flex items-center justify-between gap-3 py-2.5 group"
+                  >
+                    <div className="min-w-0">
+                      <p className="text-sm text-gray-800 truncate group-hover:text-blue-600 transition-colors">
+                        {c.clientFirstName} {c.clientLastName}
+                      </p>
+                      <p className="text-xs text-gray-400 mt-0.5">{STATUS_LABELS[c.status] ?? c.status}</p>
+                    </div>
+                    <span className="text-xs text-orange-500 font-semibold flex-shrink-0 bg-orange-50 px-2 py-0.5 rounded-full">
+                      {c.daysSinceActivity}d idle
+                    </span>
+                  </Link>
+                </li>
+              ))}
+              {staleCases.length > 5 && (
+                <li className="pt-2.5">
+                  <p className="text-xs text-gray-400">+{staleCases.length - 5} more</p>
+                </li>
+              )}
+            </ul>
+          )}
+        </div>
       </div>
     </div>
   );

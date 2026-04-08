@@ -125,24 +125,41 @@ export default function TaskList({ caseId, initialTasks, users }: Props) {
   }
 
   return (
-    <section className="bg-white rounded-xl border border-gray-200 p-5">
-      <div className="flex items-center justify-between mb-4">
-        <div className="flex items-center gap-2">
+    <section className="bg-white rounded-xl border border-gray-200 overflow-hidden" style={{ boxShadow: "var(--shadow-xs)" }}>
+      <div className="flex items-center justify-between px-5 pt-4 pb-3 border-b border-gray-100">
+        <div className="flex items-center gap-2.5">
+          <div className="w-7 h-7 rounded-lg bg-blue-50 flex items-center justify-center flex-shrink-0">
+            <svg width="14" height="14" viewBox="0 0 14 14" fill="none" className="text-blue-600">
+              <rect x="1.5" y="1.5" width="11" height="11" rx="2" stroke="currentColor" strokeWidth="1.3"/>
+              <path d="M4.5 7l2 2 3-3" stroke="currentColor" strokeWidth="1.4" strokeLinecap="round" strokeLinejoin="round"/>
+            </svg>
+          </div>
           <h2 className="text-sm font-semibold text-gray-900">Tasks</h2>
           {open.length > 0 && (
             <span className="text-xs bg-gray-100 text-gray-600 rounded-full px-2 py-0.5">{open.length} open</span>
           )}
           {overdueCount > 0 && (
-            <span className="text-xs bg-red-100 text-red-600 rounded-full px-2 py-0.5">{overdueCount} overdue</span>
+            <span className="inline-flex items-center gap-1 text-xs bg-red-50 text-red-600 rounded-full px-2 py-0.5">
+              <span className="w-1.5 h-1.5 rounded-full bg-red-400" />
+              {overdueCount} overdue
+            </span>
           )}
         </div>
         <button
           onClick={() => setShowForm((v) => !v)}
-          className="text-xs text-blue-600 hover:text-blue-700 font-medium"
+          className="text-xs text-blue-600 hover:text-blue-700 font-medium flex items-center gap-1"
         >
-          {showForm ? "Cancel" : "+ Add task"}
+          {showForm ? "Cancel" : (
+            <>
+              <svg width="11" height="11" viewBox="0 0 11 11" fill="none">
+                <path d="M5.5 1v9M1 5.5h9" stroke="currentColor" strokeWidth="1.6" strokeLinecap="round"/>
+              </svg>
+              Add task
+            </>
+          )}
         </button>
       </div>
+      <div className="p-5">
 
       {/* New task form */}
       {showForm && (
@@ -233,9 +250,12 @@ export default function TaskList({ caseId, initialTasks, users }: Props) {
         <div>
           <button
             onClick={() => setShowCompleted((v) => !v)}
-            className="text-xs text-gray-400 hover:text-gray-600 mb-2"
+            className="flex items-center gap-1 text-xs text-gray-400 hover:text-gray-600 mb-2"
           >
-            {showCompleted ? "▾" : "▸"} {completed.length} completed
+            <svg width="10" height="10" viewBox="0 0 10 10" fill="none" className={`transition-transform ${showCompleted ? "rotate-90" : ""}`}>
+              <path d="M3 2l4 3-4 3" stroke="currentColor" strokeWidth="1.3" strokeLinecap="round" strokeLinejoin="round"/>
+            </svg>
+            {completed.length} completed
           </button>
           {showCompleted && (
             <div className="space-y-1.5 opacity-60">
@@ -253,6 +273,7 @@ export default function TaskList({ caseId, initialTasks, users }: Props) {
           )}
         </div>
       )}
+      </div>
     </section>
   );
 }

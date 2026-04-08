@@ -12,8 +12,37 @@ model Firm {
   createdAt DateTime @default(now())
   updatedAt DateTime @updatedAt
 
-  users User[]
-  cases RolloverCase[]
+  users        User[]
+  cases        RolloverCase[]
+  settings     FirmSettings?
+  reminderLogs ReminderLog[]
+}
+
+model FirmSettings {
+  id                   String   @id @default(cuid())
+  firmId               String   @unique
+  remindersEnabled     Boolean  @default(true)
+  stalledCaseDays      Int      @default(7)
+  overdueTaskReminders Boolean  @default(true)
+  stalledCaseReminders Boolean  @default(true)
+  missingDocsReminders Boolean  @default(false)
+  createdAt            DateTime @default(now())
+  updatedAt            DateTime @updatedAt
+
+  firm Firm @relation(fields: [firmId], references: [id], onDelete: Cascade)
+}
+
+model ReminderLog {
+  id          String   @id @default(cuid())
+  firmId      String
+  type        String
+  referenceId String
+  sentTo      String
+  sentAt      DateTime @default(now())
+
+  firm Firm @relation(fields: [firmId], references: [id], onDelete: Cascade)
+
+  @@index([type, referenceId, sentAt])
 }
 
 model User {
