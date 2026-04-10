@@ -4,10 +4,12 @@ import { useState, useRef, useEffect } from "react";
 import Link from "next/link";
 
 // ─── Design tokens ─────────────────────────────────────────────────────────────
+// Accent is copper (#b8683d / rgb 184,104,61) — replaces the previous gold.
+// If you hand-write rgba for the accent, use rgba(184,104,61,α).
 const C = {
   heroBlack: "#0c0a07",
-  gold: "#c9922a",
-  goldLight: "#f0c46a",
+  accent: "#b8683d",
+  accentLight: "#e0905c",
   cream: "#faf8f4",
   darkGreen: "#0b1f14",
   warmWhite: "#f5f0e8",
@@ -64,13 +66,13 @@ const FEATURES = [
     title: "Case Pipeline",
     desc: "A clear status model from Intake to Completed. Every case has a single source of truth — no more hunting through email threads.",
     span: "col-span-3 row-span-2",
-    accentColor: C.gold,
+    accentColor: C.accent,
     icon: (
       <svg width="48" height="48" viewBox="0 0 48 48" fill="none">
         {/* Progress bar segments */}
-        <rect x="4" y="20" width="8" height="10" rx="2" fill="#c9922a"/>
-        <rect x="14" y="20" width="8" height="10" rx="2" fill="#c9922a"/>
-        <rect x="24" y="20" width="8" height="10" rx="2" fill="#c9922a"/>
+        <rect x="4" y="20" width="8" height="10" rx="2" fill="#b8683d"/>
+        <rect x="14" y="20" width="8" height="10" rx="2" fill="#b8683d"/>
+        <rect x="24" y="20" width="8" height="10" rx="2" fill="#b8683d"/>
         <rect x="34" y="20" width="8" height="10" rx="2" fill="#3a3228"/>
         <rect x="44" y="20" width="0" height="10" rx="2" fill="#3a3228"/>
         {/* Connector dots */}
@@ -83,7 +85,7 @@ const FEATURES = [
         <rect x="24" y="34" width="8" height="2" rx="1" fill="#9c8f7a"/>
         <rect x="34" y="34" width="8" height="2" rx="1" fill="#3a3228"/>
         {/* Arrow */}
-        <path d="M38 24l4-4m0 0l-4-4m4 4H28" stroke="#f0c46a" strokeWidth="1.5" strokeLinecap="round" strokeLinejoin="round"/>
+        <path d="M38 24l4-4m0 0l-4-4m4 4H28" stroke="#e0905c" strokeWidth="1.5" strokeLinecap="round" strokeLinejoin="round"/>
       </svg>
     ),
   },
@@ -94,12 +96,12 @@ const FEATURES = [
     accentColor: "#4a7c59",
     icon: (
       <svg width="40" height="40" viewBox="0 0 40 40" fill="none">
-        <rect x="4" y="8" width="6" height="6" rx="1" fill="#c9922a"/>
+        <rect x="4" y="8" width="6" height="6" rx="1" fill="#b8683d"/>
         <path d="M6 11l1.5 1.5L10 9" stroke="#0c0a07" strokeWidth="1.4" strokeLinecap="round" strokeLinejoin="round"/>
         <rect x="14" y="9" width="20" height="4" rx="1" fill="#3a3228"/>
         <rect x="4" y="19" width="6" height="6" rx="1" stroke="#5a4f3e" strokeWidth="1.5" fill="none"/>
         <rect x="14" y="20" width="16" height="4" rx="1" fill="#3a3228"/>
-        <rect x="4" y="30" width="6" height="6" rx="1" fill="#c9922a"/>
+        <rect x="4" y="30" width="6" height="6" rx="1" fill="#b8683d"/>
         <path d="M6 33l1.5 1.5L10 31" stroke="#0c0a07" strokeWidth="1.4" strokeLinecap="round" strokeLinejoin="round"/>
         <rect x="14" y="31" width="22" height="4" rx="1" fill="#3a3228"/>
       </svg>
@@ -118,14 +120,14 @@ const FEATURES = [
         <rect x="4" y="11" width="22" height="3" fill="#3a3228"/>
         <line x1="10" y1="18" x2="10" y2="18" stroke="#9c8f7a" strokeWidth="2" strokeLinecap="round"/>
         <line x1="16" y1="18" x2="16" y2="18" stroke="#9c8f7a" strokeWidth="2" strokeLinecap="round"/>
-        <line x1="22" y1="18" x2="22" y2="18" stroke="#c9922a" strokeWidth="2" strokeLinecap="round"/>
+        <line x1="22" y1="18" x2="22" y2="18" stroke="#b8683d" strokeWidth="2" strokeLinecap="round"/>
         <line x1="10" y1="23" x2="10" y2="23" stroke="#9c8f7a" strokeWidth="2" strokeLinecap="round"/>
         <line x1="16" y1="23" x2="16" y2="23" stroke="#9c8f7a" strokeWidth="2" strokeLinecap="round"/>
         {/* Clock overlay */}
-        <circle cx="28" cy="28" r="10" fill="#1e1810" stroke="#c9922a" strokeWidth="1.5"/>
-        <line x1="28" y1="23" x2="28" y2="28" stroke="#f0c46a" strokeWidth="1.5" strokeLinecap="round"/>
-        <line x1="28" y1="28" x2="32" y2="31" stroke="#c9922a" strokeWidth="1.5" strokeLinecap="round"/>
-        <circle cx="28" cy="28" r="1.5" fill="#f0c46a"/>
+        <circle cx="28" cy="28" r="10" fill="#1e1810" stroke="#b8683d" strokeWidth="1.5"/>
+        <line x1="28" y1="23" x2="28" y2="28" stroke="#e0905c" strokeWidth="1.5" strokeLinecap="round"/>
+        <line x1="28" y1="28" x2="32" y2="31" stroke="#b8683d" strokeWidth="1.5" strokeLinecap="round"/>
+        <circle cx="28" cy="28" r="1.5" fill="#e0905c"/>
       </svg>
     ),
   },
@@ -145,8 +147,8 @@ const FEATURES = [
         <rect x="9" y="17" width="12" height="2" rx="1" fill="#9c8f7a"/>
         <rect x="9" y="22" width="8" height="2" rx="1" fill="#9c8f7a"/>
         {/* Gold clip */}
-        <rect x="11" y="3" width="10" height="7" rx="2" fill="none" stroke="#c9922a" strokeWidth="2"/>
-        <rect x="14" y="1" width="4" height="4" rx="1" fill="#c9922a"/>
+        <rect x="11" y="3" width="10" height="7" rx="2" fill="none" stroke="#b8683d" strokeWidth="2"/>
+        <rect x="14" y="1" width="4" height="4" rx="1" fill="#b8683d"/>
       </svg>
     ),
   },
@@ -165,17 +167,17 @@ const FEATURES = [
             key={i}
             x1={t.x1} y1={t.y1}
             x2={t.x2} y2={t.y2}
-            stroke={t.major ? "#c9922a" : "#5a4f3e"}
+            stroke={t.major ? "#b8683d" : "#5a4f3e"}
             strokeWidth={t.major ? 1.5 : 1}
             strokeLinecap="round"
           />
         ))}
         {/* Sweeping arrow hand */}
-        <path d="M20 20 L28 10" stroke="#f0c46a" strokeWidth="1.5" strokeLinecap="round"/>
-        <path d="M28 10 L30 14 M28 10 L24 10" stroke="#f0c46a" strokeWidth="1.2" strokeLinecap="round"/>
-        <line x1="20" y1="20" x2="20" y2="12" stroke="#c9922a" strokeWidth="2" strokeLinecap="round"/>
+        <path d="M20 20 L28 10" stroke="#e0905c" strokeWidth="1.5" strokeLinecap="round"/>
+        <path d="M28 10 L30 14 M28 10 L24 10" stroke="#e0905c" strokeWidth="1.2" strokeLinecap="round"/>
+        <line x1="20" y1="20" x2="20" y2="12" stroke="#b8683d" strokeWidth="2" strokeLinecap="round"/>
         <line x1="20" y1="20" x2="26" y2="22" stroke="#9c8f7a" strokeWidth="1.5" strokeLinecap="round"/>
-        <circle cx="20" cy="20" r="2" fill="#c9922a"/>
+        <circle cx="20" cy="20" r="2" fill="#b8683d"/>
       </svg>
     ),
   },
@@ -187,21 +189,21 @@ const FEATURES = [
     icon: (
       <svg width="40" height="40" viewBox="0 0 40 40" fill="none">
         {/* Two avatar circles */}
-        <circle cx="14" cy="16" r="8" fill="#2a3a28" stroke="#c9922a" strokeWidth="1.5"/>
+        <circle cx="14" cy="16" r="8" fill="#2a3a28" stroke="#b8683d" strokeWidth="1.5"/>
         <circle cx="26" cy="16" r="8" fill="#1a2834" stroke="#4a7c59" strokeWidth="1.5"/>
         {/* Face dots */}
-        <circle cx="11" cy="15" r="1.2" fill="#c9922a"/>
-        <circle cx="17" cy="15" r="1.2" fill="#c9922a"/>
+        <circle cx="11" cy="15" r="1.2" fill="#b8683d"/>
+        <circle cx="17" cy="15" r="1.2" fill="#b8683d"/>
         <circle cx="23" cy="15" r="1.2" fill="#9c8f7a"/>
         <circle cx="29" cy="15" r="1.2" fill="#9c8f7a"/>
         {/* Connector line */}
-        <line x1="14" y1="16" x2="26" y2="16" stroke="#c9922a" strokeWidth="1" strokeDasharray="2 2"/>
+        <line x1="14" y1="16" x2="26" y2="16" stroke="#b8683d" strokeWidth="1" strokeDasharray="2 2"/>
         {/* Shared document at bottom */}
-        <rect x="13" y="27" width="14" height="10" rx="2" fill="#1a1510" stroke="#c9922a" strokeWidth="1.2"/>
+        <rect x="13" y="27" width="14" height="10" rx="2" fill="#1a1510" stroke="#b8683d" strokeWidth="1.2"/>
         <rect x="15" y="30" width="8" height="1.5" rx="0.5" fill="#9c8f7a"/>
         <rect x="15" y="33" width="6" height="1.5" rx="0.5" fill="#9c8f7a"/>
         {/* Connector lines from avatars to document */}
-        <line x1="14" y1="24" x2="17" y2="27" stroke="#c9922a" strokeWidth="1" strokeDasharray="2 2"/>
+        <line x1="14" y1="24" x2="17" y2="27" stroke="#b8683d" strokeWidth="1" strokeDasharray="2 2"/>
         <line x1="26" y1="24" x2="23" y2="27" stroke="#4a7c59" strokeWidth="1" strokeDasharray="2 2"/>
       </svg>
     ),
@@ -294,7 +296,7 @@ function DemoModal({ onClose }: { onClose: () => void }) {
         <div
           style={{
             height: "5px",
-            background: `linear-gradient(90deg, ${C.gold}, ${C.goldLight})`,
+            background: `linear-gradient(90deg, ${C.accent}, ${C.accentLight})`,
           }}
         />
 
@@ -381,7 +383,7 @@ function DemoModal({ onClose }: { onClose: () => void }) {
                   type="submit"
                   className="w-full rounded-lg py-2.5 text-sm font-bold mt-1 transition-opacity hover:opacity-90"
                   style={{
-                    background: C.gold,
+                    background: C.accent,
                     color: "#0c0a07",
                     letterSpacing: "0.04em",
                   }}
@@ -397,7 +399,7 @@ function DemoModal({ onClose }: { onClose: () => void }) {
                 style={{ background: C.darkGreen }}
               >
                 <svg width="24" height="24" viewBox="0 0 24 24" fill="none">
-                  <path d="M4 12l5 5L20 7" stroke={C.goldLight} strokeWidth="2.2" strokeLinecap="round" strokeLinejoin="round"/>
+                  <path d="M4 12l5 5L20 7" stroke={C.accentLight} strokeWidth="2.2" strokeLinecap="round" strokeLinejoin="round"/>
                 </svg>
               </div>
               <h3 className="text-lg font-bold mb-2" style={{ color: "#1a1510" }}>
@@ -409,7 +411,7 @@ function DemoModal({ onClose }: { onClose: () => void }) {
               <button
                 onClick={onClose}
                 className="rounded-lg px-6 py-2.5 text-sm font-bold transition-opacity hover:opacity-90"
-                style={{ background: C.gold, color: "#0c0a07" }}
+                style={{ background: C.accent, color: "#0c0a07" }}
               >
                 Close
               </button>
@@ -421,194 +423,636 @@ function DemoModal({ onClose }: { onClose: () => void }) {
   );
 }
 
-// ─── Process timeline (scroll-driven, no React state) ────────────────────────
-// All animation is written directly to DOM via refs — zero re-renders, 60fps.
+// ─── Process timeline — horizontal filmstrip, scroll-driven ──────────────────
+// A single translate3d on the strip gives a butter-smooth slide with zero
+// crossfade/overlap artifacts. Each panel is a fully-formed scene with a
+// rich mock UI — no empty space, nothing to "click" between.
+
+type Step = typeof STEPS[number];
 
 function ProcessTimeline() {
-  const containerRef = useRef<HTMLDivElement>(null);
-  const frameRefs   = useRef<(HTMLDivElement | null)[]>([]);
-  const dotRefs     = useRef<(HTMLDivElement | null)[]>([]);
-  const hintRef     = useRef<HTMLDivElement>(null);
+  const containerRef   = useRef<HTMLDivElement>(null);
+  const stripRef       = useRef<HTMLDivElement>(null);
+  const progressBarRef = useRef<HTMLDivElement>(null);
+  const glowRef        = useRef<HTMLDivElement>(null);
+  const labelRefs      = useRef<(HTMLDivElement | null)[]>([]);
 
   useEffect(() => {
-    // Pre-build arrays so the handler holds no closures over React state
-    const frames = frameRefs.current;
-    const dots   = dotRefs.current;
-    const hint   = hintRef.current;
-    let lastActive = -1;
+    const strip       = stripRef.current;
+    const progressBar = progressBarRef.current;
+    const glow        = glowRef.current;
+    const labels      = labelRefs.current;
 
-    function paint() {
+    let targetProgress  = 0;
+    let currentProgress = 0;
+    let rafId   = 0;
+    let running = false;
+
+    function updateTarget() {
       const container = containerRef.current;
       if (!container) return;
-
-      const scrolled   = Math.max(0, -container.getBoundingClientRect().top);
+      const rect       = container.getBoundingClientRect();
+      const scrolled   = Math.max(0, -rect.top);
       const scrollable = container.offsetHeight - window.innerHeight;
-      if (scrollable <= 0) return;
-
-      // progress: 0.0 → STEPS.length - 1, continuous with scroll
-      const progress = Math.min(STEPS.length - 1, (scrolled / scrollable) * (STEPS.length - 1));
-      const active   = Math.round(progress);
-
-      // ── Animate each step frame directly ──────────────────────────────────
-      for (let i = 0; i < frames.length; i++) {
-        const el = frames[i];
-        if (!el) continue;
-        const diff    = i - progress;                        // negative = past, positive = future
-        const opacity = Math.max(0, 1 - Math.abs(diff) * 1.6);
-        const y       = diff * 72;                           // px offset
-        const scale   = 1 - Math.min(Math.abs(diff), 1) * 0.06;
-        el.style.opacity   = opacity.toFixed(3);
-        el.style.transform = `translateY(${y.toFixed(2)}px) scale(${scale.toFixed(4)})`;
-      }
-
-      // ── Update step-indicator dots (only when active step changes) ────────
-      if (active !== lastActive) {
-        lastActive = active;
-        for (let i = 0; i < dots.length; i++) {
-          const d = dots[i];
-          if (!d) continue;
-          d.style.width      = i === active ? "32px" : "6px";
-          d.style.background = i <= active ? C.gold : "rgba(201,146,42,0.2)";
-        }
-        if (hint) hint.style.opacity = active >= STEPS.length - 1 ? "0" : "0.45";
+      if (scrollable <= 0) { targetProgress = 0; return; }
+      const t = Math.min(1, Math.max(0, scrolled / scrollable));
+      targetProgress = t * (STEPS.length - 1);
+      if (!running) {
+        running = true;
+        rafId = requestAnimationFrame(tick);
       }
     }
 
-    window.addEventListener("scroll", paint, { passive: true });
-    paint(); // set initial state
-    return () => window.removeEventListener("scroll", paint);
+    function tick() {
+      // Lerp current → target. This is what makes scroll wheel ticks feel
+      // like a continuous glide instead of discrete steps ("clicky").
+      const delta = targetProgress - currentProgress;
+      currentProgress += delta * 0.13;
+      if (Math.abs(delta) < 0.0004) currentProgress = targetProgress;
+
+      const progress = currentProgress;
+      const pct      = progress / (STEPS.length - 1); // 0 → 1
+
+      // One transform on the strip. Each panel occupies 1/N of the strip,
+      // so moving by (progress / N * 100)% of the strip's own width
+      // scrolls us exactly (progress * panel-width) px. No per-frame math.
+      if (strip) {
+        const tx = -progress * (100 / STEPS.length);
+        strip.style.transform = `translate3d(${tx.toFixed(4)}%, 0, 0)`;
+      }
+
+      if (progressBar) {
+        progressBar.style.transform = `scaleX(${pct.toFixed(4)})`;
+      }
+
+      // Ambient glow drifts horizontally across the stage
+      if (glow) {
+        const gx = (pct - 0.5) * 240;
+        glow.style.transform = `translate3d(${gx.toFixed(1)}px, 0, 0)`;
+      }
+
+      for (let i = 0; i < labels.length; i++) {
+        const l = labels[i];
+        if (!l) continue;
+        l.style.opacity = progress >= i - 0.35 ? "1" : "0.3";
+      }
+
+      if (Math.abs(targetProgress - currentProgress) > 0.0004) {
+        rafId = requestAnimationFrame(tick);
+      } else {
+        running = false;
+      }
+    }
+
+    updateTarget();
+    currentProgress = targetProgress;
+    tick();
+
+    window.addEventListener("scroll", updateTarget, { passive: true });
+    window.addEventListener("resize", updateTarget);
+    return () => {
+      window.removeEventListener("scroll", updateTarget);
+      window.removeEventListener("resize", updateTarget);
+      cancelAnimationFrame(rafId);
+    };
   }, []);
 
   return (
-    // Each step owns 100 vh of scroll range → 4 steps = 400 vh tall section
-    <div ref={containerRef} style={{ height: `${STEPS.length * 100}vh` }}>
-
-      {/* ── Sticky viewport panel ── */}
+    <div ref={containerRef} style={{ height: "260vh" }}>
       <div style={{
         position: "sticky",
         top: 0,
         height: "100vh",
         display: "flex",
         flexDirection: "column",
-        alignItems: "center",
-        justifyContent: "center",
-        padding: "0 32px",
         overflow: "hidden",
       }}>
 
-        {/* Section label + heading */}
-        <div className="text-center mb-10">
-          <span className="text-xs font-bold uppercase tracking-widest" style={{ color: C.gold }}>
-            Process
-          </span>
-          <h2 className="text-3xl font-black mt-2" style={{ color: C.warmWhite }}>
-            Up and running in minutes
-          </h2>
-        </div>
+        {/* ── Header + progress rail ── */}
+        <div style={{ padding: "56px 64px 0", flexShrink: 0, position: "relative", zIndex: 2 }}>
+          <div style={{ display: "flex", justifyContent: "space-between", alignItems: "flex-end" }}>
+            <div>
+              <div style={{
+                color: C.accent, fontSize: "11px", fontWeight: 700,
+                letterSpacing: "0.16em", textTransform: "uppercase",
+              }}>
+                Process
+              </div>
+              <h2 style={{
+                color: C.warmWhite,
+                fontSize: "clamp(1.75rem, 2.8vw, 2.5rem)",
+                fontWeight: 900,
+                marginTop: "6px",
+                lineHeight: 1.1,
+                letterSpacing: "-0.02em",
+              }}>
+                Up and running in minutes
+              </h2>
+            </div>
+            <div style={{
+              color: C.muted, fontSize: "11px", fontWeight: 600,
+              letterSpacing: "0.08em", textTransform: "uppercase",
+            }}>
+              Scroll to advance
+            </div>
+          </div>
 
-        {/* Step indicator dots */}
-        <div className="flex items-center gap-2 mb-14">
-          {STEPS.map((_, i) => (
+          {/* Progress rail */}
+          <div style={{
+            marginTop: "32px",
+            height: "1px",
+            width: "100%",
+            background: "rgba(184,104,61,0.12)",
+            position: "relative",
+          }}>
             <div
-              key={i}
-              ref={el => { dotRefs.current[i] = el; }}
-              style={{
-                height: "6px",
-                borderRadius: "3px",
-                // initial state — paint() will correct immediately
-                width: i === 0 ? "32px" : "6px",
-                background: i === 0 ? C.gold : "rgba(201,146,42,0.2)",
-                transition: "width 0.3s ease, background 0.3s ease",
-              }}
-            />
-          ))}
-        </div>
-
-        {/* Step frames — all stacked in the same space, animated by scroll */}
-        <div style={{ position: "relative", width: "100%", maxWidth: "600px", height: "290px" }}>
-          {STEPS.map((step, idx) => (
-            <div
-              key={step.num}
-              ref={el => { frameRefs.current[idx] = el; }}
+              ref={progressBarRef}
               style={{
                 position: "absolute",
-                inset: 0,
-                display: "flex",
-                flexDirection: "column",
-                alignItems: "center",
-                textAlign: "center",
-                willChange: "opacity, transform",
-                // initial positions: step 0 visible, rest below
-                opacity:   idx === 0 ? 1 : 0,
-                transform: `translateY(${idx * 72}px) scale(${idx === 0 ? 1 : 0.94})`,
-                pointerEvents: "none",
+                top: 0, left: 0, right: 0, bottom: 0,
+                background: `linear-gradient(90deg, ${C.accent}, ${C.accentLight})`,
+                transformOrigin: "left center",
+                transform: "scaleX(0)",
+                boxShadow: `0 0 10px ${C.accent}aa, 0 0 22px ${C.accent}55`,
+                willChange: "transform",
               }}
-            >
-              {/* Large gradient step number */}
-              <div style={{
-                fontSize: "100px",
-                fontWeight: 900,
-                fontStyle: "italic",
-                lineHeight: 1,
-                marginBottom: "4px",
-                background: `linear-gradient(135deg, ${C.gold} 30%, ${C.goldLight})`,
-                WebkitBackgroundClip: "text",
-                WebkitTextFillColor: "transparent",
-              }}>
-                {step.num}
-              </div>
+            />
+          </div>
 
-              {/* Title row */}
-              <div style={{ display: "flex", alignItems: "center", justifyContent: "center", gap: "10px", marginBottom: "14px" }}>
-                <h3 style={{ fontSize: "2rem", fontWeight: 800, color: C.warmWhite, lineHeight: 1.15 }}>
-                  {step.title}
-                </h3>
-                {step.tag && (
-                  <span style={{
-                    background: "rgba(201,146,42,0.18)",
-                    color: C.goldLight,
-                    fontSize: "10px",
-                    fontWeight: 700,
-                    letterSpacing: "0.06em",
-                    padding: "3px 10px",
-                    borderRadius: "999px",
-                    flexShrink: 0,
-                  }}>
-                    {step.tag}
-                  </span>
-                )}
+          {/* Step labels */}
+          <div style={{
+            display: "grid",
+            gridTemplateColumns: `repeat(${STEPS.length}, 1fr)`,
+            marginTop: "12px",
+          }}>
+            {STEPS.map((s, i) => (
+              <div
+                key={i}
+                ref={el => { labelRefs.current[i] = el; }}
+                style={{
+                  fontSize: "10px",
+                  fontWeight: 700,
+                  letterSpacing: "0.12em",
+                  textTransform: "uppercase",
+                  color: C.accentLight,
+                  opacity: i === 0 ? 1 : 0.3,
+                  transition: "opacity 0.4s ease",
+                }}
+              >
+                {s.num} · {s.title}
               </div>
-
-              {/* Description */}
-              <p style={{ color: C.muted, fontSize: "1rem", lineHeight: 1.8, maxWidth: "480px" }}>
-                {step.desc}
-              </p>
-            </div>
-          ))}
+            ))}
+          </div>
         </div>
 
-        {/* Scroll hint */}
-        <div
-          ref={hintRef}
-          style={{
-            position: "absolute",
-            bottom: "36px",
-            display: "flex",
-            flexDirection: "column",
-            alignItems: "center",
-            gap: "6px",
-            opacity: 0.45,
-            transition: "opacity 0.5s ease",
-          }}
-        >
-          <span style={{ fontSize: "9px", letterSpacing: "0.14em", color: C.muted, textTransform: "uppercase" }}>
-            Scroll
-          </span>
-          <svg width="14" height="14" viewBox="0 0 14 14" fill="none" className="scroll-bounce">
-            <path d="M1 4l6 6 6-6" stroke={C.gold} strokeWidth="1.5" strokeLinecap="round" strokeLinejoin="round"/>
+        {/* ── Filmstrip area ── */}
+        <div style={{
+          flex: 1,
+          minHeight: 0,
+          position: "relative",
+          overflow: "hidden",
+        }}>
+          {/* Ambient glow orb */}
+          <div
+            ref={glowRef}
+            style={{
+              position: "absolute",
+              top: "50%",
+              left: "50%",
+              width: "900px",
+              height: "900px",
+              marginLeft: "-450px",
+              marginTop: "-450px",
+              background: `radial-gradient(circle, ${C.accent}24 0%, ${C.accent}08 32%, transparent 60%)`,
+              pointerEvents: "none",
+              willChange: "transform",
+              filter: "blur(4px)",
+              zIndex: 0,
+            }}
+          />
+
+          <div
+            ref={stripRef}
+            style={{
+              display: "flex",
+              height: "100%",
+              width: `${STEPS.length * 100}%`,
+              willChange: "transform",
+              position: "relative",
+              zIndex: 1,
+            }}
+          >
+            {STEPS.map((step, idx) => (
+              <StepPanel key={step.num} step={step} index={idx} />
+            ))}
+          </div>
+        </div>
+      </div>
+    </div>
+  );
+}
+
+// ─── One full panel in the filmstrip ──────────────────────────────────────────
+
+function StepPanel({ step, index }: { step: Step; index: number }) {
+  return (
+    <div style={{
+      width: `${100 / STEPS.length}%`,
+      flexShrink: 0,
+      height: "100%",
+      display: "grid",
+      gridTemplateColumns: "1fr 1fr",
+      alignItems: "center",
+      padding: "0 64px",
+      gap: "48px",
+    }}>
+      {/* Left: text block, right-aligned within its column */}
+      <div style={{ display: "flex", justifyContent: "flex-end" }}>
+        <div style={{ maxWidth: "460px", width: "100%" }}>
+
+          {/* Big italic number */}
+          <div style={{
+            fontSize: "clamp(88px, 9vw, 140px)",
+            fontWeight: 900,
+            fontStyle: "italic",
+            lineHeight: 0.85,
+            letterSpacing: "-0.05em",
+            background: `linear-gradient(135deg, ${C.accent} 10%, ${C.accentLight} 50%, ${C.accent} 95%)`,
+            WebkitBackgroundClip: "text",
+            WebkitTextFillColor: "transparent",
+            marginBottom: "16px",
+          }}>
+            {step.num}
+          </div>
+
+          {step.tag && (
+            <div style={{ marginBottom: "14px" }}>
+              <span style={{
+                display: "inline-block",
+                background: "rgba(184,104,61,0.15)",
+                color: C.accentLight,
+                border: `1px solid rgba(184,104,61,0.35)`,
+                fontSize: "10px",
+                fontWeight: 700,
+                letterSpacing: "0.12em",
+                padding: "5px 14px",
+                borderRadius: "999px",
+                textTransform: "uppercase",
+              }}>
+                {step.tag}
+              </span>
+            </div>
+          )}
+
+          <h3 style={{
+            color: C.warmWhite,
+            fontSize: "clamp(1.75rem, 2.6vw, 2.5rem)",
+            fontWeight: 900,
+            lineHeight: 1.08,
+            marginBottom: "18px",
+            letterSpacing: "-0.02em",
+          }}>
+            {step.title}
+          </h3>
+
+          <p style={{
+            color: C.muted,
+            fontSize: "clamp(0.95rem, 1.05vw, 1.05rem)",
+            lineHeight: 1.85,
+          }}>
+            {step.desc}
+          </p>
+        </div>
+      </div>
+
+      {/* Right: rich mock UI, left-aligned within its column */}
+      <div style={{ display: "flex", justifyContent: "flex-start", alignItems: "center" }}>
+        <StepVisual index={index} />
+      </div>
+    </div>
+  );
+}
+
+function StepVisual({ index }: { index: number }) {
+  if (index === 0) return <NewCaseCard />;
+  if (index === 1) return <PipelineCard />;
+  if (index === 2) return <AlertsCard />;
+  return <AuditCard />;
+}
+
+// ─── Step 01: New case intake form ────────────────────────────────────────────
+
+function NewCaseCard() {
+  const fields = [
+    { label: "Client Name",     value: "Sarah Mitchell" },
+    { label: "Source Provider", value: "Fidelity 401(k)" },
+    { label: "Destination",     value: "Schwab IRA" },
+  ];
+  return (
+    <div style={{
+      width: "100%",
+      maxWidth: "460px",
+      background: "rgba(22, 16, 11, 0.88)",
+      border: `1px solid rgba(184,104,61,0.28)`,
+      borderRadius: "14px",
+      padding: "28px",
+      boxShadow: "0 24px 70px rgba(0,0,0,0.5), 0 0 0 1px rgba(0,0,0,0.2) inset",
+      backdropFilter: "blur(8px)",
+    }}>
+      <div style={{ display: "flex", alignItems: "center", justifyContent: "space-between", marginBottom: "24px" }}>
+        <div style={{ color: C.accent, fontSize: "10px", fontWeight: 800, letterSpacing: "0.14em" }}>
+          NEW CASE
+        </div>
+        <div style={{
+          fontSize: "9px", fontWeight: 700, color: C.accentLight,
+          background: "rgba(184,104,61,0.15)",
+          border: `1px solid rgba(184,104,61,0.3)`,
+          padding: "3px 10px", borderRadius: "999px",
+          letterSpacing: "0.08em",
+        }}>INTAKE</div>
+      </div>
+
+      {fields.map((f) => (
+        <div key={f.label} style={{ marginBottom: "14px" }}>
+          <div style={{
+            fontSize: "9px", color: C.muted, fontWeight: 700,
+            letterSpacing: "0.1em", textTransform: "uppercase", marginBottom: "5px",
+          }}>
+            {f.label}
+          </div>
+          <div style={{
+            background: "rgba(0,0,0,0.28)",
+            border: "1px solid rgba(255,255,255,0.07)",
+            borderRadius: "8px",
+            padding: "10px 12px",
+            color: C.warmWhite, fontSize: "13px", fontWeight: 500,
+          }}>
+            {f.value}
+          </div>
+        </div>
+      ))}
+
+      <div style={{
+        marginTop: "20px", paddingTop: "16px",
+        borderTop: "1px solid rgba(184,104,61,0.14)",
+      }}>
+        <div style={{
+          fontSize: "9px", color: C.muted, letterSpacing: "0.1em",
+          textTransform: "uppercase", marginBottom: "10px", fontWeight: 700,
+        }}>
+          Auto-generated
+        </div>
+        {["8 checklist items", "3 tasks created"].map((text) => (
+          <div key={text} style={{
+            display: "flex", alignItems: "center", gap: "10px", marginBottom: "8px",
+          }}>
+            <div style={{
+              width: "14px", height: "14px", borderRadius: "3px",
+              background: C.accent,
+              display: "flex", alignItems: "center", justifyContent: "center",
+              flexShrink: 0,
+            }}>
+              <svg width="8" height="8" viewBox="0 0 10 10" fill="none">
+                <path d="M1 5l3 3 5-6" stroke={C.heroBlack} strokeWidth="2" strokeLinecap="round" strokeLinejoin="round"/>
+              </svg>
+            </div>
+            <span style={{ fontSize: "12px", color: C.warmWhite }}>{text}</span>
+          </div>
+        ))}
+      </div>
+    </div>
+  );
+}
+
+// ─── Step 02: Pipeline kanban ─────────────────────────────────────────────────
+
+function PipelineCard() {
+  const columns = [
+    { label: "Intake",     count: 3,  active: false },
+    { label: "Processing", count: 5,  active: true  },
+    { label: "Completed",  count: 12, active: false },
+  ];
+  return (
+    <div style={{
+      width: "100%",
+      maxWidth: "500px",
+      background: "rgba(22, 16, 11, 0.88)",
+      border: `1px solid rgba(184,104,61,0.28)`,
+      borderRadius: "14px",
+      padding: "24px",
+      boxShadow: "0 24px 70px rgba(0,0,0,0.5), 0 0 0 1px rgba(0,0,0,0.2) inset",
+      backdropFilter: "blur(8px)",
+    }}>
+      <div style={{
+        display: "flex", justifyContent: "space-between", alignItems: "center",
+        marginBottom: "18px",
+      }}>
+        <div style={{ color: C.accent, fontSize: "10px", fontWeight: 800, letterSpacing: "0.14em" }}>
+          PIPELINE
+        </div>
+        <div style={{ color: C.muted, fontSize: "10px", fontWeight: 600 }}>
+          20 active
+        </div>
+      </div>
+
+      <div style={{ display: "grid", gridTemplateColumns: "repeat(3, 1fr)", gap: "10px" }}>
+        {columns.map((col) => (
+          <div key={col.label}>
+            <div style={{
+              fontSize: "9px",
+              color: col.active ? C.accentLight : C.muted,
+              fontWeight: 700,
+              letterSpacing: "0.08em",
+              textTransform: "uppercase",
+              marginBottom: "10px",
+              display: "flex",
+              alignItems: "center",
+              gap: "6px",
+            }}>
+              <span>{col.label}</span>
+              <span style={{
+                background: col.active ? C.accent : "rgba(255,255,255,0.08)",
+                color:      col.active ? C.heroBlack : C.muted,
+                padding: "1px 6px", borderRadius: "99px",
+                fontSize: "9px", fontWeight: 800,
+              }}>{col.count}</span>
+            </div>
+            <div style={{ display: "flex", flexDirection: "column", gap: "6px" }}>
+              {Array.from({ length: Math.min(3, col.count) }).map((_, j) => {
+                const highlight = col.active && j === 0;
+                return (
+                  <div key={j} style={{
+                    background: highlight ? "rgba(184,104,61,0.14)" : "rgba(0,0,0,0.28)",
+                    border: `1px solid ${highlight ? "rgba(184,104,61,0.4)" : "rgba(255,255,255,0.06)"}`,
+                    borderRadius: "6px",
+                    padding: "8px 9px",
+                  }}>
+                    <div style={{
+                      height: "4px", width: "65%",
+                      background: highlight ? C.accentLight : "rgba(255,255,255,0.18)",
+                      borderRadius: "2px", marginBottom: "5px",
+                    }} />
+                    <div style={{
+                      height: "3px", width: "40%",
+                      background: "rgba(255,255,255,0.08)",
+                      borderRadius: "2px",
+                    }} />
+                  </div>
+                );
+              })}
+            </div>
+          </div>
+        ))}
+      </div>
+    </div>
+  );
+}
+
+// ─── Step 03: Alerts feed ─────────────────────────────────────────────────────
+
+function AlertsCard() {
+  const alerts = [
+    { mark: "!", title: "Document overdue",  sub: "Fidelity auth form · Mitchell case", time: "2h ago",  urgent: true  },
+    { mark: "⏱", title: "Task due today",    sub: "Follow up with Johnson",              time: "4h ago",  urgent: false },
+    { mark: "•", title: "Case stale",         sub: "RFT-2891 · no movement in 5 days",   time: "1d ago",  urgent: false },
+  ];
+  return (
+    <div style={{
+      width: "100%",
+      maxWidth: "460px",
+      display: "flex",
+      flexDirection: "column",
+      gap: "10px",
+    }}>
+      <div style={{
+        color: C.accent, fontSize: "10px", fontWeight: 800,
+        letterSpacing: "0.14em", marginBottom: "4px",
+      }}>
+        RECENT ALERTS
+      </div>
+      {alerts.map((a, i) => (
+        <div key={i} style={{
+          background: "rgba(22, 16, 11, 0.88)",
+          border: `1px solid ${a.urgent ? "rgba(184,104,61,0.45)" : "rgba(255,255,255,0.06)"}`,
+          borderLeft: `3px solid ${a.urgent ? C.accent : "rgba(184,104,61,0.3)"}`,
+          borderRadius: "8px",
+          padding: "14px 16px",
+          display: "flex",
+          gap: "12px",
+          boxShadow: "0 12px 30px rgba(0,0,0,0.35)",
+          backdropFilter: "blur(8px)",
+        }}>
+          <div style={{
+            width: "30px", height: "30px",
+            borderRadius: "6px",
+            background: a.urgent ? "rgba(184,104,61,0.2)" : "rgba(184,104,61,0.08)",
+            border: `1px solid ${a.urgent ? "rgba(184,104,61,0.4)" : "rgba(184,104,61,0.18)"}`,
+            display: "flex", alignItems: "center", justifyContent: "center",
+            flexShrink: 0,
+            color: C.accentLight,
+            fontSize: "13px",
+            fontWeight: 800,
+          }}>
+            {a.mark}
+          </div>
+          <div style={{ flex: 1, minWidth: 0 }}>
+            <div style={{
+              display: "flex", justifyContent: "space-between", alignItems: "baseline",
+              gap: "10px", marginBottom: "3px",
+            }}>
+              <div style={{ color: C.warmWhite, fontSize: "12px", fontWeight: 700 }}>{a.title}</div>
+              <div style={{ color: C.muted, fontSize: "10px", flexShrink: 0 }}>{a.time}</div>
+            </div>
+            <div style={{ color: C.muted, fontSize: "11px" }}>{a.sub}</div>
+          </div>
+        </div>
+      ))}
+    </div>
+  );
+}
+
+// ─── Step 04: Audit trail ─────────────────────────────────────────────────────
+
+function AuditCard() {
+  const events = [
+    { label: "Case created",            date: "Mar 15", time: "10:24" },
+    { label: "Documents received",      date: "Mar 18", time: "14:07" },
+    { label: "Submitted to custodian",  date: "Mar 22", time: "09:15" },
+    { label: "Confirmed by receiving",  date: "Mar 24", time: "11:42" },
+    { label: "Case closed",             date: "Mar 25", time: "16:30" },
+  ];
+  return (
+    <div style={{
+      width: "100%",
+      maxWidth: "460px",
+      background: "rgba(22, 16, 11, 0.88)",
+      border: `1px solid rgba(184,104,61,0.28)`,
+      borderRadius: "14px",
+      padding: "26px",
+      boxShadow: "0 24px 70px rgba(0,0,0,0.5), 0 0 0 1px rgba(0,0,0,0.2) inset",
+      backdropFilter: "blur(8px)",
+    }}>
+      <div style={{ display: "flex", alignItems: "center", gap: "12px", marginBottom: "4px" }}>
+        <div style={{
+          width: "26px", height: "26px",
+          borderRadius: "50%",
+          background: C.accent,
+          display: "flex", alignItems: "center", justifyContent: "center",
+          boxShadow: `0 0 16px ${C.accent}66`,
+        }}>
+          <svg width="14" height="14" viewBox="0 0 14 14" fill="none">
+            <path d="M2 7l3 3 7-7" stroke={C.heroBlack} strokeWidth="2.4" strokeLinecap="round" strokeLinejoin="round"/>
           </svg>
         </div>
+        <div style={{
+          color: C.warmWhite, fontSize: "13px", fontWeight: 800,
+          letterSpacing: "0.08em",
+        }}>
+          CASE CLOSED
+        </div>
+      </div>
+      <div style={{
+        color: C.muted, fontSize: "11px", marginBottom: "22px", paddingLeft: "38px",
+      }}>
+        RFT-2847 · Sarah Mitchell · $125,400
+      </div>
 
+      <div style={{
+        paddingTop: "16px",
+        borderTop: "1px solid rgba(184,104,61,0.14)",
+      }}>
+        <div style={{
+          fontSize: "9px", color: C.muted, letterSpacing: "0.1em",
+          textTransform: "uppercase", marginBottom: "12px", fontWeight: 700,
+        }}>
+          Audit Trail
+        </div>
+        {events.map((ev, i) => {
+          const last = i === events.length - 1;
+          return (
+            <div key={i} style={{
+              display: "flex", alignItems: "center", gap: "12px",
+              padding: "6px 0",
+            }}>
+              <div style={{
+                width: "8px", height: "8px",
+                borderRadius: "50%",
+                background: last ? C.accent : "rgba(184,104,61,0.45)",
+                flexShrink: 0,
+                boxShadow: last ? `0 0 10px ${C.accent}` : "none",
+              }} />
+              <div style={{ flex: 1, color: C.warmWhite, fontSize: "12px", fontWeight: 500 }}>
+                {ev.label}
+              </div>
+              <div style={{
+                color: C.muted, fontSize: "10px",
+                fontFamily: "ui-monospace, SFMono-Regular, Menlo, monospace",
+              }}>
+                {ev.date} · {ev.time}
+              </div>
+            </div>
+          );
+        })}
       </div>
     </div>
   );
@@ -627,19 +1071,19 @@ export default function LandingPage() {
         style={{
           background: "rgba(12, 10, 7, 0.85)",
           backdropFilter: "blur(16px)",
-          borderBottom: "1px solid rgba(201, 146, 42, 0.12)",
+          borderBottom: "1px solid rgba(184,104,61,0.12)",
         }}
       >
         {/* Wordmark logo — two overlapping rectangles form the "R" */}
         <Link href="/" className="flex items-center gap-2.5 select-none">
           <svg width="32" height="28" viewBox="0 0 32 28" fill="none">
-            <rect x="0" y="0" width="14" height="28" rx="2" fill={C.gold}/>
-            <rect x="6" y="0" width="18" height="14" rx="2" fill={C.goldLight} opacity="0.85"/>
-            <rect x="12" y="12" width="16" height="16" rx="2" fill={C.gold} opacity="0.6"/>
+            <rect x="0" y="0" width="14" height="28" rx="2" fill={C.accent}/>
+            <rect x="6" y="0" width="18" height="14" rx="2" fill={C.accentLight} opacity="0.85"/>
+            <rect x="12" y="12" width="16" height="16" rx="2" fill={C.accent} opacity="0.6"/>
           </svg>
           <span
             className="text-xl font-black tracking-tight"
-            style={{ color: C.gold, letterSpacing: "-0.02em" }}
+            style={{ color: C.accent, letterSpacing: "-0.02em" }}
           >
             Rift
           </span>
@@ -660,8 +1104,8 @@ export default function LandingPage() {
             onClick={() => setDemoOpen(true)}
             className="rounded-lg px-4 py-2 text-sm font-semibold transition-all hover:bg-amber-600/10"
             style={{
-              border: `1.5px solid ${C.gold}`,
-              color: C.gold,
+              border: `1.5px solid ${C.accent}`,
+              color: C.accent,
             }}
           >
             Request Demo
@@ -687,30 +1131,30 @@ export default function LandingPage() {
           fill="none"
           style={{ opacity: 0.12 }}
         >
-          <circle cx="540" cy="60" r="340" stroke={C.gold} strokeWidth="1.2" fill="none"/>
-          <circle cx="540" cy="60" r="280" stroke={C.goldLight} strokeWidth="0.6" fill="none"/>
+          <circle cx="540" cy="60" r="340" stroke={C.accent} strokeWidth="1.2" fill="none"/>
+          <circle cx="540" cy="60" r="280" stroke={C.accentLight} strokeWidth="0.6" fill="none"/>
         </svg>
 
-        <div className="relative z-10 w-full max-w-7xl mx-auto px-8 py-20 flex flex-col lg:flex-row items-center gap-16">
-          {/* Left: copy — 55% */}
-          <div className="flex-1 max-w-xl">
+        <div className="relative z-10 w-full max-w-7xl mx-auto px-8 py-20 grid lg:grid-cols-2 gap-16 items-center">
+          {/* Left: copy */}
+          <div>
             {/* Overline */}
             <div className="flex items-center gap-3 mb-8">
-              <div style={{ width: "32px", height: "1px", background: C.gold }}/>
+              <div style={{ width: "32px", height: "1px", background: C.accent }}/>
               <span
                 className="text-xs font-bold uppercase tracking-widest"
-                style={{ color: C.gold }}
+                style={{ color: C.accent }}
               >
                 Rollover management software
               </span>
             </div>
 
-            <h1 className="text-5xl lg:text-6xl font-black leading-none mb-4">
+            <h1 className="text-6xl lg:text-7xl font-black leading-none mb-4">
               <span style={{ color: C.warmWhite }}>The rollover command center</span>
               <br />
               <span
                 style={{
-                  color: C.gold,
+                  color: C.accent,
                   fontStyle: "italic",
                 }}
               >
@@ -722,7 +1166,7 @@ export default function LandingPage() {
             <div
               style={{
                 height: "1px",
-                background: `linear-gradient(90deg, ${C.gold}, transparent)`,
+                background: `linear-gradient(90deg, ${C.accent}, transparent)`,
                 marginTop: "20px",
                 marginBottom: "20px",
                 maxWidth: "320px",
@@ -741,7 +1185,7 @@ export default function LandingPage() {
               <Link
                 href="/sign-in"
                 className="inline-flex items-center justify-center px-6 py-3 rounded-xl text-sm font-bold transition-opacity hover:opacity-90"
-                style={{ background: C.gold, color: "#0c0a07" }}
+                style={{ background: C.accent, color: "#0c0a07" }}
               >
                 Finance Professional Sign In
               </Link>
@@ -750,14 +1194,14 @@ export default function LandingPage() {
                 onClick={() => setDemoOpen(true)}
                 className="inline-flex items-center justify-center gap-2 px-6 py-3 rounded-xl text-sm font-semibold transition-all hover:bg-amber-900/20"
                 style={{
-                  border: `1.5px solid ${C.gold}`,
-                  color: C.gold,
+                  border: `1.5px solid ${C.accent}`,
+                  color: C.accent,
                 }}
               >
                 Individual Investor Sign In
                 <span
                   className="text-xs font-bold px-1.5 py-0.5 rounded"
-                  style={{ background: "rgba(201,146,42,0.18)", color: C.goldLight, fontSize: "10px" }}
+                  style={{ background: "rgba(184,104,61,0.18)", color: C.accentLight, fontSize: "10px" }}
                 >
                   Soon
                 </span>
@@ -769,23 +1213,23 @@ export default function LandingPage() {
                 style={{ color: C.muted }}
               >
                 Request a Demo
-                <span className="demo-btn-arrow" style={{ color: C.gold }}>→</span>
+                <span className="demo-btn-arrow" style={{ color: C.accent }}>→</span>
               </button>
             </div>
           </div>
 
           {/* Right: pipeline stage visualization */}
-          <div className="flex-shrink-0 w-72">
+          <div className="flex justify-center lg:justify-end">
             <div
-              className="relative rounded-2xl px-5 py-6"
+              className="relative rounded-2xl px-6 py-7 w-full max-w-sm"
               style={{
                 background: "rgba(255,255,255,0.03)",
-                border: "1px solid rgba(201, 146, 42, 0.18)",
+                border: "1px solid rgba(184,104,61,0.18)",
               }}
             >
               <p
                 className="text-xs font-bold uppercase tracking-widest mb-5"
-                style={{ color: C.gold }}
+                style={{ color: C.accent }}
               >
                 Case Pipeline
               </p>
@@ -796,8 +1240,8 @@ export default function LandingPage() {
                     <div
                       className="flex items-center justify-between px-3 py-2.5 rounded-lg"
                       style={{
-                        border: stage.active ? `1.5px solid ${C.gold}` : "1.5px solid transparent",
-                        background: stage.active ? "rgba(201,146,42,0.08)" : "rgba(255,255,255,0.02)",
+                        border: stage.active ? `1.5px solid ${C.accent}` : "1.5px solid transparent",
+                        background: stage.active ? "rgba(184,104,61,0.08)" : "rgba(255,255,255,0.02)",
                       }}
                     >
                       <div className="flex items-center gap-2.5">
@@ -806,7 +1250,7 @@ export default function LandingPage() {
                             width: "7px",
                             height: "7px",
                             borderRadius: "50%",
-                            background: stage.active ? C.gold : "rgba(156,143,122,0.4)",
+                            background: stage.active ? C.accent : "rgba(156,143,122,0.4)",
                             flexShrink: 0,
                           }}
                         />
@@ -819,7 +1263,7 @@ export default function LandingPage() {
                         {stage.active && (
                           <span
                             className="text-xs font-bold px-1.5 py-0.5 rounded"
-                            style={{ background: C.gold, color: "#0c0a07", fontSize: "9px" }}
+                            style={{ background: C.accent, color: "#0c0a07", fontSize: "9px" }}
                           >
                             ACTIVE
                           </span>
@@ -827,7 +1271,7 @@ export default function LandingPage() {
                       </div>
                       <span
                         className="text-xs tabular-nums"
-                        style={{ color: stage.active ? C.goldLight : C.muted }}
+                        style={{ color: stage.active ? C.accentLight : C.muted }}
                       >
                         {stage.count}
                       </span>
@@ -839,7 +1283,7 @@ export default function LandingPage() {
                           style={{
                             width: "1px",
                             height: "8px",
-                            borderLeft: `1px dashed ${C.gold}`,
+                            borderLeft: `1px dashed ${C.accent}`,
                             opacity: 0.35,
                           }}
                         />
@@ -851,10 +1295,10 @@ export default function LandingPage() {
 
               <div
                 className="mt-5 pt-4"
-                style={{ borderTop: "1px solid rgba(201,146,42,0.12)" }}
+                style={{ borderTop: "1px solid rgba(184,104,61,0.12)" }}
               >
                 <p className="text-xs" style={{ color: C.muted }}>
-                  <span style={{ color: C.goldLight, fontWeight: 600 }}>34</span> total active cases
+                  <span style={{ color: C.accentLight, fontWeight: 600 }}>34</span> total active cases
                 </p>
               </div>
             </div>
@@ -867,22 +1311,22 @@ export default function LandingPage() {
         className="py-14 overflow-hidden"
         style={{
           background: C.darkGreen,
-          borderTop: `1px solid rgba(201,146,42,0.15)`,
-          borderBottom: `1px solid rgba(201,146,42,0.15)`,
+          borderTop: `1px solid rgba(184,104,61,0.15)`,
+          borderBottom: `1px solid rgba(184,104,61,0.15)`,
         }}
       >
         <p
           className="text-center text-sm font-bold uppercase tracking-widest mb-7"
-          style={{ color: "rgba(201,146,42,0.55)" }}
+          style={{ color: "rgba(184,104,61,0.55)" }}
         >
           Trusted by firms across the country
         </p>
         <div className="overflow-hidden">
           <div className="marquee-track flex gap-0 whitespace-nowrap">
             {[...TRUSTED_FIRMS, ...TRUSTED_FIRMS].map((firm, i) => (
-              <span key={i} className="inline-flex items-center gap-8 px-10 text-2xl font-semibold" style={{ color: C.gold }}>
+              <span key={i} className="inline-flex items-center gap-8 px-10 text-2xl font-semibold" style={{ color: C.accent }}>
                 {firm}
-                <span style={{ color: "rgba(201,146,42,0.35)", fontSize: "26px", lineHeight: 1 }}>◆</span>
+                <span style={{ color: "rgba(184,104,61,0.35)", fontSize: "26px", lineHeight: 1 }}>◆</span>
               </span>
             ))}
           </div>
@@ -900,7 +1344,7 @@ export default function LandingPage() {
               <div key={s.label} className="py-2">
                 <div
                   className="text-4xl font-black mb-1"
-                  style={{ color: C.gold }}
+                  style={{ color: C.accent }}
                 >
                   {s.value}
                 </div>
@@ -919,7 +1363,7 @@ export default function LandingPage() {
           <div className="text-center mb-12">
             <span
               className="text-xs font-bold uppercase tracking-widest"
-              style={{ color: C.gold }}
+              style={{ color: C.accent }}
             >
               The difference
             </span>
@@ -969,12 +1413,12 @@ export default function LandingPage() {
               className="rounded-2xl p-8"
               style={{
                 background: C.darkGreen,
-                border: `2px solid rgba(201,146,42,0.3)`,
+                border: `2px solid rgba(184,104,61,0.3)`,
               }}
             >
               <div
                 className="text-sm font-black uppercase tracking-widest mb-5"
-                style={{ color: C.goldLight }}
+                style={{ color: C.accentLight }}
               >
                 ✓ With Rift
               </div>
@@ -988,7 +1432,7 @@ export default function LandingPage() {
                 <div key={item} className="flex items-start gap-3 mb-4">
                   <span
                     className="mt-0.5 text-sm font-bold flex-shrink-0"
-                    style={{ color: C.gold }}
+                    style={{ color: C.accent }}
                   >
                     ✓
                   </span>
@@ -1008,7 +1452,7 @@ export default function LandingPage() {
           <div className="text-center mb-12">
             <span
               className="text-xs font-bold uppercase tracking-widest"
-              style={{ color: C.gold }}
+              style={{ color: C.accent }}
             >
               Features
             </span>
@@ -1044,7 +1488,7 @@ export default function LandingPage() {
       </section>
 
       {/* ── HOW IT WORKS ────────────────────────────────────────────────────── */}
-      <section className="relative" style={{ background: C.darkGreen }}>
+      <section className="relative" style={{ background: C.heroBlack }}>
         {/* Hatch texture overlay */}
         <div
           className="absolute inset-0 pointer-events-none"
@@ -1064,7 +1508,7 @@ export default function LandingPage() {
           <div className="text-center mb-12">
             <span
               className="text-xs font-bold uppercase tracking-widest"
-              style={{ color: C.gold }}
+              style={{ color: C.accent }}
             >
               What teams say
             </span>
@@ -1081,7 +1525,7 @@ export default function LandingPage() {
                 style={{
                   background: "#f5f0e8",
                   border: "1.5px solid #d8cfc4",
-                  borderLeft: `4px solid ${C.gold}`,
+                  borderLeft: `4px solid ${C.accent}`,
                 }}
               >
                 <p
@@ -1094,14 +1538,14 @@ export default function LandingPage() {
                 <div className="flex items-center gap-3">
                   <div
                     className="w-9 h-9 rounded-full flex items-center justify-center text-xs font-black flex-shrink-0"
-                    style={{ background: C.darkGreen, color: C.goldLight }}
+                    style={{ background: C.darkGreen, color: C.accentLight }}
                   >
                     {t.initials}
                   </div>
                   <div>
                     <div
                       className="text-sm font-bold"
-                      style={{ color: C.gold }}
+                      style={{ color: C.accent }}
                     >
                       {t.name}
                     </div>
@@ -1120,7 +1564,7 @@ export default function LandingPage() {
       <section
         className="py-24 px-8 relative overflow-hidden"
         style={{
-          background: C.heroBlack,
+          background: C.darkGreen,
           backgroundImage: C.diagonalHatch,
           backgroundSize: "20px 20px",
         }}
@@ -1134,7 +1578,7 @@ export default function LandingPage() {
           fill="none"
           style={{ opacity: 0.07 }}
         >
-          <circle cx="-40" cy="420" r="320" stroke={C.gold} strokeWidth="1" fill="none"/>
+          <circle cx="-40" cy="420" r="320" stroke={C.accent} strokeWidth="1" fill="none"/>
         </svg>
 
         <div className="relative z-10 max-w-3xl mx-auto text-center">
@@ -1152,7 +1596,7 @@ export default function LandingPage() {
             <svg width="200" height="16" viewBox="0 0 200 16" fill="none">
               <path
                 d="M10 10 Q60 2 100 8 Q140 14 190 6"
-                stroke={C.gold}
+                stroke={C.accent}
                 strokeWidth="2"
                 fill="none"
                 strokeLinecap="round"
@@ -1168,7 +1612,7 @@ export default function LandingPage() {
             <button
               onClick={() => setDemoOpen(true)}
               className="rounded-xl px-8 py-3.5 text-sm font-bold transition-opacity hover:opacity-90"
-              style={{ background: C.gold, color: "#0c0a07" }}
+              style={{ background: C.accent, color: "#0c0a07" }}
             >
               Request Demo
             </button>
@@ -1189,7 +1633,7 @@ export default function LandingPage() {
       {/* ── FOOTER ──────────────────────────────────────────────────────────── */}
       <footer
         className="px-8 pt-12 pb-8"
-        style={{ background: C.darkGreen, borderTop: `1px solid rgba(201,146,42,0.12)` }}
+        style={{ background: C.heroBlack, borderTop: `1px solid rgba(184,104,61,0.12)` }}
       >
         <div className="max-w-6xl mx-auto">
           <div className="flex flex-col md:flex-row md:items-start justify-between gap-10 mb-10">
@@ -1197,13 +1641,13 @@ export default function LandingPage() {
             <div>
               <div className="flex items-center gap-2.5 mb-3">
                 <svg width="28" height="24" viewBox="0 0 32 28" fill="none">
-                  <rect x="0" y="0" width="14" height="28" rx="2" fill={C.gold}/>
-                  <rect x="6" y="0" width="18" height="14" rx="2" fill={C.goldLight} opacity="0.85"/>
-                  <rect x="12" y="12" width="16" height="16" rx="2" fill={C.gold} opacity="0.6"/>
+                  <rect x="0" y="0" width="14" height="28" rx="2" fill={C.accent}/>
+                  <rect x="6" y="0" width="18" height="14" rx="2" fill={C.accentLight} opacity="0.85"/>
+                  <rect x="12" y="12" width="16" height="16" rx="2" fill={C.accent} opacity="0.6"/>
                 </svg>
                 <span
                   className="text-lg font-black"
-                  style={{ color: C.gold, letterSpacing: "-0.02em" }}
+                  style={{ color: C.accent, letterSpacing: "-0.02em" }}
                 >
                   Rift
                 </span>
@@ -1218,7 +1662,7 @@ export default function LandingPage() {
               <div>
                 <div
                   className="text-xs font-bold uppercase tracking-widest mb-4"
-                  style={{ color: "rgba(201,146,42,0.6)" }}
+                  style={{ color: "rgba(184,104,61,0.6)" }}
                 >
                   Product
                 </div>
@@ -1236,7 +1680,7 @@ export default function LandingPage() {
               <div>
                 <div
                   className="text-xs font-bold uppercase tracking-widest mb-4"
-                  style={{ color: "rgba(201,146,42,0.6)" }}
+                  style={{ color: "rgba(184,104,61,0.6)" }}
                 >
                   Company
                 </div>
@@ -1256,7 +1700,7 @@ export default function LandingPage() {
 
           <div
             className="flex flex-col sm:flex-row items-center justify-between pt-6 gap-3"
-            style={{ borderTop: "1px solid rgba(201,146,42,0.1)" }}
+            style={{ borderTop: "1px solid rgba(184,104,61,0.1)" }}
           >
             <p className="text-xs" style={{ color: "rgba(156,143,122,0.55)" }}>
               © 2024 Rift Technologies, Inc. All rights reserved.
