@@ -4,18 +4,18 @@ import { useState, useRef, useEffect } from "react";
 import Link from "next/link";
 
 // ─── Design tokens ─────────────────────────────────────────────────────────────
-// Accent is copper (#b8683d / rgb 184,104,61) — replaces the previous gold.
-// If you hand-write rgba for the accent, use rgba(184,104,61,α).
+// Accent is gold/bronze (#b8860b / #d4a017). If you hand-write rgba, use rgba(184,134,11,α).
 const C = {
   heroBlack: "#0c0a07",
-  accent: "#b8683d",
-  accentLight: "#e0905c",
+  accent: "#b8860b",
+  accentLight: "#d4a017",
   cream: "#faf8f4",
   darkGreen: "#0b1f14",
   warmWhite: "#f5f0e8",
   muted: "#9c8f7a",
   diagonalHatch: `repeating-linear-gradient(45deg, rgba(255,255,255,0.03) 0, rgba(255,255,255,0.03) 1px, transparent 0, transparent 50%)`,
 };
+
 
 // ─── Data ──────────────────────────────────────────────────────────────────────
 
@@ -65,7 +65,7 @@ const FEATURES = [
   {
     title: "Case Pipeline",
     desc: "A clear status model from Intake to Completed. Every case has a single source of truth — no more hunting through email threads.",
-    span: "col-span-3 row-span-2",
+    span: "",
     accentColor: C.accent,
     icon: (
       <svg width="48" height="48" viewBox="0 0 48 48" fill="none">
@@ -92,7 +92,7 @@ const FEATURES = [
   {
     title: "Smart Checklists",
     desc: "Auto-generated required document checklists per rollover type. Track what's been requested, received, and reviewed.",
-    span: "col-span-3 row-span-1",
+    span: "",
     accentColor: "#4a7c59",
     icon: (
       <svg width="40" height="40" viewBox="0 0 40 40" fill="none">
@@ -110,7 +110,7 @@ const FEATURES = [
   {
     title: "Task Engine",
     desc: "Assign work to advisors or ops with due dates and status tracking. Get alerts before tasks go overdue.",
-    span: "col-span-2 row-span-1",
+    span: "",
     accentColor: "#b07d2a",
     icon: (
       <svg width="40" height="40" viewBox="0 0 40 40" fill="none">
@@ -134,7 +134,7 @@ const FEATURES = [
   {
     title: "Document Vault",
     desc: "Secure file storage tied directly to each case. No more emailing PDFs back and forth.",
-    span: "col-span-2 row-span-1",
+    span: "",
     accentColor: "#7b5ea7",
     icon: (
       <svg width="40" height="40" viewBox="0 0 40 40" fill="none">
@@ -155,7 +155,7 @@ const FEATURES = [
   {
     title: "Compliance Audit Trail",
     desc: "Every status change, note, and action is logged with a timestamp and actor. Always know what happened and when.",
-    span: "col-span-2 row-span-1",
+    span: "",
     accentColor: "#c04a3a",
     icon: (
       <svg width="40" height="40" viewBox="0 0 40 40" fill="none">
@@ -184,7 +184,7 @@ const FEATURES = [
   {
     title: "Team Coordination",
     desc: "Advisors and ops work from the same case view. Assign roles, see who owns what, and never duplicate effort.",
-    span: "col-span-3 row-span-1",
+    span: "",
     accentColor: "#3a6b8a",
     icon: (
       <svg width="40" height="40" viewBox="0 0 40 40" fill="none">
@@ -562,7 +562,7 @@ function ProcessTimeline() {
             marginTop: "32px",
             height: "1px",
             width: "100%",
-            background: "rgba(184,104,61,0.12)",
+            background: "rgba(184,134,11,0.12)",
             position: "relative",
           }}>
             <div
@@ -689,9 +689,9 @@ function StepPanel({ step, index }: { step: Step; index: number }) {
             <div style={{ marginBottom: "14px" }}>
               <span style={{
                 display: "inline-block",
-                background: "rgba(184,104,61,0.15)",
+                background: "rgba(184,134,11,0.15)",
                 color: C.accentLight,
-                border: `1px solid rgba(184,104,61,0.35)`,
+                border: `1px solid rgba(184,134,11,0.35)`,
                 fontSize: "10px",
                 fontWeight: 700,
                 letterSpacing: "0.12em",
@@ -753,7 +753,7 @@ function NewCaseCard() {
       width: "100%",
       maxWidth: "460px",
       background: "rgba(22, 16, 11, 0.88)",
-      border: `1px solid rgba(184,104,61,0.28)`,
+      border: `1px solid rgba(184,134,11,0.28)`,
       borderRadius: "14px",
       padding: "28px",
       boxShadow: "0 24px 70px rgba(0,0,0,0.5), 0 0 0 1px rgba(0,0,0,0.2) inset",
@@ -765,8 +765,8 @@ function NewCaseCard() {
         </div>
         <div style={{
           fontSize: "9px", fontWeight: 700, color: C.accentLight,
-          background: "rgba(184,104,61,0.15)",
-          border: `1px solid rgba(184,104,61,0.3)`,
+          background: "rgba(184,134,11,0.15)",
+          border: `1px solid rgba(184,134,11,0.3)`,
           padding: "3px 10px", borderRadius: "999px",
           letterSpacing: "0.08em",
         }}>INTAKE</div>
@@ -794,7 +794,7 @@ function NewCaseCard() {
 
       <div style={{
         marginTop: "20px", paddingTop: "16px",
-        borderTop: "1px solid rgba(184,104,61,0.14)",
+        borderTop: "1px solid rgba(184,134,11,0.14)",
       }}>
         <div style={{
           fontSize: "9px", color: C.muted, letterSpacing: "0.1em",
@@ -837,7 +837,7 @@ function PipelineCard() {
       width: "100%",
       maxWidth: "500px",
       background: "rgba(22, 16, 11, 0.88)",
-      border: `1px solid rgba(184,104,61,0.28)`,
+      border: `1px solid rgba(184,134,11,0.28)`,
       borderRadius: "14px",
       padding: "24px",
       boxShadow: "0 24px 70px rgba(0,0,0,0.5), 0 0 0 1px rgba(0,0,0,0.2) inset",
@@ -882,8 +882,8 @@ function PipelineCard() {
                 const highlight = col.active && j === 0;
                 return (
                   <div key={j} style={{
-                    background: highlight ? "rgba(184,104,61,0.14)" : "rgba(0,0,0,0.28)",
-                    border: `1px solid ${highlight ? "rgba(184,104,61,0.4)" : "rgba(255,255,255,0.06)"}`,
+                    background: highlight ? "rgba(184,134,11,0.14)" : "rgba(0,0,0,0.28)",
+                    border: `1px solid ${highlight ? "rgba(184,134,11,0.4)" : "rgba(255,255,255,0.06)"}`,
                     borderRadius: "6px",
                     padding: "8px 9px",
                   }}>
@@ -933,8 +933,8 @@ function AlertsCard() {
       {alerts.map((a, i) => (
         <div key={i} style={{
           background: "rgba(22, 16, 11, 0.88)",
-          border: `1px solid ${a.urgent ? "rgba(184,104,61,0.45)" : "rgba(255,255,255,0.06)"}`,
-          borderLeft: `3px solid ${a.urgent ? C.accent : "rgba(184,104,61,0.3)"}`,
+          border: `1px solid ${a.urgent ? "rgba(184,134,11,0.45)" : "rgba(255,255,255,0.06)"}`,
+          borderLeft: `3px solid ${a.urgent ? C.accent : "rgba(184,134,11,0.3)"}`,
           borderRadius: "8px",
           padding: "14px 16px",
           display: "flex",
@@ -945,8 +945,8 @@ function AlertsCard() {
           <div style={{
             width: "30px", height: "30px",
             borderRadius: "6px",
-            background: a.urgent ? "rgba(184,104,61,0.2)" : "rgba(184,104,61,0.08)",
-            border: `1px solid ${a.urgent ? "rgba(184,104,61,0.4)" : "rgba(184,104,61,0.18)"}`,
+            background: a.urgent ? "rgba(184,134,11,0.2)" : "rgba(184,134,11,0.08)",
+            border: `1px solid ${a.urgent ? "rgba(184,134,11,0.4)" : "rgba(184,134,11,0.18)"}`,
             display: "flex", alignItems: "center", justifyContent: "center",
             flexShrink: 0,
             color: C.accentLight,
@@ -986,7 +986,7 @@ function AuditCard() {
       width: "100%",
       maxWidth: "460px",
       background: "rgba(22, 16, 11, 0.88)",
-      border: `1px solid rgba(184,104,61,0.28)`,
+      border: `1px solid rgba(184,134,11,0.28)`,
       borderRadius: "14px",
       padding: "26px",
       boxShadow: "0 24px 70px rgba(0,0,0,0.5), 0 0 0 1px rgba(0,0,0,0.2) inset",
@@ -1019,7 +1019,7 @@ function AuditCard() {
 
       <div style={{
         paddingTop: "16px",
-        borderTop: "1px solid rgba(184,104,61,0.14)",
+        borderTop: "1px solid rgba(184,134,11,0.14)",
       }}>
         <div style={{
           fontSize: "9px", color: C.muted, letterSpacing: "0.1em",
@@ -1037,7 +1037,7 @@ function AuditCard() {
               <div style={{
                 width: "8px", height: "8px",
                 borderRadius: "50%",
-                background: last ? C.accent : "rgba(184,104,61,0.45)",
+                background: last ? C.accent : "rgba(184,134,11,0.45)",
                 flexShrink: 0,
                 boxShadow: last ? `0 0 10px ${C.accent}` : "none",
               }} />
@@ -1071,7 +1071,7 @@ export default function LandingPage() {
         style={{
           background: "rgba(12, 10, 7, 0.85)",
           backdropFilter: "blur(16px)",
-          borderBottom: "1px solid rgba(184,104,61,0.12)",
+          borderBottom: "1px solid rgba(184,134,11,0.12)",
         }}
       >
         {/* Wordmark logo — two overlapping rectangles form the "R" */}
@@ -1100,9 +1100,16 @@ export default function LandingPage() {
               {label}
             </Link>
           ))}
+          <Link
+            href="/login"
+            className="text-sm font-semibold transition-opacity hover:opacity-80"
+            style={{ color: C.accent }}
+          >
+            Sign In
+          </Link>
           <button
             onClick={() => setDemoOpen(true)}
-            className="rounded-lg px-4 py-2 text-sm font-semibold transition-all hover:bg-amber-600/10"
+            className="rounded-lg px-4 py-2 text-sm font-semibold transition-all hover:bg-yellow-600/10"
             style={{
               border: `1.5px solid ${C.accent}`,
               color: C.accent,
@@ -1135,7 +1142,7 @@ export default function LandingPage() {
           <circle cx="540" cy="60" r="280" stroke={C.accentLight} strokeWidth="0.6" fill="none"/>
         </svg>
 
-        <div className="relative z-10 w-full max-w-7xl mx-auto px-8 py-20 grid lg:grid-cols-2 gap-16 items-center">
+        <div className="relative z-10 w-full max-w-7xl mx-auto px-8 py-24 grid lg:grid-cols-2 gap-16 items-center">
           {/* Left: copy */}
           <div>
             {/* Overline */}
@@ -1183,7 +1190,7 @@ export default function LandingPage() {
             {/* CTAs */}
             <div className="flex flex-col sm:flex-row flex-wrap gap-3">
               <Link
-                href="/sign-in"
+                href="/login"
                 className="inline-flex items-center justify-center px-6 py-3 rounded-xl text-sm font-bold transition-opacity hover:opacity-90"
                 style={{ background: C.accent, color: "#0c0a07" }}
               >
@@ -1192,7 +1199,7 @@ export default function LandingPage() {
 
               <button
                 onClick={() => setDemoOpen(true)}
-                className="inline-flex items-center justify-center gap-2 px-6 py-3 rounded-xl text-sm font-semibold transition-all hover:bg-amber-900/20"
+                className="inline-flex items-center justify-center gap-2 px-6 py-3 rounded-xl text-sm font-semibold transition-all hover:bg-yellow-900/20"
                 style={{
                   border: `1.5px solid ${C.accent}`,
                   color: C.accent,
@@ -1201,7 +1208,7 @@ export default function LandingPage() {
                 Individual Investor Sign In
                 <span
                   className="text-xs font-bold px-1.5 py-0.5 rounded"
-                  style={{ background: "rgba(184,104,61,0.18)", color: C.accentLight, fontSize: "10px" }}
+                  style={{ background: "rgba(184,134,11,0.18)", color: C.accentLight, fontSize: "10px" }}
                 >
                   Soon
                 </span>
@@ -1224,7 +1231,7 @@ export default function LandingPage() {
               className="relative rounded-2xl px-6 py-7 w-full max-w-sm"
               style={{
                 background: "rgba(255,255,255,0.03)",
-                border: "1px solid rgba(184,104,61,0.18)",
+                border: "1px solid rgba(184,134,11,0.18)",
               }}
             >
               <p
@@ -1241,7 +1248,7 @@ export default function LandingPage() {
                       className="flex items-center justify-between px-3 py-2.5 rounded-lg"
                       style={{
                         border: stage.active ? `1.5px solid ${C.accent}` : "1.5px solid transparent",
-                        background: stage.active ? "rgba(184,104,61,0.08)" : "rgba(255,255,255,0.02)",
+                        background: stage.active ? "rgba(184,134,11,0.08)" : "rgba(255,255,255,0.02)",
                       }}
                     >
                       <div className="flex items-center gap-2.5">
@@ -1263,7 +1270,7 @@ export default function LandingPage() {
                         {stage.active && (
                           <span
                             className="text-xs font-bold px-1.5 py-0.5 rounded"
-                            style={{ background: C.accent, color: "#0c0a07", fontSize: "9px" }}
+                            style={{ background: C.accent, color: "#fff", fontSize: "9px" }}
                           >
                             ACTIVE
                           </span>
@@ -1295,7 +1302,7 @@ export default function LandingPage() {
 
               <div
                 className="mt-5 pt-4"
-                style={{ borderTop: "1px solid rgba(184,104,61,0.12)" }}
+                style={{ borderTop: "1px solid rgba(184,134,11,0.12)" }}
               >
                 <p className="text-xs" style={{ color: C.muted }}>
                   <span style={{ color: C.accentLight, fontWeight: 600 }}>34</span> total active cases
@@ -1308,16 +1315,16 @@ export default function LandingPage() {
 
       {/* ── MARQUEE BAND ────────────────────────────────────────────────────── */}
       <section
-        className="py-14 overflow-hidden"
+        className="py-16 overflow-hidden"
         style={{
           background: C.darkGreen,
-          borderTop: `1px solid rgba(184,104,61,0.15)`,
-          borderBottom: `1px solid rgba(184,104,61,0.15)`,
+          borderTop: `1px solid rgba(184,134,11,0.15)`,
+          borderBottom: `1px solid rgba(184,134,11,0.15)`,
         }}
       >
         <p
           className="text-center text-sm font-bold uppercase tracking-widest mb-7"
-          style={{ color: "rgba(184,104,61,0.55)" }}
+          style={{ color: "rgba(184,134,11,0.55)" }}
         >
           Trusted by firms across the country
         </p>
@@ -1326,7 +1333,7 @@ export default function LandingPage() {
             {[...TRUSTED_FIRMS, ...TRUSTED_FIRMS].map((firm, i) => (
               <span key={i} className="inline-flex items-center gap-8 px-10 text-2xl font-semibold" style={{ color: C.accent }}>
                 {firm}
-                <span style={{ color: "rgba(184,104,61,0.35)", fontSize: "26px", lineHeight: 1 }}>◆</span>
+                <span style={{ color: "rgba(184,134,11,0.35)", fontSize: "26px", lineHeight: 1 }}>◆</span>
               </span>
             ))}
           </div>
@@ -1335,20 +1342,26 @@ export default function LandingPage() {
 
       {/* ── STATS ───────────────────────────────────────────────────────────── */}
       <section
-        className="py-10 px-8"
-        style={{ background: "#eee9df", borderBottom: "1px solid #d8cfc4" }}
+        className="py-16 px-8"
+        style={{ background: "#eee9df" }}
       >
-        <div className="max-w-3xl mx-auto">
-          <div className="grid grid-cols-2 md:grid-cols-4 gap-6 text-center">
-            {STATS.map((s) => (
-              <div key={s.label} className="py-2">
+        <div className="max-w-4xl mx-auto">
+          <div className="grid grid-cols-2 md:grid-cols-4 gap-8 text-center">
+            {STATS.map((s, i) => (
+              <div
+                key={s.label}
+                className="py-4"
+                style={{
+                  borderRight: i < STATS.length - 1 ? "1px solid #d8cfc4" : "none",
+                }}
+              >
                 <div
-                  className="text-4xl font-black mb-1"
-                  style={{ color: C.accent }}
+                  className="text-4xl lg:text-5xl font-black mb-2"
+                  style={{ color: C.accent, letterSpacing: "-0.03em" }}
                 >
                   {s.value}
                 </div>
-                <div className="text-sm" style={{ color: "#7a6f62" }}>
+                <div className="text-sm font-medium" style={{ color: "#7a6f62" }}>
                   {s.label}
                 </div>
               </div>
@@ -1358,18 +1371,21 @@ export default function LandingPage() {
       </section>
 
       {/* ── PROBLEM / SOLUTION ──────────────────────────────────────────────── */}
-      <section className="py-20 px-8" style={{ background: C.cream }}>
+      <section className="py-24 px-8" style={{ background: C.cream }}>
         <div className="max-w-5xl mx-auto">
-          <div className="text-center mb-12">
+          <div className="text-center mb-14">
             <span
               className="text-xs font-bold uppercase tracking-widest"
               style={{ color: C.accent }}
             >
               The difference
             </span>
-            <h2 className="text-3xl font-black mt-2" style={{ color: "#1a1510" }}>
+            <h2 className="text-3xl lg:text-4xl font-black mt-3 mb-3" style={{ color: "#1a1510" }}>
               Built for teams who know the old way is broken
             </h2>
+            <p className="text-sm mx-auto" style={{ color: "#7a6f62", maxWidth: "460px" }}>
+              Most firms still manage rollovers with spreadsheets, email threads, and guesswork. Here's what changes.
+            </p>
           </div>
 
           <div className="grid md:grid-cols-2 gap-6">
@@ -1377,15 +1393,21 @@ export default function LandingPage() {
             <div
               className="rounded-2xl p-8"
               style={{
-                border: "2px solid #c8bfb3",
+                border: "1px solid #d8cfc4",
                 background: "#f5f0e8",
+                boxShadow: "0 2px 12px rgba(0,0,0,0.03)",
               }}
             >
-              <div
-                className="text-sm font-black uppercase tracking-widest mb-5"
-                style={{ color: "#9c3a2a" }}
-              >
-                ✗ Before Rift
+              <div className="flex items-center gap-2.5 mb-6">
+                <div className="w-7 h-7 rounded-lg flex items-center justify-center" style={{ background: "#f3e5e3" }}>
+                  <span className="text-xs font-bold" style={{ color: "#c04a3a" }}>✗</span>
+                </div>
+                <span
+                  className="text-xs font-black uppercase tracking-widest"
+                  style={{ color: "#9c3a2a" }}
+                >
+                  Before Rift
+                </span>
               </div>
               {[
                 "Shared spreadsheets edited by multiple people simultaneously",
@@ -1413,14 +1435,20 @@ export default function LandingPage() {
               className="rounded-2xl p-8"
               style={{
                 background: C.darkGreen,
-                border: `2px solid rgba(184,104,61,0.3)`,
+                border: `1px solid rgba(184,134,11,0.25)`,
+                boxShadow: "0 4px 20px rgba(0,0,0,0.12)",
               }}
             >
-              <div
-                className="text-sm font-black uppercase tracking-widest mb-5"
-                style={{ color: C.accentLight }}
-              >
-                ✓ With Rift
+              <div className="flex items-center gap-2.5 mb-6">
+                <div className="w-7 h-7 rounded-lg flex items-center justify-center" style={{ background: "rgba(184,134,11,0.15)" }}>
+                  <span className="text-xs font-bold" style={{ color: C.accentLight }}>✓</span>
+                </div>
+                <span
+                  className="text-xs font-black uppercase tracking-widest"
+                  style={{ color: C.accentLight }}
+                >
+                  With Rift
+                </span>
               </div>
               {[
                 "Single source of truth for every rollover case",
@@ -1447,38 +1475,64 @@ export default function LandingPage() {
       </section>
 
       {/* ── FEATURES (BENTO GRID) ───────────────────────────────────────────── */}
-      <section className="py-20 px-8" style={{ background: C.cream }}>
-        <div className="max-w-6xl mx-auto">
-          <div className="text-center mb-12">
+      <section
+        className="py-24 px-8 relative overflow-hidden"
+        style={{
+          background: C.darkGreen,
+          borderTop: `1px solid rgba(184,134,11,0.12)`,
+          borderBottom: `1px solid rgba(184,134,11,0.12)`,
+        }}
+      >
+        {/* Subtle texture */}
+        <div
+          className="absolute inset-0 pointer-events-none"
+          style={{ backgroundImage: C.diagonalHatch, backgroundSize: "20px 20px" }}
+        />
+
+        <div className="max-w-6xl mx-auto relative z-10">
+          <div className="text-center mb-14">
             <span
               className="text-xs font-bold uppercase tracking-widest"
               style={{ color: C.accent }}
             >
               Features
             </span>
-            <h2 className="text-3xl font-black mt-2" style={{ color: "#1a1510" }}>
+            <h2 className="text-3xl lg:text-4xl font-black mt-3 mb-3" style={{ color: C.warmWhite }}>
               Everything your ops team needs
             </h2>
+            <p className="text-sm mx-auto" style={{ color: C.muted, maxWidth: "420px" }}>
+              Purpose-built tools for every stage of the rollover lifecycle.
+            </p>
           </div>
 
-          <div className="grid md:grid-cols-3 gap-6">
+          <div className="grid md:grid-cols-3 gap-5">
             {FEATURES.map((feat) => (
               <div
                 key={feat.title}
-                className="rounded-2xl p-7 flex flex-col"
+                className="rounded-2xl p-7 flex flex-col transition-all duration-200"
                 style={{
-                  background: "#f0ece4",
-                  border: "1.5px solid #d8cfc4",
+                  background: "rgba(255,255,255,0.03)",
+                  border: `1px solid rgba(184,134,11,0.15)`,
+                }}
+                onMouseEnter={(e) => {
+                  (e.currentTarget as HTMLElement).style.background = "rgba(184,134,11,0.06)";
+                  (e.currentTarget as HTMLElement).style.borderColor = "rgba(184,134,11,0.3)";
+                }}
+                onMouseLeave={(e) => {
+                  (e.currentTarget as HTMLElement).style.background = "rgba(255,255,255,0.03)";
+                  (e.currentTarget as HTMLElement).style.borderColor = "rgba(184,134,11,0.15)";
                 }}
               >
-                <div className="mb-5">{feat.icon}</div>
+                <div className="mb-5 w-12 h-12 rounded-xl flex items-center justify-center" style={{ background: "rgba(184,134,11,0.08)", border: "1px solid rgba(184,134,11,0.18)" }}>
+                  {feat.icon}
+                </div>
                 <h3
                   className="font-black text-base mb-2"
-                  style={{ color: "#1a1510" }}
+                  style={{ color: C.warmWhite }}
                 >
                   {feat.title}
                 </h3>
-                <p className="text-sm leading-relaxed" style={{ color: "#6b6050" }}>
+                <p className="text-sm leading-relaxed" style={{ color: C.muted }}>
                   {feat.desc}
                 </p>
               </div>
@@ -1488,7 +1542,7 @@ export default function LandingPage() {
       </section>
 
       {/* ── HOW IT WORKS ────────────────────────────────────────────────────── */}
-      <section className="relative" style={{ background: C.heroBlack }}>
+      <section className="relative" style={{ background: C.heroBlack, borderTop: `1px solid rgba(184,134,11,0.08)` }}>
         {/* Hatch texture overlay */}
         <div
           className="absolute inset-0 pointer-events-none"
@@ -1503,18 +1557,21 @@ export default function LandingPage() {
       </section>
 
       {/* ── TESTIMONIALS ────────────────────────────────────────────────────── */}
-      <section className="py-20 px-8" style={{ background: C.cream }}>
+      <section className="py-24 px-8" style={{ background: C.cream }}>
         <div className="max-w-6xl mx-auto">
-          <div className="text-center mb-12">
+          <div className="text-center mb-14">
             <span
               className="text-xs font-bold uppercase tracking-widest"
               style={{ color: C.accent }}
             >
               What teams say
             </span>
-            <h2 className="text-3xl font-black mt-2" style={{ color: "#1a1510" }}>
+            <h2 className="text-3xl lg:text-4xl font-black mt-3 mb-3" style={{ color: "#1a1510" }}>
               Real results from real operations teams
             </h2>
+            <p className="text-sm mx-auto" style={{ color: "#7a6f62", maxWidth: "420px" }}>
+              Don't take our word for it — hear from RIA ops teams already using Rift.
+            </p>
           </div>
 
           <div className="grid md:grid-cols-3 gap-6">
@@ -1523,19 +1580,25 @@ export default function LandingPage() {
                 key={t.name}
                 className="rounded-2xl p-8 flex flex-col justify-between"
                 style={{
-                  background: "#f5f0e8",
-                  border: "1.5px solid #d8cfc4",
-                  borderLeft: `4px solid ${C.accent}`,
+                  background: "#fff",
+                  border: "1px solid #e8e2d8",
+                  boxShadow: "0 2px 12px rgba(0,0,0,0.04)",
                 }}
               >
-                <p
-                  className="text-sm leading-relaxed mb-6"
-                  style={{ color: "#2e2820" }}
-                >
-                  {t.quote}
-                </p>
+                {/* Quote mark */}
+                <div>
+                  <svg width="28" height="20" viewBox="0 0 28 20" fill="none" className="mb-4" style={{ opacity: 0.15 }}>
+                    <path d="M0 20V12C0 5.4 4.2 1.4 12.6 0l1.4 3C9.8 4.2 7.6 6.8 7.2 10H12v10H0zm16 0V12c0-6.6 4.2-10.6 12.6-12L28 3c-4.2 1.2-6.4 3.8-6.8 7H28v10H16z" fill="#1a1510"/>
+                  </svg>
+                  <p
+                    className="text-sm leading-relaxed mb-8"
+                    style={{ color: "#2e2820" }}
+                  >
+                    {t.quote}
+                  </p>
+                </div>
 
-                <div className="flex items-center gap-3">
+                <div className="flex items-center gap-3 pt-5" style={{ borderTop: "1px solid #ece7df" }}>
                   <div
                     className="w-9 h-9 rounded-full flex items-center justify-center text-xs font-black flex-shrink-0"
                     style={{ background: C.darkGreen, color: C.accentLight }}
@@ -1545,7 +1608,7 @@ export default function LandingPage() {
                   <div>
                     <div
                       className="text-sm font-bold"
-                      style={{ color: C.accent }}
+                      style={{ color: "#1a1510" }}
                     >
                       {t.name}
                     </div>
@@ -1604,7 +1667,7 @@ export default function LandingPage() {
             </svg>
           </div>
 
-          <p className="text-base mb-10" style={{ color: C.muted, maxWidth: "480px", margin: "0 auto 40px" }}>
+          <p className="text-base leading-relaxed" style={{ color: C.muted, maxWidth: "480px", margin: "0 auto 40px" }}>
             Join 30+ RIA firms that replaced their spreadsheet chaos with a purpose-built rollover platform.
           </p>
 
@@ -1617,7 +1680,7 @@ export default function LandingPage() {
               Request Demo
             </button>
             <Link
-              href="/sign-in"
+              href="/login"
               className="rounded-xl px-8 py-3.5 text-sm font-semibold transition-all hover:bg-white/5"
               style={{
                 border: `1.5px solid rgba(245,240,232,0.35)`,
@@ -1633,7 +1696,7 @@ export default function LandingPage() {
       {/* ── FOOTER ──────────────────────────────────────────────────────────── */}
       <footer
         className="px-8 pt-12 pb-8"
-        style={{ background: C.heroBlack, borderTop: `1px solid rgba(184,104,61,0.12)` }}
+        style={{ background: C.heroBlack, borderTop: `1px solid rgba(184,134,11,0.12)` }}
       >
         <div className="max-w-6xl mx-auto">
           <div className="flex flex-col md:flex-row md:items-start justify-between gap-10 mb-10">
@@ -1662,7 +1725,7 @@ export default function LandingPage() {
               <div>
                 <div
                   className="text-xs font-bold uppercase tracking-widest mb-4"
-                  style={{ color: "rgba(184,104,61,0.6)" }}
+                  style={{ color: "rgba(184,134,11,0.6)" }}
                 >
                   Product
                 </div>
@@ -1680,7 +1743,7 @@ export default function LandingPage() {
               <div>
                 <div
                   className="text-xs font-bold uppercase tracking-widest mb-4"
-                  style={{ color: "rgba(184,104,61,0.6)" }}
+                  style={{ color: "rgba(184,134,11,0.6)" }}
                 >
                   Company
                 </div>
@@ -1700,10 +1763,10 @@ export default function LandingPage() {
 
           <div
             className="flex flex-col sm:flex-row items-center justify-between pt-6 gap-3"
-            style={{ borderTop: "1px solid rgba(184,104,61,0.1)" }}
+            style={{ borderTop: "1px solid rgba(184,134,11,0.1)" }}
           >
             <p className="text-xs" style={{ color: "rgba(156,143,122,0.55)" }}>
-              © 2024 Rift Technologies, Inc. All rights reserved.
+              © 2026 Rift Technologies, Inc. All rights reserved.
             </p>
             <div className="flex gap-6">
               {["Privacy", "Terms", "Security"].map((l) => (

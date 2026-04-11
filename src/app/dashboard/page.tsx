@@ -117,8 +117,19 @@ export default async function DashboardPage({
     ),
   }));
 
+  const userName = (session.user as any).firstName ?? session.user?.name?.split(" ")[0] ?? "Your";
+
   return (
     <>
+      <div className="mb-7">
+        <h1 className="text-2xl font-semibold tracking-tight" style={{ color: "#e4e6ea" }}>
+          {userName}&rsquo;s Dashboard
+        </h1>
+        <p className="text-sm mt-1" style={{ color: "#7d8590" }}>
+          Welcome back. Here&rsquo;s an overview of your active cases and tasks.
+        </p>
+      </div>
+
       {showWidgets && (
         <DashboardWidgets myTasks={serializedTasks} staleCases={serializedStale} />
       )}

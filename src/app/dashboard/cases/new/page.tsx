@@ -15,13 +15,5 @@ export default async function NewCasePage() {
     orderBy: { firstName: "asc" },
   });
 
-  return (
-    <div className="max-w-2xl">
-      <div className="mb-6">
-        <h1 className="text-xl font-semibold text-gray-900">New Rollover Case</h1>
-        <p className="text-sm text-gray-500 mt-0.5">Fill in the details to create a new case.</p>
-      </div>
-      <NewCaseForm users={users} />
-    </div>
-  );
+  return <NewCaseForm users={users} />;
 }
