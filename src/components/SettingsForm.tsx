@@ -63,8 +63,26 @@ const TIMEZONES = [
   "UTC",
 ];
 
-const inputCls =
-  "w-full rounded-lg border border-gray-300 px-3 py-2 text-sm text-gray-900 focus:outline-none focus:ring-2 focus:ring-blue-500 focus:border-transparent transition-shadow";
+const INPUT_STYLE: React.CSSProperties = {
+  background: "#0d1117",
+  border: "1px solid #30363d",
+  color: "#c9d1d9",
+  borderRadius: "8px",
+  fontSize: "14px",
+  caretColor: "#58a6ff",
+};
+
+const inputCls = "w-full px-3 py-2 text-sm focus:outline-none focus:ring-2 focus:ring-blue-500 transition-colors";
+
+const CARD_STYLE: React.CSSProperties = {
+  background: "#161b22",
+  border: "1px solid #21262d",
+  borderRadius: "12px",
+};
+
+const DIVIDER_STYLE: React.CSSProperties = {
+  borderTop: "1px solid #21262d",
+};
 
 type Tab = "profile" | "password" | "preferences" | "notifications";
 
@@ -79,20 +97,25 @@ export default function SettingsForm({ user, firmSettings, cronSecret }: Props) 
   return (
     <div className="max-w-2xl">
       <div className="mb-6">
-        <h1 className="text-xl font-semibold text-gray-900">Settings</h1>
-        <p className="text-sm text-gray-500 mt-0.5">Manage your profile and preferences</p>
+        <h1 className="text-2xl font-semibold tracking-tight" style={{ color: "#e4e6ea" }}>
+          Settings
+        </h1>
+        <p className="text-sm mt-1" style={{ color: "#7d8590" }}>
+          Manage your profile and preferences
+        </p>
       </div>
 
-      <div className="flex gap-1 mb-6 border-b border-gray-200">
+      {/* Tabs */}
+      <div className="flex gap-0.5 mb-6" style={{ borderBottom: "1px solid #21262d" }}>
         {tabs.map((tab) => (
           <button
             key={tab}
             onClick={() => setActiveTab(tab)}
-            className={`px-4 py-2.5 text-sm font-medium capitalize border-b-2 -mb-px transition-colors ${
-              activeTab === tab
-                ? "border-blue-600 text-blue-600"
-                : "border-transparent text-gray-500 hover:text-gray-700"
-            }`}
+            className="px-4 py-2.5 text-sm font-medium capitalize transition-colors -mb-px"
+            style={{
+              color: activeTab === tab ? "#e4e6ea" : "#7d8590",
+              borderBottom: activeTab === tab ? "2px solid #388bfd" : "2px solid transparent",
+            }}
           >
             {tab}
           </button>
@@ -141,50 +164,99 @@ function ProfileSection({ user }: { user: User }) {
   }
 
   return (
-    <div className="bg-white rounded-xl border border-gray-200 p-6 space-y-6">
+    <div style={CARD_STYLE} className="p-6 space-y-6">
+      {/* Avatar + info */}
       <div className="flex items-center gap-4">
-        <div className="w-14 h-14 rounded-full bg-blue-600 flex items-center justify-center flex-shrink-0">
-          <span className="text-white text-lg font-semibold">
-            {user.firstName.charAt(0).toUpperCase()}
-          </span>
+        <div
+          className="w-14 h-14 rounded-full flex items-center justify-center flex-shrink-0 text-lg font-semibold"
+          style={{ background: "#1f3a5f", color: "#79c0ff" }}
+        >
+          {user.firstName.charAt(0).toUpperCase()}
         </div>
         <div>
-          <p className="text-sm font-semibold text-gray-900">{user.firstName} {user.lastName}</p>
-          <p className="text-sm text-gray-500">{user.email}</p>
-          <span className="inline-flex items-center mt-1 rounded-full bg-blue-50 px-2 py-0.5 text-xs font-medium text-blue-700">
+          <p className="text-sm font-semibold" style={{ color: "#e4e6ea" }}>
+            {user.firstName} {user.lastName}
+          </p>
+          <p className="text-sm" style={{ color: "#7d8590" }}>{user.email}</p>
+          <span
+            className="inline-flex items-center mt-1.5 rounded-full px-2 py-0.5 text-xs font-medium"
+            style={{ background: "#162032", color: "#79c0ff" }}
+          >
             {ROLE_LABELS[user.role] ?? user.role}
           </span>
         </div>
       </div>
 
-      <div className="border-t border-gray-100" />
+      <div style={DIVIDER_STYLE} />
 
       <form onSubmit={handleSave} className="space-y-4">
         <div className="grid grid-cols-2 gap-4">
           <div>
-            <label className="block text-xs font-medium text-gray-600 mb-1.5">First Name</label>
-            <input type="text" value={firstName} onChange={(e) => setFirstName(e.target.value)} required className={inputCls} />
+            <label className="block text-xs font-medium mb-1.5" style={{ color: "#7d8590" }}>
+              First Name
+            </label>
+            <input
+              type="text"
+              value={firstName}
+              onChange={(e) => setFirstName(e.target.value)}
+              required
+              className={inputCls}
+              style={INPUT_STYLE}
+            />
           </div>
           <div>
-            <label className="block text-xs font-medium text-gray-600 mb-1.5">Last Name</label>
-            <input type="text" value={lastName} onChange={(e) => setLastName(e.target.value)} required className={inputCls} />
+            <label className="block text-xs font-medium mb-1.5" style={{ color: "#7d8590" }}>
+              Last Name
+            </label>
+            <input
+              type="text"
+              value={lastName}
+              onChange={(e) => setLastName(e.target.value)}
+              required
+              className={inputCls}
+              style={INPUT_STYLE}
+            />
           </div>
         </div>
+
         <div>
-          <label className="block text-xs font-medium text-gray-600 mb-1.5">Email address</label>
-          <input type="email" value={user.email} readOnly className="w-full rounded-lg border border-gray-200 px-3 py-2 text-sm text-gray-500 bg-gray-50 cursor-not-allowed" />
-          <p className="text-xs text-gray-400 mt-1">Email cannot be changed. Contact your admin.</p>
+          <label className="block text-xs font-medium mb-1.5" style={{ color: "#7d8590" }}>
+            Email address
+          </label>
+          <input
+            type="email"
+            value={user.email}
+            readOnly
+            className="w-full rounded-lg px-3 py-2 text-sm cursor-not-allowed"
+            style={{
+              background: "#161b22",
+              border: "1px solid #21262d",
+              color: "#484f58",
+            }}
+          />
+          <p className="text-xs mt-1" style={{ color: "#484f58" }}>
+            Email cannot be changed. Contact your admin.
+          </p>
         </div>
+
         <div className="flex items-center justify-between pt-2">
-          <p className="text-xs text-gray-400">Member since {formatDate(user.createdAt)}</p>
+          <p className="text-xs" style={{ color: "#484f58" }}>
+            Member since {formatDate(user.createdAt)}
+          </p>
           <div className="flex items-center gap-3">
             {message && (
-              <span className={`text-xs ${message.type === "success" ? "text-green-600" : "text-red-600"}`}>{message.text}</span>
+              <span
+                className="text-xs"
+                style={{ color: message.type === "success" ? "#3fb950" : "#f87171" }}
+              >
+                {message.text}
+              </span>
             )}
             <button
               type="submit"
               disabled={saving || !isDirty}
-              className="rounded-lg bg-blue-600 px-4 py-2 text-sm font-medium text-white hover:bg-blue-700 disabled:opacity-50 disabled:cursor-not-allowed transition-colors"
+              className="rounded-lg px-4 py-2 text-sm font-medium text-white transition-colors disabled:opacity-50 disabled:cursor-not-allowed"
+              style={{ background: "#2563eb" }}
             >
               {saving ? "Saving…" : "Save Changes"}
             </button>
@@ -230,27 +302,87 @@ function PasswordSection() {
   }
 
   return (
-    <div className="bg-white rounded-xl border border-gray-200 p-6">
+    <div style={CARD_STYLE} className="p-6">
       <form onSubmit={handleSave} className="space-y-4">
         <div>
-          <label className="block text-xs font-medium text-gray-600 mb-1.5">Current Password</label>
-          <input type="password" value={current} onChange={(e) => setCurrent(e.target.value)} required autoComplete="current-password" placeholder="••••••••" className={inputCls} />
+          <label className="block text-xs font-medium mb-1.5" style={{ color: "#7d8590" }}>
+            Current Password
+          </label>
+          <input
+            type="password"
+            value={current}
+            onChange={(e) => setCurrent(e.target.value)}
+            required
+            autoComplete="current-password"
+            placeholder="••••••••"
+            className={inputCls}
+            style={INPUT_STYLE}
+          />
         </div>
+
         <div>
-          <label className="block text-xs font-medium text-gray-600 mb-1.5">New Password</label>
-          <input type="password" value={next} onChange={(e) => setNext(e.target.value)} required autoComplete="new-password" placeholder="At least 8 characters" className={`${inputCls} ${next && next.length < 8 ? "border-red-300 focus:ring-red-400" : ""}`} />
-          {next && next.length < 8 && <p className="text-xs text-red-500 mt-1">Must be at least 8 characters.</p>}
+          <label className="block text-xs font-medium mb-1.5" style={{ color: "#7d8590" }}>
+            New Password
+          </label>
+          <input
+            type="password"
+            value={next}
+            onChange={(e) => setNext(e.target.value)}
+            required
+            autoComplete="new-password"
+            placeholder="At least 8 characters"
+            className={inputCls}
+            style={{
+              ...INPUT_STYLE,
+              border: next && next.length < 8 ? "1px solid #5c2626" : INPUT_STYLE.border,
+            }}
+          />
+          {next && next.length < 8 && (
+            <p className="text-xs mt-1" style={{ color: "#f87171" }}>
+              Must be at least 8 characters.
+            </p>
+          )}
         </div>
+
         <div>
-          <label className="block text-xs font-medium text-gray-600 mb-1.5">Confirm New Password</label>
-          <input type="password" value={confirm} onChange={(e) => setConfirm(e.target.value)} required autoComplete="new-password" placeholder="••••••••" className={`${inputCls} ${confirm && !passwordsMatch ? "border-red-300 focus:ring-red-400" : ""}`} />
-          {confirm && !passwordsMatch && <p className="text-xs text-red-500 mt-1">Passwords do not match.</p>}
+          <label className="block text-xs font-medium mb-1.5" style={{ color: "#7d8590" }}>
+            Confirm New Password
+          </label>
+          <input
+            type="password"
+            value={confirm}
+            onChange={(e) => setConfirm(e.target.value)}
+            required
+            autoComplete="new-password"
+            placeholder="••••••••"
+            className={inputCls}
+            style={{
+              ...INPUT_STYLE,
+              border: confirm && !passwordsMatch ? "1px solid #5c2626" : INPUT_STYLE.border,
+            }}
+          />
+          {confirm && !passwordsMatch && (
+            <p className="text-xs mt-1" style={{ color: "#f87171" }}>
+              Passwords do not match.
+            </p>
+          )}
         </div>
+
         <div className="flex items-center justify-end gap-3 pt-2">
           {message && (
-            <span className={`text-xs ${message.type === "success" ? "text-green-600" : "text-red-600"}`}>{message.text}</span>
+            <span
+              className="text-xs"
+              style={{ color: message.type === "success" ? "#3fb950" : "#f87171" }}
+            >
+              {message.text}
+            </span>
           )}
-          <button type="submit" disabled={saving || !canSubmit} className="rounded-lg bg-blue-600 px-4 py-2 text-sm font-medium text-white hover:bg-blue-700 disabled:opacity-50 disabled:cursor-not-allowed transition-colors">
+          <button
+            type="submit"
+            disabled={saving || !canSubmit}
+            className="rounded-lg px-4 py-2 text-sm font-medium text-white transition-colors disabled:opacity-50 disabled:cursor-not-allowed"
+            style={{ background: "#2563eb" }}
+          >
             {saving ? "Changing…" : "Change Password"}
           </button>
         </div>
@@ -291,24 +423,46 @@ function PreferencesSection({ user }: { user: User }) {
     });
 
     setSaving(false);
-    setMessage(res.ok ? { type: "success", text: "Preferences saved." } : { type: "error", text: "Failed to save." });
+    setMessage(
+      res.ok
+        ? { type: "success", text: "Preferences saved." }
+        : { type: "error", text: "Failed to save." }
+    );
   }
 
   return (
-    <div className="bg-white rounded-xl border border-gray-200 p-6">
+    <div style={CARD_STYLE} className="p-6">
       <form onSubmit={handleSave} className="space-y-6">
         <fieldset>
-          <legend className="text-xs font-semibold text-gray-700 uppercase tracking-wide mb-3">Case List Defaults</legend>
+          <legend className="text-xs font-semibold uppercase tracking-wide mb-3" style={{ color: "#8b949e" }}>
+            Case List Defaults
+          </legend>
           <div className="space-y-3">
             <div>
-              <label className="block text-xs font-medium text-gray-600 mb-1.5">Default status filter</label>
-              <select value={defaultStatus} onChange={(e) => setDefaultStatus(e.target.value)} className={inputCls}>
-                {STATUS_OPTIONS.map((o) => <option key={o.value} value={o.value}>{o.label}</option>)}
+              <label className="block text-xs font-medium mb-1.5" style={{ color: "#7d8590" }}>
+                Default status filter
+              </label>
+              <select
+                value={defaultStatus}
+                onChange={(e) => setDefaultStatus(e.target.value)}
+                className={inputCls}
+                style={INPUT_STYLE}
+              >
+                {STATUS_OPTIONS.map((o) => (
+                  <option key={o.value} value={o.value}>{o.label}</option>
+                ))}
               </select>
             </div>
             <div>
-              <label className="block text-xs font-medium text-gray-600 mb-1.5">Default case view</label>
-              <select value={defaultView} onChange={(e) => setDefaultView(e.target.value)} className={inputCls}>
+              <label className="block text-xs font-medium mb-1.5" style={{ color: "#7d8590" }}>
+                Default case view
+              </label>
+              <select
+                value={defaultView}
+                onChange={(e) => setDefaultView(e.target.value)}
+                className={inputCls}
+                style={INPUT_STYLE}
+              >
                 <option value="all">All cases</option>
                 <option value="mine">My cases only</option>
               </select>
@@ -316,26 +470,61 @@ function PreferencesSection({ user }: { user: User }) {
           </div>
         </fieldset>
 
-        <div className="border-t border-gray-100" />
+        <div style={DIVIDER_STYLE} />
 
         <fieldset>
-          <legend className="text-xs font-semibold text-gray-700 uppercase tracking-wide mb-3">Display</legend>
+          <legend className="text-xs font-semibold uppercase tracking-wide mb-3" style={{ color: "#8b949e" }}>
+            Display
+          </legend>
           <div className="space-y-3">
             <div>
-              <label className="block text-xs font-medium text-gray-600 mb-1.5">Timezone</label>
-              <select value={timezone} onChange={(e) => setTimezone(e.target.value)} className={inputCls}>
-                {TIMEZONES.map((tz) => <option key={tz} value={tz}>{tz.replace(/_/g, " ")}</option>)}
+              <label className="block text-xs font-medium mb-1.5" style={{ color: "#7d8590" }}>
+                Timezone
+              </label>
+              <select
+                value={timezone}
+                onChange={(e) => setTimezone(e.target.value)}
+                className={inputCls}
+                style={INPUT_STYLE}
+              >
+                {TIMEZONES.map((tz) => (
+                  <option key={tz} value={tz}>{tz.replace(/_/g, " ")}</option>
+                ))}
               </select>
-              <p className="text-xs text-gray-400 mt-1">Used for displaying dates and times.</p>
+              <p className="text-xs mt-1" style={{ color: "#484f58" }}>
+                Used for displaying dates and times.
+              </p>
             </div>
-            <Toggle label="Show dashboard widgets" description="Display the task and stale-case summary widgets on the dashboard." checked={showWidgets} onChange={setShowWidgets} />
-            <Toggle label="Compact case list" description="Reduce row padding in the case list for a denser view." checked={compactList} onChange={setCompactList} />
+            <Toggle
+              label="Show dashboard widgets"
+              description="Display the task and stale-case summary widgets on the dashboard."
+              checked={showWidgets}
+              onChange={setShowWidgets}
+            />
+            <Toggle
+              label="Compact case list"
+              description="Reduce row padding in the case list for a denser view."
+              checked={compactList}
+              onChange={setCompactList}
+            />
           </div>
         </fieldset>
 
         <div className="flex items-center justify-end gap-3 pt-2">
-          {message && <span className={`text-xs ${message.type === "success" ? "text-green-600" : "text-red-600"}`}>{message.text}</span>}
-          <button type="submit" disabled={saving} className="rounded-lg bg-blue-600 px-4 py-2 text-sm font-medium text-white hover:bg-blue-700 disabled:opacity-50 transition-colors">
+          {message && (
+            <span
+              className="text-xs"
+              style={{ color: message.type === "success" ? "#3fb950" : "#f87171" }}
+            >
+              {message.text}
+            </span>
+          )}
+          <button
+            type="submit"
+            disabled={saving}
+            className="rounded-lg px-4 py-2 text-sm font-medium text-white transition-colors disabled:opacity-50"
+            style={{ background: "#2563eb" }}
+          >
             {saving ? "Saving…" : "Save Preferences"}
           </button>
         </div>
@@ -381,15 +570,20 @@ function NotificationsSection({
     });
 
     setSaving(false);
-    setMessage(res.ok ? { type: "success", text: "Notification settings saved." } : { type: "error", text: "Failed to save." });
+    setMessage(
+      res.ok
+        ? { type: "success", text: "Notification settings saved." }
+        : { type: "error", text: "Failed to save." }
+    );
   }
 
   async function handleDryRun() {
     setTesting(true);
     setTestResult(null);
-    const res = await fetch(`/api/cron/reminders?dry_run=true&secret=${encodeURIComponent(cronSecret)}`, {
-      method: "POST",
-    });
+    const res = await fetch(
+      `/api/cron/reminders?dry_run=true&secret=${encodeURIComponent(cronSecret)}`,
+      { method: "POST" }
+    );
     const data = await res.json();
     setTestResult(data);
     setTesting(false);
@@ -397,18 +591,23 @@ function NotificationsSection({
 
   return (
     <div className="space-y-4">
-      <div className="bg-white rounded-xl border border-gray-200 p-6">
+      {/* Main settings card */}
+      <div style={CARD_STYLE} className="p-6">
         <form onSubmit={handleSave} className="space-y-6">
           <div className="flex items-start justify-between">
             <div>
-              <h3 className="text-sm font-semibold text-gray-900">Email Reminders</h3>
-              <p className="text-xs text-gray-500 mt-0.5">Sent daily at 8am UTC to relevant team members.</p>
+              <h3 className="text-sm font-semibold" style={{ color: "#e4e6ea" }}>
+                Email Reminders
+              </h3>
+              <p className="text-xs mt-0.5" style={{ color: "#7d8590" }}>
+                Sent daily at 8am UTC to relevant team members.
+              </p>
             </div>
             <Toggle label="" description="" checked={enabled} onChange={setEnabled} />
           </div>
 
           <div className={`space-y-4 ${!enabled ? "opacity-40 pointer-events-none" : ""}`}>
-            <div className="border-t border-gray-100 pt-4 space-y-3">
+            <div className="pt-4 space-y-3" style={DIVIDER_STYLE}>
               <Toggle
                 label="Overdue task reminders"
                 description="Email each team member a digest of their tasks that are past due."
@@ -423,11 +622,14 @@ function NotificationsSection({
               />
               {stalledCase && (
                 <div className="pl-12">
-                  <label className="block text-xs font-medium text-gray-600 mb-1.5">Stalled threshold</label>
+                  <label className="block text-xs font-medium mb-1.5" style={{ color: "#7d8590" }}>
+                    Stalled threshold
+                  </label>
                   <select
                     value={stalledDays}
                     onChange={(e) => setStalledDays(Number(e.target.value))}
-                    className="rounded-lg border border-gray-300 px-3 py-2 text-sm text-gray-900 focus:outline-none focus:ring-2 focus:ring-blue-500"
+                    className="rounded-lg px-3 py-2 text-sm focus:outline-none focus:ring-2 focus:ring-blue-500"
+                    style={INPUT_STYLE}
                   >
                     <option value={3}>3 days</option>
                     <option value={5}>5 days</option>
@@ -445,9 +647,24 @@ function NotificationsSection({
             </div>
           </div>
 
-          <div className="flex items-center justify-end gap-3 pt-2 border-t border-gray-100">
-            {message && <span className={`text-xs ${message.type === "success" ? "text-green-600" : "text-red-600"}`}>{message.text}</span>}
-            <button type="submit" disabled={saving} className="rounded-lg bg-blue-600 px-4 py-2 text-sm font-medium text-white hover:bg-blue-700 disabled:opacity-50 transition-colors">
+          <div
+            className="flex items-center justify-end gap-3 pt-4"
+            style={DIVIDER_STYLE}
+          >
+            {message && (
+              <span
+                className="text-xs"
+                style={{ color: message.type === "success" ? "#3fb950" : "#f87171" }}
+              >
+                {message.text}
+              </span>
+            )}
+            <button
+              type="submit"
+              disabled={saving}
+              className="rounded-lg px-4 py-2 text-sm font-medium text-white transition-colors disabled:opacity-50"
+              style={{ background: "#2563eb" }}
+            >
               {saving ? "Saving…" : "Save Settings"}
             </button>
           </div>
@@ -455,32 +672,45 @@ function NotificationsSection({
       </div>
 
       {/* Dry-run test panel */}
-      <div className="bg-white rounded-xl border border-gray-200 p-6">
+      <div style={CARD_STYLE} className="p-6">
         <div className="flex items-start justify-between mb-4">
           <div>
-            <h3 className="text-sm font-semibold text-gray-900">Test Reminders</h3>
-            <p className="text-xs text-gray-500 mt-0.5">
+            <h3 className="text-sm font-semibold" style={{ color: "#e4e6ea" }}>
+              Test Reminders
+            </h3>
+            <p className="text-xs mt-0.5" style={{ color: "#7d8590" }}>
               Run a dry-run to see what emails would be sent without actually sending them.
             </p>
           </div>
           <button
             onClick={handleDryRun}
             disabled={testing}
-            className="rounded-lg border border-gray-300 px-4 py-2 text-sm font-medium text-gray-700 hover:bg-gray-50 disabled:opacity-50 transition-colors flex-shrink-0"
+            className="rounded-lg px-4 py-2 text-sm font-medium transition-colors disabled:opacity-50 flex-shrink-0 hover:bg-[#21262d]"
+            style={{
+              border: "1px solid #30363d",
+              color: "#c9d1d9",
+              background: "transparent",
+            }}
           >
             {testing ? "Running…" : "Run dry-run"}
           </button>
         </div>
 
         {testResult && (
-          <div className="mt-2 rounded-lg bg-gray-50 border border-gray-200 p-4">
-            <p className="text-xs font-semibold text-gray-700 mb-3">
-              Dry-run results — {testResult.totalEmails} email{testResult.totalEmails !== 1 ? "s" : ""} would be sent
+          <div
+            className="mt-2 rounded-lg p-4"
+            style={{ background: "#0d1117", border: "1px solid #21262d" }}
+          >
+            <p className="text-xs font-semibold mb-3" style={{ color: "#c9d1d9" }}>
+              Dry-run results — {testResult.totalEmails} email
+              {testResult.totalEmails !== 1 ? "s" : ""} would be sent
             </p>
             {testResult.firms?.map((firm: any) => (
               <div key={firm.firmId} className="space-y-2">
-                {firm.overdueTaskEmails === 0 && firm.stalledCaseEmails === 0 && firm.missingDocEmails === 0 ? (
-                  <p className="text-xs text-gray-500">
+                {firm.overdueTaskEmails === 0 &&
+                firm.stalledCaseEmails === 0 &&
+                firm.missingDocEmails === 0 ? (
+                  <p className="text-xs" style={{ color: "#7d8590" }}>
                     {firm.skipped.length > 0
                       ? `Nothing to send. (${firm.skipped.join(", ")})`
                       : "No overdue tasks, stalled cases, or missing documents found."}
@@ -489,25 +719,28 @@ function NotificationsSection({
                   <>
                     {firm.overdueTaskEmails > 0 && (
                       <div className="flex items-center gap-2">
-                        <span className="w-2 h-2 rounded-full bg-red-400 flex-shrink-0" />
-                        <span className="text-xs text-gray-700">
-                          {firm.overdueTaskEmails} overdue task digest{firm.overdueTaskEmails !== 1 ? "s" : ""} would be sent
+                        <span className="w-2 h-2 rounded-full flex-shrink-0" style={{ background: "#f87171" }} />
+                        <span className="text-xs" style={{ color: "#c9d1d9" }}>
+                          {firm.overdueTaskEmails} overdue task digest
+                          {firm.overdueTaskEmails !== 1 ? "s" : ""} would be sent
                         </span>
                       </div>
                     )}
                     {firm.stalledCaseEmails > 0 && (
                       <div className="flex items-center gap-2">
-                        <span className="w-2 h-2 rounded-full bg-orange-400 flex-shrink-0" />
-                        <span className="text-xs text-gray-700">
-                          {firm.stalledCaseEmails} stalled case digest{firm.stalledCaseEmails !== 1 ? "s" : ""} would be sent
+                        <span className="w-2 h-2 rounded-full flex-shrink-0" style={{ background: "#fb923c" }} />
+                        <span className="text-xs" style={{ color: "#c9d1d9" }}>
+                          {firm.stalledCaseEmails} stalled case digest
+                          {firm.stalledCaseEmails !== 1 ? "s" : ""} would be sent
                         </span>
                       </div>
                     )}
                     {firm.missingDocEmails > 0 && (
                       <div className="flex items-center gap-2">
-                        <span className="w-2 h-2 rounded-full bg-purple-400 flex-shrink-0" />
-                        <span className="text-xs text-gray-700">
-                          {firm.missingDocEmails} missing documents digest{firm.missingDocEmails !== 1 ? "s" : ""} would be sent
+                        <span className="w-2 h-2 rounded-full flex-shrink-0" style={{ background: "#a78bfa" }} />
+                        <span className="text-xs" style={{ color: "#c9d1d9" }}>
+                          {firm.missingDocEmails} missing documents digest
+                          {firm.missingDocEmails !== 1 ? "s" : ""} would be sent
                         </span>
                       </div>
                     )}
@@ -520,18 +753,39 @@ function NotificationsSection({
       </div>
 
       {/* Cron schedule info */}
-      <div className="rounded-lg bg-blue-50 border border-blue-100 px-4 py-3">
-        <p className="text-xs text-blue-700">
+      <div
+        className="rounded-lg px-4 py-3"
+        style={{ background: "#0d1f38", border: "1px solid #1d3a5e" }}
+      >
+        <p className="text-xs" style={{ color: "#79c0ff" }}>
           <span className="font-semibold">Production schedule:</span> Add this to{" "}
-          <code className="font-mono bg-blue-100 px-1 rounded">vercel.json</code> to run daily at 8am UTC:
+          <code
+            className="font-mono px-1 rounded"
+            style={{ background: "#162032", color: "#a5d6ff" }}
+          >
+            vercel.json
+          </code>{" "}
+          to run daily at 8am UTC:
         </p>
-        <pre className="mt-2 text-xs text-blue-800 font-mono bg-blue-100 rounded p-2 overflow-x-auto">{`{
+        <pre
+          className="mt-2 text-xs font-mono rounded p-2 overflow-x-auto"
+          style={{ background: "#0a1628", color: "#a5d6ff" }}
+        >{`{
   "crons": [{
     "path": "/api/cron/reminders",
     "schedule": "0 8 * * *"
   }]
 }`}</pre>
-        <p className="text-xs text-blue-600 mt-2">Set <code className="font-mono bg-blue-100 px-1 rounded">CRON_SECRET</code> in your Vercel environment variables.</p>
+        <p className="text-xs mt-2" style={{ color: "#58a6ff" }}>
+          Set{" "}
+          <code
+            className="font-mono px-1 rounded"
+            style={{ background: "#162032", color: "#a5d6ff" }}
+          >
+            CRON_SECRET
+          </code>{" "}
+          in your Vercel environment variables.
+        </p>
       </div>
     </div>
   );
@@ -553,14 +807,27 @@ function Toggle({
   return (
     <label className="flex items-start gap-3 cursor-pointer group">
       <div className="relative mt-0.5 flex-shrink-0">
-        <input type="checkbox" checked={checked} onChange={(e) => onChange(e.target.checked)} className="sr-only" />
-        <div className={`w-9 h-5 rounded-full transition-colors ${checked ? "bg-blue-600" : "bg-gray-200"}`} />
-        <div className={`absolute top-0.5 left-0.5 w-4 h-4 rounded-full bg-white shadow transition-transform ${checked ? "translate-x-4" : "translate-x-0"}`} />
+        <input
+          type="checkbox"
+          checked={checked}
+          onChange={(e) => onChange(e.target.checked)}
+          className="sr-only"
+        />
+        <div
+          className="w-9 h-5 rounded-full transition-colors"
+          style={{ background: checked ? "#2563eb" : "#2d333b" }}
+        />
+        <div
+          className="absolute top-0.5 left-0.5 w-4 h-4 rounded-full bg-white shadow transition-transform"
+          style={{ transform: checked ? "translateX(16px)" : "translateX(0)" }}
+        />
       </div>
       {label && (
         <div>
-          <p className="text-sm font-medium text-gray-800 group-hover:text-gray-900">{label}</p>
-          {description && <p className="text-xs text-gray-400 mt-0.5">{description}</p>}
+          <p className="text-sm font-medium" style={{ color: "#c9d1d9" }}>{label}</p>
+          {description && (
+            <p className="text-xs mt-0.5" style={{ color: "#7d8590" }}>{description}</p>
+          )}
         </div>
       )}
     </label>

@@ -19,7 +19,7 @@ const STALE_DAYS = 7;
 export default async function DashboardPage({
   searchParams,
 }: {
-  searchParams: Promise<{ search?: string; status?: string; advisorId?: string }>;
+  searchParams: Promise<{ search?: string; status?: string; advisorId?: string; opsId?: string }>;
 }) {
   const session = await auth();
   if (!session) redirect("/login");
@@ -27,50 +27,80 @@ export default async function DashboardPage({
   const params = await searchParams;
   const firmId = (session.user as any).firmId as string;
   const userId = (session.user as any).id as string;
+  const role = (session.user as any).role as "ADMIN" | "ADVISOR" | "OPS";
   const staleThreshold = new Date(Date.now() - STALE_DAYS * 24 * 60 * 60 * 1000);
 
-  // Load user preferences to apply defaults
   const userRecord = await prisma.user.findUnique({
     where: { id: userId },
     select: { preferences: true },
   });
   const prefs = (userRecord?.preferences as Record<string, any>) ?? {};
 
-  // Apply URL params first; fall back to saved preferences
   const search = params.search ?? "";
   const status = params.status ?? prefs.defaultStatusFilter ?? "";
-  const advisorId =
-    params.advisorId ?? (prefs.defaultViewFilter === "mine" ? userId : "");
+  // Person filters are only meaningful for ADMIN
+  const advisorId = role === "ADMIN" ? (params.advisorId ?? "") : "";
+  const opsId = role === "ADMIN" ? (params.opsId ?? "") : "";
+
   const showWidgets = prefs.showDashboardWidgets !== false;
   const compactList = prefs.compactCaseList === true;
 
-  const [cases, users, myTasks, staleCases] = await Promise.all([
+  // Enforced at the DB level — non-admins only see their own cases
+  const roleVisibilityFilter =
+    role === "ADVISOR"
+      ? { assignedAdvisorId: userId }
+      : role === "OPS"
+      ? { assignedOpsId: userId }
+      : {};
+
+  // "unassigned" is a special sentinel value meaning assignedX: null
+  const advisorFilter =
+    role === "ADMIN" && advisorId
+      ? advisorId === "unassigned"
+        ? { assignedAdvisorId: null }
+        : { assignedAdvisorId: advisorId }
+      : {};
+
+  const opsFilter =
+    role === "ADMIN" && opsId
+      ? opsId === "unassigned"
+        ? { assignedOpsId: null }
+        : { assignedOpsId: opsId }
+      : {};
+
+  const caseWhere = {
+    firmId,
+    ...roleVisibilityFilter,
+    ...advisorFilter,
+    ...opsFilter,
+    ...(search
+      ? {
+          OR: [
+            { clientFirstName: { contains: search, mode: "insensitive" as const } },
+            { clientLastName: { contains: search, mode: "insensitive" as const } },
+            { clientEmail: { contains: search, mode: "insensitive" as const } },
+          ],
+        }
+      : {}),
+    ...(status ? { status: status as any } : {}),
+  };
+
+  const [cases, users, myTasks, staleCases, advisorCountRows, opsCountRows] = await Promise.all([
     prisma.rolloverCase.findMany({
-      where: {
-        firmId,
-        ...(search
-          ? {
-              OR: [
-                { clientFirstName: { contains: search, mode: "insensitive" } },
-                { clientLastName: { contains: search, mode: "insensitive" } },
-                { clientEmail: { contains: search, mode: "insensitive" } },
-              ],
-            }
-          : {}),
-        ...(status ? { status: status as any } : {}),
-        ...(advisorId ? { assignedAdvisorId: advisorId } : {}),
-      },
+      where: caseWhere,
       include: {
         assignedAdvisor: { select: { id: true, firstName: true, lastName: true } },
         assignedOps: { select: { id: true, firstName: true, lastName: true } },
       },
       orderBy: { updatedAt: "desc" },
     }),
-    prisma.user.findMany({
-      where: { firmId },
-      select: { id: true, firstName: true, lastName: true, role: true },
-      orderBy: { firstName: "asc" },
-    }),
+    role === "ADMIN"
+      ? prisma.user.findMany({
+          where: { firmId },
+          select: { id: true, firstName: true, lastName: true, role: true },
+          orderBy: { firstName: "asc" },
+        })
+      : Promise.resolve([] as { id: string; firstName: string; lastName: string; role: string }[]),
     prisma.task.findMany({
       where: {
         assigneeId: userId,
@@ -85,12 +115,39 @@ export default async function DashboardPage({
     prisma.rolloverCase.findMany({
       where: {
         firmId,
+        ...roleVisibilityFilter,
         status: { not: "COMPLETED" },
         updatedAt: { lt: staleThreshold },
       },
       orderBy: { updatedAt: "asc" },
     }),
+    // Case count per advisor (unfiltered, for the chip badges)
+    role === "ADMIN"
+      ? prisma.rolloverCase.groupBy({
+          by: ["assignedAdvisorId"],
+          where: { firmId },
+          _count: { id: true },
+        })
+      : Promise.resolve([] as { assignedAdvisorId: string | null; _count: { id: number } }[]),
+    // Case count per ops (unfiltered, for the chip badges)
+    role === "ADMIN"
+      ? prisma.rolloverCase.groupBy({
+          by: ["assignedOpsId"],
+          where: { firmId },
+          _count: { id: true },
+        })
+      : Promise.resolve([] as { assignedOpsId: string | null; _count: { id: number } }[]),
   ]);
+
+  // Build count maps: userId → count, "unassigned" → count
+  const advisorCounts: Record<string, number> = {};
+  for (const row of advisorCountRows) {
+    advisorCounts[row.assignedAdvisorId ?? "unassigned"] = row._count.id;
+  }
+  const opsCounts: Record<string, number> = {};
+  for (const row of opsCountRows) {
+    opsCounts[row.assignedOpsId ?? "unassigned"] = row._count.id;
+  }
 
   const serializedCases = cases.map((c) => ({
     ...c,
@@ -137,8 +194,11 @@ export default async function DashboardPage({
         cases={serializedCases}
         users={users}
         statusLabels={STATUS_LABELS}
-        filters={{ search, status, advisorId }}
+        filters={{ search, status, advisorId, opsId }}
         compact={compactList}
+        userRole={role}
+        advisorCounts={advisorCounts}
+        opsCounts={opsCounts}
       />
     </>
   );

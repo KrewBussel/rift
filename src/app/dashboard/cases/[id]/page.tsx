@@ -9,11 +9,20 @@ export default async function CaseDetailPage({ params }: { params: Promise<{ id:
 
   const { id } = await params;
   const firmId = (session.user as any).firmId as string;
-  const userRole = (session.user as any).role as string;
+  const userId = (session.user as any).id as string;
+  const userRole = (session.user as any).role as "ADMIN" | "ADVISOR" | "OPS";
+
+  // Non-admins can only access cases they are directly assigned to
+  const roleAccessFilter =
+    userRole === "ADVISOR"
+      ? { assignedAdvisorId: userId }
+      : userRole === "OPS"
+      ? { assignedOpsId: userId }
+      : {};
 
   const [rolloverCase, users, checklistItems, documents] = await Promise.all([
     prisma.rolloverCase.findFirst({
-      where: { id, firmId },
+      where: { id, firmId, ...roleAccessFilter },
       include: {
         assignedAdvisor: { select: { id: true, firstName: true, lastName: true } },
         assignedOps: { select: { id: true, firstName: true, lastName: true } },
