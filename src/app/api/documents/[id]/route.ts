@@ -1,9 +1,11 @@
 import { NextRequest, NextResponse } from "next/server";
+import { GetObjectCommand, DeleteObjectCommand } from "@aws-sdk/client-s3";
+import { getSignedUrl } from "@aws-sdk/s3-request-presigner";
 import { auth } from "@/lib/auth";
 import { prisma } from "@/lib/prisma";
-import { supabaseAdmin, STORAGE_BUCKET } from "@/lib/supabase";
+import { s3, S3_BUCKET } from "@/lib/s3";
 
-// GET — generate a signed download URL
+// GET — generate a short-lived presigned download URL for the document
 export async function GET(_req: NextRequest, { params }: { params: Promise<{ id: string }> }) {
   const session = await auth();
   if (!session?.user) return NextResponse.json({ error: "Unauthorized" }, { status: 401 });
@@ -19,18 +21,20 @@ export async function GET(_req: NextRequest, { params }: { params: Promise<{ id:
     return NextResponse.json({ error: "Not found" }, { status: 404 });
   }
 
-  const { data, error } = await supabaseAdmin.storage
-    .from(STORAGE_BUCKET)
-    .createSignedUrl(doc.storagePath, 60 * 5); // 5 minute expiry
+  const command = new GetObjectCommand({
+    Bucket: S3_BUCKET,
+    Key: doc.storagePath,
+    // Sets Content-Disposition so browsers download with the original filename
+    ResponseContentDisposition: `attachment; filename="${doc.name}"`,
+  });
 
-  if (error || !data) {
-    return NextResponse.json({ error: "Could not generate download link" }, { status: 500 });
-  }
+  // 5-minute window — enough to open, not long enough to share meaningfully
+  const url = await getSignedUrl(s3, command, { expiresIn: 300 });
 
-  return NextResponse.json({ url: data.signedUrl, name: doc.name });
+  return NextResponse.json({ url, name: doc.name });
 }
 
-// DELETE — admin only
+// DELETE — admin/ops only; removes from S3 and then the database
 export async function DELETE(_req: NextRequest, { params }: { params: Promise<{ id: string }> }) {
   const session = await auth();
   if (!session?.user) return NextResponse.json({ error: "Unauthorized" }, { status: 401 });
@@ -52,7 +56,7 @@ export async function DELETE(_req: NextRequest, { params }: { params: Promise<{ 
     return NextResponse.json({ error: "Not found" }, { status: 404 });
   }
 
-  await supabaseAdmin.storage.from(STORAGE_BUCKET).remove([doc.storagePath]);
+  await s3.send(new DeleteObjectCommand({ Bucket: S3_BUCKET, Key: doc.storagePath }));
 
   await prisma.document.delete({ where: { id } });
 

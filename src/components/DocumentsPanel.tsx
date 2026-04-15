@@ -71,11 +71,42 @@ export default function DocumentsPanel({ caseId, initialDocuments, userRole, ref
 
   async function handleUpload(file: File) {
     setUploading(true);
-    const fd = new FormData();
-    fd.append("file", file);
-    const res = await fetch(`/api/cases/${caseId}/documents`, { method: "POST", body: fd });
-    setUploading(false);
-    if (res.ok) await refreshDocuments();
+    try {
+      // Step 1 — ask the server for a presigned PUT URL
+      const qs = new URLSearchParams({
+        filename: file.name,
+        fileType: file.type,
+        fileSize: String(file.size),
+      });
+      const presignRes = await fetch(`/api/cases/${caseId}/documents/presign?${qs}`);
+      if (!presignRes.ok) {
+        const { error } = await presignRes.json();
+        alert(error ?? "Could not prepare upload");
+        return;
+      }
+      const { url, fields, key } = await presignRes.json();
+
+      // Step 2 — POST the file directly to S3 via multipart form
+      const formData = new FormData();
+      Object.entries(fields as Record<string, string>).forEach(([k, v]) => formData.append(k, v));
+      formData.append("file", file); // "file" must be last per S3 spec
+
+      const s3Res = await fetch(url, { method: "POST", body: formData });
+      if (!s3Res.ok) {
+        alert("Upload to storage failed. Please try again.");
+        return;
+      }
+
+      // Step 3 — confirm with the server so it saves the Document record
+      const confirmRes = await fetch(`/api/cases/${caseId}/documents`, {
+        method: "POST",
+        headers: { "Content-Type": "application/json" },
+        body: JSON.stringify({ key, name: file.name, fileType: file.type, fileSize: file.size }),
+      });
+      if (confirmRes.ok) await refreshDocuments();
+    } finally {
+      setUploading(false);
+    }
   }
 
   async function handleDownload(docId: string) {

@@ -1,15 +1,6 @@
 import { NextRequest, NextResponse } from "next/server";
 import { auth } from "@/lib/auth";
 import { prisma } from "@/lib/prisma";
-import { supabaseAdmin, STORAGE_BUCKET } from "@/lib/supabase";
-
-const ALLOWED_TYPES: Record<string, string> = {
-  "application/pdf": "pdf",
-  "image/jpeg": "jpg",
-  "image/png": "png",
-  "image/webp": "webp",
-  "application/vnd.openxmlformats-officedocument.wordprocessingml.document": "docx",
-};
 
 export async function GET(_req: NextRequest, { params }: { params: Promise<{ id: string }> }) {
   const session = await auth();
@@ -33,6 +24,8 @@ export async function GET(_req: NextRequest, { params }: { params: Promise<{ id:
   return NextResponse.json(documents);
 }
 
+// Called by the client after a successful direct-to-S3 upload.
+// Receives the S3 key (storagePath) plus file metadata, saves the Document record.
 export async function POST(request: NextRequest, { params }: { params: Promise<{ id: string }> }) {
   const session = await auth();
   if (!session?.user) return NextResponse.json({ error: "Unauthorized" }, { status: 401 });
@@ -44,38 +37,33 @@ export async function POST(request: NextRequest, { params }: { params: Promise<{
   const rolloverCase = await prisma.rolloverCase.findFirst({ where: { id, firmId } });
   if (!rolloverCase) return NextResponse.json({ error: "Not found" }, { status: 404 });
 
-  const formData = await request.formData();
-  const file = formData.get("file") as File | null;
-  const checklistItemId = formData.get("checklistItemId") as string | null;
+  const body = await request.json();
+  const { key, name, fileType, fileSize, checklistItemId } = body as {
+    key: string;
+    name: string;
+    fileType: string;
+    fileSize: number;
+    checklistItemId?: string;
+  };
 
-  if (!file) return NextResponse.json({ error: "No file provided" }, { status: 400 });
-  if (!ALLOWED_TYPES[file.type]) {
-    return NextResponse.json({ error: "File type not allowed. Use PDF, JPG, PNG, or DOCX." }, { status: 400 });
+  if (!key || !name || !fileType || !fileSize) {
+    return NextResponse.json({ error: "Missing required fields: key, name, fileType, fileSize" }, { status: 400 });
   }
-  if (file.size > 20 * 1024 * 1024) {
-    return NextResponse.json({ error: "File too large. Maximum 20MB." }, { status: 400 });
-  }
 
-  const ext = ALLOWED_TYPES[file.type];
-  const storagePath = `${firmId}/${id}/${Date.now()}-${file.name.replace(/[^a-zA-Z0-9._-]/g, "_")}.${ext}`;
-
-  const arrayBuffer = await file.arrayBuffer();
-  const { error: uploadError } = await supabaseAdmin.storage
-    .from(STORAGE_BUCKET)
-    .upload(storagePath, arrayBuffer, { contentType: file.type, upsert: false });
-
-  if (uploadError) {
-    return NextResponse.json({ error: `Upload failed: ${uploadError.message}` }, { status: 500 });
+  // Verify the S3 key was issued for this exact firm + case — prevents a user
+  // from confirming a key that belongs to a different firm or case.
+  if (!key.startsWith(`${firmId}/${id}/`)) {
+    return NextResponse.json({ error: "Invalid storage key" }, { status: 400 });
   }
 
   const document = await prisma.document.create({
     data: {
       caseId: id,
-      checklistItemId: checklistItemId || null,
-      name: file.name,
-      storagePath,
-      fileType: file.type,
-      fileSize: file.size,
+      checklistItemId: checklistItemId ?? null,
+      name,
+      storagePath: key,
+      fileType,
+      fileSize,
       uploadedById: userId,
     },
     include: {
@@ -89,7 +77,7 @@ export async function POST(request: NextRequest, { params }: { params: Promise<{
       caseId: id,
       actorUserId: userId,
       eventType: "FILE_UPLOADED",
-      eventDetails: `File uploaded: "${file.name}"`,
+      eventDetails: `File uploaded: "${name}"`,
     },
   });
 

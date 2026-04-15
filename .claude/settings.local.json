@@ -20,7 +20,8 @@
       "Bash(cmd //c \"taskkill /PID 35832 /F\")",
       "Bash(npx tsx:*)",
       "Skill(update-config)",
-      "Skill(update-config:*)"
+      "Skill(update-config:*)",
+      "WebSearch"
     ]
   }
 }
