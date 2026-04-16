@@ -8,8 +8,8 @@ export const s3 = new S3Client({
     secretAccessKey: process.env.AWS_SECRET_ACCESS_KEY!,
   },
   // Disable automatic checksums — they produce browser-incompatible presigned URLs
-  requestChecksumCalculation: "when_required",
-  responseChecksumValidation: "when_required",
+  requestChecksumCalculation: "WHEN_REQUIRED",
+  responseChecksumValidation: "WHEN_REQUIRED",
 });
 
 export const S3_BUCKET = process.env.S3_BUCKET_NAME!;
