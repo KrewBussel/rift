@@ -1062,6 +1062,23 @@ function AuditCard() {
 
 export default function LandingPage() {
   const [demoOpen, setDemoOpen] = useState(false);
+  const [activeCard, setActiveCard] = useState(0);
+  const [lifting, setLifting]       = useState(false);
+  const liftTimer = useRef<ReturnType<typeof setTimeout> | null>(null);
+
+  useEffect(() => {
+    const interval = setInterval(() => {
+      setLifting(true);
+      liftTimer.current = setTimeout(() => {
+        setLifting(false);
+        setActiveCard((a) => (a + 1) % 3);
+      }, 460);
+    }, 5000);
+    return () => {
+      clearInterval(interval);
+      if (liftTimer.current) clearTimeout(liftTimer.current);
+    };
+  }, []);
 
   return (
     <>
@@ -1069,21 +1086,22 @@ export default function LandingPage() {
       <nav
         className="fixed top-0 left-0 right-0 z-40 flex items-center justify-between px-8 py-4"
         style={{
-          background: "rgba(12, 10, 7, 0.85)",
-          backdropFilter: "blur(16px)",
-          borderBottom: "1px solid rgba(184,134,11,0.12)",
+          background: "rgba(7, 11, 20, 0.88)",
+          backdropFilter: "blur(20px)",
+          WebkitBackdropFilter: "blur(20px)",
+          borderBottom: "1px solid rgba(59,130,246,0.12)",
         }}
       >
-        {/* Wordmark logo — two overlapping rectangles form the "R" */}
+        {/* Wordmark logo */}
         <Link href="/" className="flex items-center gap-2.5 select-none">
           <svg width="32" height="28" viewBox="0 0 32 28" fill="none">
-            <rect x="0" y="0" width="14" height="28" rx="2" fill={C.accent}/>
-            <rect x="6" y="0" width="18" height="14" rx="2" fill={C.accentLight} opacity="0.85"/>
-            <rect x="12" y="12" width="16" height="16" rx="2" fill={C.accent} opacity="0.6"/>
+            <rect x="0" y="0" width="14" height="28" rx="2" fill="#3b82f6"/>
+            <rect x="6" y="0" width="18" height="14" rx="2" fill="#60a5fa" opacity="0.85"/>
+            <rect x="12" y="12" width="16" height="16" rx="2" fill="#3b82f6" opacity="0.6"/>
           </svg>
           <span
             className="text-xl font-black tracking-tight"
-            style={{ color: C.accent, letterSpacing: "-0.02em" }}
+            style={{ color: "#60a5fa", letterSpacing: "-0.02em" }}
           >
             Rift
           </span>
@@ -1094,25 +1112,26 @@ export default function LandingPage() {
             <Link
               key={label}
               href="#"
-              className="text-sm transition-colors hover:opacity-100"
-              style={{ color: "rgba(245, 240, 232, 0.55)" }}
+              className="text-sm transition-all hover:opacity-100"
+              style={{ color: "rgba(226,232,240,0.45)" }}
             >
               {label}
             </Link>
           ))}
           <Link
             href="/login"
-            className="text-sm font-semibold transition-opacity hover:opacity-80"
-            style={{ color: C.accent }}
+            className="text-sm font-semibold transition-all hover:opacity-80"
+            style={{ color: "#60a5fa" }}
           >
             Sign In
           </Link>
           <button
             onClick={() => setDemoOpen(true)}
-            className="rounded-lg px-4 py-2 text-sm font-semibold transition-all hover:bg-yellow-600/10"
+            className="rounded-lg px-4 py-2 text-sm font-bold transition-all hover:opacity-90"
             style={{
-              border: `1.5px solid ${C.accent}`,
-              color: C.accent,
+              background: "#3b82f6",
+              color: "#fff",
+              boxShadow: "0 2px 12px rgba(59,130,246,0.35)",
             }}
           >
             Request Demo
@@ -1122,194 +1141,328 @@ export default function LandingPage() {
 
       {/* ── HERO ────────────────────────────────────────────────────────────── */}
       <section
-        className="relative min-h-screen flex items-center pt-20 overflow-hidden"
-        style={{
-          background: C.heroBlack,
-          backgroundImage: C.diagonalHatch,
-          backgroundSize: "20px 20px",
-        }}
+        className="relative min-h-screen overflow-hidden pt-20"
+        style={{ background: "#070b14" }}
       >
-        {/* Faint arc in top-right — NOT a glow orb */}
-        <svg
-          className="absolute top-0 right-0 pointer-events-none"
-          width="600"
-          height="600"
-          viewBox="0 0 600 600"
-          fill="none"
-          style={{ opacity: 0.12 }}
-        >
-          <circle cx="540" cy="60" r="340" stroke={C.accent} strokeWidth="1.2" fill="none"/>
-          <circle cx="540" cy="60" r="280" stroke={C.accentLight} strokeWidth="0.6" fill="none"/>
-        </svg>
+        {/* Blue glow — top centre (breathing) */}
+        <div
+          className="absolute inset-0 pointer-events-none hero-glow-pulse"
+          style={{
+            background: "radial-gradient(ellipse 80% 60% at 50% -5%, rgba(59,130,246,0.18) 0%, transparent 65%)",
+          }}
+        />
+        {/* Deep blue — bottom right */}
+        <div
+          className="absolute inset-0 pointer-events-none"
+          style={{
+            background: "radial-gradient(ellipse 55% 45% at 100% 100%, rgba(29,78,216,0.09) 0%, transparent 60%)",
+          }}
+        />
+        {/* Dot grid overlay */}
+        <div
+          className="absolute inset-0 pointer-events-none"
+          style={{
+            backgroundImage: "radial-gradient(rgba(255,255,255,0.035) 1px, transparent 1px)",
+            backgroundSize: "30px 30px",
+          }}
+        />
+        {/* Top edge glow line */}
+        <div
+          className="absolute top-20 left-0 right-0 pointer-events-none"
+          style={{
+            height: "1px",
+            background: "linear-gradient(90deg, transparent, rgba(59,130,246,0.3) 30%, rgba(96,165,250,0.3) 70%, transparent)",
+          }}
+        />
 
         <div className="relative z-10 w-full max-w-7xl mx-auto px-8 py-24 grid lg:grid-cols-2 gap-16 items-center">
-          {/* Left: copy */}
+
+          {/* ─── Left: copy ─── */}
           <div>
-            {/* Overline */}
-            <div className="flex items-center gap-3 mb-8">
-              <div style={{ width: "32px", height: "1px", background: C.accent }}/>
-              <span
-                className="text-xs font-bold uppercase tracking-widest"
-                style={{ color: C.accent }}
-              >
-                Rollover management software
+            {/* Badge */}
+            <div
+              className="hero-fade-1 inline-flex items-center gap-2 px-4 py-1.5 rounded-full mb-8"
+              style={{
+                background: "rgba(59,130,246,0.08)",
+                border: "1px solid rgba(59,130,246,0.22)",
+              }}
+            >
+              <div className="relative flex items-center justify-center" style={{ width: 8, height: 8 }}>
+                <div className="live-ping absolute rounded-full" style={{ width: 8, height: 8, background: "#60a5fa" }} />
+                <div className="relative rounded-full" style={{ width: 5, height: 5, background: "#93c5fd" }} />
+              </div>
+              <span className="text-xs font-semibold" style={{ color: "#93c5fd" }}>
+                Rollover case management for RIAs
               </span>
             </div>
 
-            <h1 className="text-6xl lg:text-7xl font-black leading-none mb-4">
-              <span style={{ color: C.warmWhite }}>The rollover command center</span>
+            {/* H1 */}
+            <h1
+              className="hero-fade-2 font-black leading-[1.05] mb-6"
+              style={{ fontSize: "clamp(2.75rem, 4.5vw, 4.25rem)" }}
+            >
+              <span style={{ color: "#f1f5f9" }}>The command center</span>
               <br />
               <span
                 style={{
-                  color: C.accent,
-                  fontStyle: "italic",
+                  background: "linear-gradient(135deg, #3b82f6 0%, #60a5fa 50%, #93c5fd 100%)",
+                  WebkitBackgroundClip: "text",
+                  WebkitTextFillColor: "transparent",
                 }}
               >
-                for modern RIAs.
+                for every rollover.
               </span>
             </h1>
 
-            {/* Gold rule divider */}
+            {/* Divider */}
             <div
+              className="hero-fade-2"
               style={{
                 height: "1px",
-                background: `linear-gradient(90deg, ${C.accent}, transparent)`,
-                marginTop: "20px",
-                marginBottom: "20px",
-                maxWidth: "320px",
+                background: "linear-gradient(90deg, #3b82f6, transparent)",
+                maxWidth: 280,
+                marginBottom: 20,
               }}
             />
 
+            {/* Sub */}
             <p
-              className="text-base leading-relaxed mb-10"
-              style={{ color: C.muted, maxWidth: "400px" }}
+              className="hero-fade-3 text-base leading-relaxed mb-10"
+              style={{ color: "#64748b", maxWidth: "420px" }}
             >
-              Built for RIA operations teams. Track every IRA, 401(k), and pension rollover from intake to completion — with checklists, tasks, and a full audit trail.
+              One structured pipeline for all your IRA, 401(k), and pension rollovers. Auto-generated checklists, task tracking, and a full audit trail — from intake to completion.
             </p>
 
             {/* CTAs */}
-            <div className="flex flex-col sm:flex-row flex-wrap gap-3">
+            <div className="hero-fade-4 flex flex-col sm:flex-row items-start gap-3 mb-8">
               <Link
                 href="/login"
-                className="inline-flex items-center justify-center px-6 py-3 rounded-xl text-sm font-bold transition-opacity hover:opacity-90"
-                style={{ background: C.accent, color: "#0c0a07" }}
-              >
-                Finance Professional Sign In
-              </Link>
-
-              <button
-                onClick={() => setDemoOpen(true)}
-                className="inline-flex items-center justify-center gap-2 px-6 py-3 rounded-xl text-sm font-semibold transition-all hover:bg-yellow-900/20"
+                className="inline-flex items-center gap-2 px-6 py-3 rounded-xl text-sm font-bold transition-all hover:opacity-90"
                 style={{
-                  border: `1.5px solid ${C.accent}`,
-                  color: C.accent,
+                  background: "linear-gradient(135deg, #3b82f6 0%, #2563eb 100%)",
+                  color: "#fff",
+                  boxShadow: "0 4px 24px rgba(59,130,246,0.4)",
                 }}
               >
-                Individual Investor Sign In
-                <span
-                  className="text-xs font-bold px-1.5 py-0.5 rounded"
-                  style={{ background: "rgba(184,134,11,0.18)", color: C.accentLight, fontSize: "10px" }}
-                >
-                  Soon
-                </span>
-              </button>
-
+                Finance Professional Sign In
+                <svg width="13" height="13" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2.5">
+                  <path d="M5 12h14M12 5l7 7-7 7"/>
+                </svg>
+              </Link>
               <button
                 onClick={() => setDemoOpen(true)}
-                className="demo-text-btn inline-flex items-center gap-1.5 px-4 py-3 text-sm font-medium transition-colors"
-                style={{ color: C.muted }}
+                className="inline-flex items-center gap-2 px-6 py-3 rounded-xl text-sm font-semibold transition-all hover:bg-white/5"
+                style={{
+                  border: "1px solid rgba(255,255,255,0.1)",
+                  color: "#e2e8f0",
+                  background: "rgba(255,255,255,0.03)",
+                  backdropFilter: "blur(8px)",
+                  WebkitBackdropFilter: "blur(8px)",
+                }}
               >
                 Request a Demo
-                <span className="demo-btn-arrow" style={{ color: C.accent }}>→</span>
               </button>
             </div>
+
+            <p className="hero-fade-4 text-xs" style={{ color: "#475569" }}>
+              Individual investor portal —{" "}
+              <span
+                className="px-1.5 py-0.5 rounded font-semibold"
+                style={{ background: "rgba(59,130,246,0.1)", color: "#60a5fa", fontSize: "10px" }}
+              >
+                coming soon
+              </span>
+            </p>
           </div>
 
-          {/* Right: pipeline stage visualization */}
-          <div className="flex justify-center lg:justify-end">
-            <div
-              className="relative rounded-2xl px-6 py-7 w-full max-w-sm"
-              style={{
-                background: "rgba(255,255,255,0.03)",
-                border: "1px solid rgba(184,134,11,0.18)",
-              }}
-            >
-              <p
-                className="text-xs font-bold uppercase tracking-widest mb-5"
-                style={{ color: C.accent }}
-              >
-                Case Pipeline
-              </p>
+          {/* ─── Right: animated card stack ─── */}
+          <div className="hero-card-1 flex flex-col items-center lg:items-end">
+            {/* back(4px) + mid-peek(26px) + front-peek(26px) + card(400px) = 456 → 470 */}
+            <div className="relative" style={{ width: "100%", maxWidth: 420, height: 470 }}>
 
-              <div className="flex flex-col gap-0">
-                {PIPELINE_STAGES.map((stage, idx) => (
-                  <div key={stage.label}>
-                    <div
-                      className="flex items-center justify-between px-3 py-2.5 rounded-lg"
-                      style={{
-                        border: stage.active ? `1.5px solid ${C.accent}` : "1.5px solid transparent",
-                        background: stage.active ? "rgba(184,134,11,0.08)" : "rgba(255,255,255,0.02)",
-                      }}
-                    >
-                      <div className="flex items-center gap-2.5">
-                        <div
-                          style={{
-                            width: "7px",
-                            height: "7px",
-                            borderRadius: "50%",
-                            background: stage.active ? C.accent : "rgba(156,143,122,0.4)",
-                            flexShrink: 0,
-                          }}
-                        />
-                        <span
-                          className="text-xs font-semibold"
-                          style={{ color: stage.active ? C.warmWhite : C.muted }}
-                        >
-                          {stage.label}
-                        </span>
-                        {stage.active && (
-                          <span
-                            className="text-xs font-bold px-1.5 py-0.5 rounded"
-                            style={{ background: C.accent, color: "#fff", fontSize: "9px" }}
-                          >
-                            ACTIVE
-                          </span>
-                        )}
+              {[0, 1, 2].map((i) => {
+                const slot   = (i - activeCard + 3) % 3;
+                const isFront = slot === 0;
+
+                // Single consistent transition — never changes between phases so
+                // the browser bridges lift → settle without snapping.
+                const TR = "transform 0.46s cubic-bezier(0.4,0,0.6,1), opacity 0.4s ease";
+
+                const cardStyle: React.CSSProperties = (lifting && isFront)
+                  ? {
+                      // Phase 1 – lift: stays at z=30 so it visually clears the deck
+                      position: "absolute", left: 0, right: 0, top: 0,
+                      transform: "translateY(-60px) scale(0.86)",
+                      zIndex: 30, opacity: 0.4,
+                      transition: TR,
+                    }
+                  : {
+                      // Phase 2 – slot positions (settle uses the same TR so it's smooth)
+                      position: "absolute", left: 0, right: 0, top: 0,
+                      transition: TR,
+                      ...(slot === 0
+                        ? { transform: "translateY(56px) scale(1)",     zIndex: 30, opacity: 1    }
+                        : slot === 1
+                        ? { transform: "translateY(30px) scale(0.962)", zIndex: 20, opacity: 0.92 }
+                        : { transform: "translateY(4px)  scale(0.924)", zIndex: 10, opacity: 0.85 }),
+                    };
+
+                const glassBase: React.CSSProperties = {
+                  background:  "#0d1526",
+                  border:      "1px solid rgba(255,255,255,0.08)",
+                  boxShadow:   slot === 0
+                    ? "0 24px 64px rgba(0,0,0,0.7), inset 0 1px 0 rgba(255,255,255,0.07)"
+                    : "0 8px 24px rgba(0,0,0,0.5),  inset 0 1px 0 rgba(255,255,255,0.04)",
+                  height:      400,
+                  overflow:    "hidden",
+                };
+
+                // ── Card 0: Auto Checklist ──────────────────────────────────────
+                if (i === 0) return (
+                  <div key="checklist" style={cardStyle}>
+                    <div className="rounded-2xl p-5" style={glassBase}>
+                      <div className="flex items-start justify-between mb-1">
+                        <p className="text-xs font-bold uppercase tracking-widest" style={{ color: "#3b82f6" }}>Auto Checklist</p>
+                        <span className="text-xs px-2 py-0.5 rounded-full font-semibold flex-shrink-0" style={{ background: "rgba(16,185,129,0.1)", color: "#10b981" }}>5 of 8 done</span>
                       </div>
-                      <span
-                        className="text-xs tabular-nums"
-                        style={{ color: stage.active ? C.accentLight : C.muted }}
-                      >
-                        {stage.count}
-                      </span>
+                      <p className="text-xs mb-4" style={{ color: "#334155" }}>Johnson IRA · Traditional Rollover</p>
+                      <div className="mb-4">
+                        <div className="flex justify-between items-center mb-1.5">
+                          <span className="text-xs" style={{ color: "#475569" }}>Completion</span>
+                          <span className="text-xs font-semibold" style={{ color: "#60a5fa" }}>62%</span>
+                        </div>
+                        <div style={{ height: 5, borderRadius: 999, background: "rgba(255,255,255,0.06)" }}>
+                          <div style={{ height: "100%", width: "62%", borderRadius: 999, background: "linear-gradient(90deg, #3b82f6, #60a5fa)", boxShadow: "0 0 10px rgba(59,130,246,0.35)" }} />
+                        </div>
+                      </div>
+                      <div className="flex flex-col gap-1.5">
+                        {[
+                          { done: true,  text: "IRA distribution form signed" },
+                          { done: true,  text: "Prior plan statement received" },
+                          { done: true,  text: "Rollover election completed" },
+                          { done: true,  text: "New account application filed" },
+                          { done: true,  text: "Beneficiary designation on file" },
+                          { done: false, text: "Transfer initiation letter sent" },
+                          { done: false, text: "Confirmation of receipt logged" },
+                          { done: false, text: "Client notification delivered" },
+                        ].map((item) => (
+                          <div key={item.text} className="flex items-center gap-2.5 py-1 px-2 rounded-lg" style={{ background: item.done ? "transparent" : "rgba(59,130,246,0.04)", border: item.done ? "1px solid transparent" : "1px solid rgba(59,130,246,0.1)" }}>
+                            {item.done ? (
+                              <div style={{ width: 16, height: 16, borderRadius: "50%", flexShrink: 0, background: "rgba(16,185,129,0.12)", border: "1px solid rgba(16,185,129,0.35)", display: "flex", alignItems: "center", justifyContent: "center" }}>
+                                <svg width="8" height="8" viewBox="0 0 10 10" fill="none">
+                                  <path d="M2 5l2.5 2.5 3.5-4" stroke="#10b981" strokeWidth="1.5" strokeLinecap="round" strokeLinejoin="round"/>
+                                </svg>
+                              </div>
+                            ) : (
+                              <div style={{ width: 16, height: 16, borderRadius: "50%", flexShrink: 0, border: "1.5px solid rgba(59,130,246,0.25)" }} />
+                            )}
+                            <span className="text-xs" style={{ color: item.done ? "#475569" : "#94a3b8" }}>{item.text}</span>
+                          </div>
+                        ))}
+                      </div>
                     </div>
-
-                    {idx < PIPELINE_STAGES.length - 1 && (
-                      <div className="flex justify-start pl-4 my-0.5">
-                        <div
-                          style={{
-                            width: "1px",
-                            height: "8px",
-                            borderLeft: `1px dashed ${C.accent}`,
-                            opacity: 0.35,
-                          }}
-                        />
-                      </div>
-                    )}
                   </div>
-                ))}
-              </div>
+                );
 
-              <div
-                className="mt-5 pt-4"
-                style={{ borderTop: "1px solid rgba(184,134,11,0.12)" }}
-              >
-                <p className="text-xs" style={{ color: C.muted }}>
-                  <span style={{ color: C.accentLight, fontWeight: 600 }}>34</span> total active cases
-                </p>
-              </div>
+                // ── Card 1: Pipeline Status ─────────────────────────────────────
+                if (i === 1) return (
+                  <div key="pipeline" style={cardStyle}>
+                    <div className="rounded-2xl p-5" style={glassBase}>
+                      <div className="flex items-center justify-between mb-4">
+                        <p className="text-xs font-bold uppercase tracking-widest" style={{ color: "#3b82f6" }}>Pipeline Status</p>
+                        <div className="flex items-center gap-1.5">
+                          <div className="relative flex items-center justify-center" style={{ width: 8, height: 8 }}>
+                            <div className="live-ping absolute rounded-full" style={{ width: 8, height: 8, background: "#10b981" }} />
+                            <div className="relative rounded-full" style={{ width: 5, height: 5, background: "#10b981" }} />
+                          </div>
+                          <span className="text-xs font-medium" style={{ color: "rgba(16,185,129,0.9)" }}>Live</span>
+                        </div>
+                      </div>
+                      <div className="flex flex-col gap-1.5">
+                          {PIPELINE_STAGES.map((stage) => (
+                            <div key={stage.label} className="flex items-center justify-between px-3 py-2 rounded-lg" style={{ background: stage.active ? "rgba(59,130,246,0.1)" : "rgba(255,255,255,0.02)", border: stage.active ? "1px solid rgba(59,130,246,0.28)" : "1px solid transparent" }}>
+                              <div className="flex items-center gap-2">
+                                <div style={{ width: 6, height: 6, borderRadius: "50%", flexShrink: 0, background: stage.active ? "#60a5fa" : "rgba(100,116,139,0.35)", boxShadow: stage.active ? "0 0 5px rgba(96,165,250,0.6)" : "none" }} />
+                                <span className="text-xs" style={{ color: stage.active ? "#e2e8f0" : "#475569", fontWeight: stage.active ? 600 : 400 }}>{stage.label}</span>
+                              </div>
+                              <span className="text-xs tabular-nums px-1.5 py-0.5 rounded font-semibold" style={{ background: stage.active ? "rgba(59,130,246,0.18)" : "rgba(255,255,255,0.04)", color: stage.active ? "#93c5fd" : "#334155" }}>{stage.count}</span>
+                            </div>
+                          ))}
+                        </div>
+                      <div className="mt-4 pt-3" style={{ borderTop: "1px solid rgba(255,255,255,0.05)" }}>
+                        <p className="text-xs" style={{ color: "#334155" }}>
+                          <span style={{ color: "#60a5fa", fontWeight: 600 }}>34</span> total active cases
+                        </p>
+                      </div>
+                    </div>
+                  </div>
+                );
+
+                // ── Card 2: Audit Trail ─────────────────────────────────────────
+                return (
+                  <div key="audit" style={cardStyle}>
+                    <div className="rounded-2xl p-5" style={glassBase}>
+                      <div className="flex items-center justify-between mb-4">
+                        <p className="text-xs font-bold uppercase tracking-widest" style={{ color: "#3b82f6" }}>Audit Trail</p>
+                        <div className="flex items-center gap-1.5 px-2 py-1 rounded-lg" style={{ background: "rgba(59,130,246,0.07)", border: "1px solid rgba(59,130,246,0.14)" }}>
+                          <span className="text-xs font-medium" style={{ color: "#60a5fa" }}>Johnson IRA</span>
+                        </div>
+                      </div>
+                      <div className="flex flex-col">
+                          {[
+                            { type: "STATUS",    typeColor: "#10b981", typeBg: "rgba(16,185,129,0.1)",  initials: "SM", text: "Moved to Completed",        time: "2m ago"  },
+                            { type: "DOCUMENT",  typeColor: "#60a5fa", typeBg: "rgba(59,130,246,0.1)",  initials: "SM", text: "Confirmation.pdf uploaded",  time: "14m ago" },
+                            { type: "EMAIL",     typeColor: "#f59e0b", typeBg: "rgba(245,158,11,0.1)",  initials: "SY", text: "Reminder sent to client",    time: "1h ago"  },
+                            { type: "CHECKLIST", typeColor: "#10b981", typeBg: "rgba(16,185,129,0.1)",  initials: "RT", text: "Item marked complete",       time: "3h ago"  },
+                            { type: "STAGE",     typeColor: "#3b82f6", typeBg: "rgba(59,130,246,0.1)",  initials: "RT", text: "Awaiting Confirmation",      time: "1d ago"  },
+                          ].map((entry, ei, arr) => (
+                            <div key={ei}>
+                              <div className="flex items-start gap-3 py-2.5">
+                                <div style={{ width: 28, height: 28, borderRadius: "50%", flexShrink: 0, background: entry.typeBg, border: `1px solid ${entry.typeColor}33`, display: "flex", alignItems: "center", justifyContent: "center", fontSize: "9px", fontWeight: 700, color: entry.typeColor, letterSpacing: "0.02em" }}>
+                                  {entry.initials}
+                                </div>
+                                <div className="flex-1 min-w-0">
+                                  <div className="flex items-center gap-1.5 mb-0.5">
+                                    <span className="text-xs font-bold" style={{ color: entry.typeColor }}>{entry.type}</span>
+                                    <span style={{ color: "#1e293b", fontSize: "10px" }}>·</span>
+                                    <span className="text-xs" style={{ color: "#334155" }}>{entry.time}</span>
+                                  </div>
+                                  <p className="text-xs leading-snug" style={{ color: "#64748b" }}>{entry.text}</p>
+                                </div>
+                              </div>
+                              {ei < arr.length - 1 && <div style={{ height: "1px", background: "rgba(255,255,255,0.04)" }} />}
+                            </div>
+                          ))}
+                        </div>
+                    </div>
+                  </div>
+                );
+              })}
+
             </div>
+
+            {/* Cycle indicator — sibling below container so cards never cover it */}
+            <div className="flex gap-2 mt-5" style={{ width: "100%", maxWidth: 420, justifyContent: "center" }}>
+              {[0, 1, 2].map((i) => (
+                <button
+                  key={i}
+                  onClick={() => setActiveCard(i)}
+                  style={{
+                    width: i === activeCard ? 20 : 6,
+                    height: 4,
+                    borderRadius: 999,
+                    background: i === activeCard ? "#3b82f6" : "rgba(255,255,255,0.18)",
+                    transition: "all 0.35s ease",
+                    border: "none",
+                    cursor: "pointer",
+                    padding: 0,
+                  }}
+                />
+              ))}
+            </div>
+
           </div>
+
         </div>
       </section>
 
