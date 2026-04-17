@@ -9,9 +9,9 @@ export default async function CaseDetailPage({ params }: { params: Promise<{ id:
   if (!session) redirect("/login");
 
   const { id } = await params;
-  const firmId = (session.user as any).firmId as string;
-  const userId = (session.user as any).id as string;
-  const userRole = (session.user as any).role as "ADMIN" | "ADVISOR" | "OPS";
+  const firmId = session.user.firmId;
+  const userId = session.user.id;
+  const userRole = session.user.role as "ADMIN" | "ADVISOR" | "OPS";
 
   // Non-admins can only access cases they are directly assigned to
   const roleAccessFilter =
@@ -72,11 +72,26 @@ export default async function CaseDetailPage({ params }: { params: Promise<{ id:
   if (!rolloverCase) notFound();
 
   // Serialize dates
+  const serializedCase = {
+    ...rolloverCase,
+    statusUpdatedAt: rolloverCase.statusUpdatedAt.toISOString(),
+    createdAt: rolloverCase.createdAt.toISOString(),
+    updatedAt: rolloverCase.updatedAt.toISOString(),
+    notes: rolloverCase.notes.map((n) => ({ ...n, createdAt: n.createdAt.toISOString() })),
+    activityEvents: rolloverCase.activityEvents.map((e) => ({ ...e, createdAt: e.createdAt.toISOString() })),
+    tasks: rolloverCase.tasks.map((t) => ({
+      ...t,
+      dueDate: t.dueDate ? t.dueDate.toISOString() : null,
+      createdAt: t.createdAt.toISOString(),
+      updatedAt: t.updatedAt.toISOString(),
+    })),
+  };
+
   const serializedChecklist = checklistItems.map((item) => ({
     ...item,
     createdAt: item.createdAt.toISOString(),
     updatedAt: item.updatedAt.toISOString(),
-    documents: item.documents.map((d) => ({ ...d, createdAt: d.createdAt.toISOString() })),
+    documents: item.documents.map((d) => ({ ...d, createdAt: d.createdAt.toISOString(), checklistItem: null as { id: string; name: string } | null })),
   }));
 
   const serializedDocuments = documents.map((d) => ({
@@ -88,12 +103,12 @@ export default async function CaseDetailPage({ params }: { params: Promise<{ id:
     <>
       <CaseViewTracker caseId={id} />
       <CaseDetail
-        rolloverCase={rolloverCase as any}
+        rolloverCase={serializedCase}
         users={users}
-        currentUserId={(session.user as any)?.id as string}
+        currentUserId={session.user.id}
         userRole={userRole}
-        initialChecklist={serializedChecklist as any}
-        initialDocuments={serializedDocuments as any}
+        initialChecklist={serializedChecklist}
+        initialDocuments={serializedDocuments}
       />
     </>
   );

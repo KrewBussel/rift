@@ -1,6 +1,7 @@
 import { auth } from "@/lib/auth";
 import { redirect } from "next/navigation";
 import { prisma } from "@/lib/prisma";
+import { CaseStatus } from "@prisma/client";
 import CaseList from "@/components/CaseList";
 import DashboardWidgets from "@/components/DashboardWidgets";
 import AdminDashboard from "@/components/AdminDashboard";
@@ -26,18 +27,20 @@ export default async function DashboardPage({
   if (!session) redirect("/login");
 
   const params = await searchParams;
-  const firmId = (session.user as any).firmId as string;
-  const userId = (session.user as any).id as string;
-  const role = (session.user as any).role as "ADMIN" | "ADVISOR" | "OPS";
+  const firmId = session.user.firmId;
+  const userId = session.user.id;
+  const role = session.user.role as "ADMIN" | "ADVISOR" | "OPS";
 
   const userRecord = await prisma.user.findUnique({
     where: { id: userId },
     select: { preferences: true },
   });
-  const prefs = (userRecord?.preferences as Record<string, any>) ?? {};
+  const prefs: Record<string, unknown> =
+    userRecord?.preferences !== null && typeof userRecord?.preferences === "object" && !Array.isArray(userRecord?.preferences)
+      ? (userRecord.preferences as Record<string, unknown>)
+      : {};
 
-  const userName =
-    (session.user as any).firstName ?? session.user?.name?.split(" ")[0] ?? "Your";
+  const userName = session.user?.name?.split(" ")[0] ?? "Your";
 
   /* ── ADMIN path ─────────────────────────────────────────────────────── */
   if (role === "ADMIN") {
@@ -165,10 +168,10 @@ export default async function DashboardPage({
   }
 
   /* ── Non-admin path ──────────────────────────────────────────────────── */
-  const staleThreshold = new Date(Date.now() - STALE_DAYS * 24 * 60 * 60 * 1000);
+  const staleThreshold = new Date(new Date().getTime() - STALE_DAYS * 24 * 60 * 60 * 1000);
 
   const search = params.search ?? "";
-  const status = params.status ?? prefs.defaultStatusFilter ?? "";
+  const status = params.status ?? (prefs.defaultStatusFilter as string | undefined) ?? "";
   const showWidgets = prefs.showDashboardWidgets !== false;
   const compactList = prefs.compactCaseList === true;
 
@@ -191,10 +194,10 @@ export default async function DashboardPage({
           ],
         }
       : {}),
-    ...(status ? { status: status as any } : {}),
+    ...(status ? { status: status as CaseStatus } : {}),
   };
 
-  const [cases, myTasks, staleCases] = await Promise.all([
+  const [cases, myTasks, staleCases, firm] = await Promise.all([
     prisma.rolloverCase.findMany({
       where: caseWhere,
       include: {
@@ -223,7 +226,37 @@ export default async function DashboardPage({
       },
       orderBy: { updatedAt: "asc" },
     }),
+    prisma.firm.findUnique({ where: { id: firmId }, select: { name: true } }),
   ]);
+
+  // Compute dashboard stats before serialization (dates are still Date objects here)
+  const now = new Date();
+  const startOfMonth = new Date(now.getFullYear(), now.getMonth(), 1);
+  const endOfToday = new Date(now); endOfToday.setHours(23, 59, 59, 999);
+  const endOfWeek = new Date(now); endOfWeek.setDate(now.getDate() + 7);
+
+  const statusCounts = cases.reduce((acc, c) => {
+    acc[c.status] = (acc[c.status] ?? 0) + 1;
+    return acc;
+  }, {} as Record<string, number>);
+
+  const accountTypeCounts = cases.reduce((acc, c) => {
+    acc[c.accountType] = (acc[c.accountType] ?? 0) + 1;
+    return acc;
+  }, {} as Record<string, number>);
+
+  const totalActive = cases.filter((c) => c.status !== "COMPLETED").length;
+  const totalCompleted = cases.filter((c) => c.status === "COMPLETED").length;
+  const completedThisMonth = cases.filter(
+    (c) => c.status === "COMPLETED" && c.updatedAt >= startOfMonth
+  ).length;
+
+  const taskBreakdown = {
+    overdue: myTasks.filter((t) => t.dueDate && t.dueDate < now).length,
+    dueToday: myTasks.filter((t) => t.dueDate && t.dueDate >= now && t.dueDate <= endOfToday).length,
+    dueThisWeek: myTasks.filter((t) => t.dueDate && t.dueDate > endOfToday && t.dueDate <= endOfWeek).length,
+    noDueDate: myTasks.filter((t) => !t.dueDate).length,
+  };
 
   const serializedCases = cases.map((c) => ({
     ...c,
@@ -246,25 +279,44 @@ export default async function DashboardPage({
     status: c.status,
     updatedAt: c.updatedAt.toISOString(),
     daysSinceActivity: Math.floor(
-      (Date.now() - c.updatedAt.getTime()) / (1000 * 60 * 60 * 24)
+      (new Date().getTime() - c.updatedAt.getTime()) / (1000 * 60 * 60 * 24)
     ),
   }));
 
   return (
     <>
-      <div className="mb-7">
-        <h1
-          className="text-2xl font-semibold tracking-tight"
-          style={{ color: "#e4e6ea" }}
-        >
-          {userName}&rsquo;s Dashboard
-        </h1>
-        <p className="text-sm mt-1" style={{ color: "#7d8590" }}>
+      <div className="mb-6">
+        <div className="flex items-center gap-3 mb-1">
+          <h1
+            className="text-2xl font-semibold tracking-tight"
+            style={{ color: "#e4e6ea" }}
+          >
+            {userName}&rsquo;s Dashboard
+          </h1>
+          {firm?.name && (
+            <span
+              className="px-2.5 py-1 text-xs font-medium"
+              style={{ background: "#161b22", border: "1px solid #21262d", color: "#7d8590", borderRadius: 4 }}
+            >
+              {firm.name}
+            </span>
+          )}
+        </div>
+        <p className="text-sm" style={{ color: "#7d8590" }}>
           Welcome back. Here&rsquo;s an overview of your active cases and tasks.
         </p>
       </div>
       {showWidgets && (
-        <DashboardWidgets myTasks={serializedTasks} staleCases={serializedStale} />
+        <DashboardWidgets
+          myTasks={serializedTasks}
+          staleCases={serializedStale}
+          statusCounts={statusCounts}
+          accountTypeCounts={accountTypeCounts}
+          totalActive={totalActive}
+          totalCompleted={totalCompleted}
+          completedThisMonth={completedThisMonth}
+          taskBreakdown={taskBreakdown}
+        />
       )}
       <CaseList
         cases={serializedCases}

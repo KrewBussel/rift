@@ -39,6 +39,23 @@ const NAV_ITEMS = [
     ),
   },
   {
+    href: "/dashboard/intelligence",
+    label: "Intelligence",
+    matchPrefixes: [] as string[],
+    exact: false,
+    icon: (
+      <svg width="16" height="16" viewBox="0 0 16 16" fill="none" aria-hidden>
+        <path
+          d="M8 1.5a5 5 0 0 0-3 9V12a.5.5 0 0 0 .5.5h5A.5.5 0 0 0 11 12v-1.5a5 5 0 0 0-3-9Z"
+          stroke="currentColor"
+          strokeWidth="1.3"
+          strokeLinejoin="round"
+        />
+        <path d="M6 14h4M6.5 15.5h3" stroke="currentColor" strokeWidth="1.3" strokeLinecap="round" />
+      </svg>
+    ),
+  },
+  {
     href: "/dashboard/settings",
     label: "Settings",
     matchPrefixes: [] as string[],

@@ -2,12 +2,13 @@ import { auth } from "@/lib/auth";
 import { prisma } from "@/lib/prisma";
 import { NextResponse } from "next/server";
 import bcrypt from "bcryptjs";
+import { Prisma } from "@prisma/client";
 
 export async function GET() {
   const session = await auth();
   if (!session?.user) return NextResponse.json({ error: "Unauthorized" }, { status: 401 });
 
-  const userId = (session.user as any).id as string;
+  const userId = session.user.id;
   const user = await prisma.user.findUnique({
     where: { id: userId },
     select: {
@@ -29,10 +30,15 @@ export async function PATCH(req: Request) {
   const session = await auth();
   if (!session?.user) return NextResponse.json({ error: "Unauthorized" }, { status: 401 });
 
-  const userId = (session.user as any).id as string;
+  const userId = session.user.id;
   const body = await req.json();
 
-  const updateData: Record<string, any> = {};
+  const updateData: {
+    firstName?: string;
+    lastName?: string;
+    preferences?: Prisma.InputJsonValue;
+    password?: string;
+  } = {};
 
   // Profile fields
   if (body.firstName !== undefined) updateData.firstName = body.firstName.trim();
@@ -44,7 +50,10 @@ export async function PATCH(req: Request) {
       where: { id: userId },
       select: { preferences: true },
     });
-    const existingPrefs = (existing?.preferences as Record<string, any>) ?? {};
+    const existingPrefs: Record<string, unknown> =
+      existing?.preferences !== null && typeof existing?.preferences === "object" && !Array.isArray(existing?.preferences)
+        ? (existing.preferences as Record<string, unknown>)
+        : {};
     updateData.preferences = { ...existingPrefs, ...body.preferences };
   }
 

@@ -7,7 +7,7 @@ export async function GET(_req: NextRequest, { params }: { params: Promise<{ id:
   if (!session?.user) return NextResponse.json({ error: "Unauthorized" }, { status: 401 });
 
   const { id } = await params;
-  const firmId = (session.user as any).firmId as string;
+  const firmId = session.user.firmId;
 
   const rolloverCase = await prisma.rolloverCase.findFirst({ where: { id, firmId } });
   if (!rolloverCase) return NextResponse.json({ error: "Not found" }, { status: 404 });
@@ -31,8 +31,8 @@ export async function POST(request: NextRequest, { params }: { params: Promise<{
   if (!session?.user) return NextResponse.json({ error: "Unauthorized" }, { status: 401 });
 
   const { id } = await params;
-  const firmId = (session.user as any).firmId as string;
-  const userId = (session.user as any).id as string;
+  const firmId = session.user.firmId;
+  const userId = session.user.id;
 
   const rolloverCase = await prisma.rolloverCase.findFirst({ where: { id, firmId } });
   if (!rolloverCase) return NextResponse.json({ error: "Not found" }, { status: 404 });

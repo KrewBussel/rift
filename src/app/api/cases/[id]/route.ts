@@ -7,7 +7,7 @@ export async function GET(request: NextRequest, { params }: { params: Promise<{ 
   if (!session?.user) return NextResponse.json({ error: "Unauthorized" }, { status: 401 });
 
   const { id } = await params;
-  const firmId = (session.user as any).firmId as string;
+  const firmId = session.user.firmId;
 
   const rolloverCase = await prisma.rolloverCase.findFirst({
     where: { id, firmId },
@@ -35,8 +35,8 @@ export async function PATCH(request: NextRequest, { params }: { params: Promise<
   if (!session?.user) return NextResponse.json({ error: "Unauthorized" }, { status: 401 });
 
   const { id } = await params;
-  const firmId = (session.user as any).firmId as string;
-  const userId = session.user.id as string;
+  const firmId = session.user.firmId;
+  const userId = session.user.id;
   const body = await request.json();
 
   const existing = await prisma.rolloverCase.findFirst({ where: { id, firmId } });

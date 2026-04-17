@@ -6,7 +6,7 @@ export async function GET() {
   const session = await auth();
   if (!session?.user) return NextResponse.json({ error: "Unauthorized" }, { status: 401 });
 
-  const firmId = (session.user as any).firmId as string;
+  const firmId = session.user.firmId;
 
   const users = await prisma.user.findMany({
     where: { firmId },

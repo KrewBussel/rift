@@ -1,6 +1,7 @@
 import { NextRequest, NextResponse } from "next/server";
 import { auth } from "@/lib/auth";
 import { prisma } from "@/lib/prisma";
+import { CaseStatus } from "@prisma/client";
 
 export async function GET(request: NextRequest) {
   const session = await auth();
@@ -11,7 +12,7 @@ export async function GET(request: NextRequest) {
   const status = searchParams.get("status") ?? "";
   const assignedAdvisorId = searchParams.get("advisorId") ?? "";
 
-  const firmId = (session.user as any).firmId as string;
+  const firmId = session.user.firmId;
 
   const cases = await prisma.rolloverCase.findMany({
     where: {
@@ -23,7 +24,7 @@ export async function GET(request: NextRequest) {
           { clientEmail: { contains: search, mode: "insensitive" } },
         ],
       } : {}),
-      ...(status ? { status: status as any } : {}),
+      ...(status ? { status: status as CaseStatus } : {}),
       ...(assignedAdvisorId ? { assignedAdvisorId } : {}),
     },
     include: {
@@ -40,8 +41,8 @@ export async function POST(request: NextRequest) {
   const session = await auth();
   if (!session?.user) return NextResponse.json({ error: "Unauthorized" }, { status: 401 });
 
-  const firmId = (session.user as any).firmId as string;
-  const userId = session.user.id as string;
+  const firmId = session.user.firmId;
+  const userId = session.user.id;
   const body = await request.json();
 
   const newCase = await prisma.rolloverCase.create({

@@ -14,7 +14,7 @@ export async function POST(req: Request) {
   const session = await auth();
   if (!session?.user) return NextResponse.json({ error: "Unauthorized" }, { status: 401 });
 
-  const userId = (session.user as any).id as string;
+  const userId = session.user.id;
 
   const formData = await req.formData();
   const file = formData.get("file") as File | null;
@@ -46,7 +46,10 @@ export async function POST(req: Request) {
     where: { id: userId },
     select: { preferences: true },
   });
-  const prefs = (user?.preferences as Record<string, any>) ?? {};
+  const prefs: Record<string, unknown> =
+    user?.preferences !== null && typeof user?.preferences === "object" && !Array.isArray(user?.preferences)
+      ? (user.preferences as Record<string, unknown>)
+      : {};
 
   await prisma.user.update({
     where: { id: userId },

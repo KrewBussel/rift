@@ -1,6 +1,7 @@
 import { auth } from "@/lib/auth";
 import { redirect } from "next/navigation";
 import { prisma } from "@/lib/prisma";
+import { CaseStatus } from "@prisma/client";
 import CaseList from "@/components/CaseList";
 
 const STATUS_LABELS: Record<string, string> = {
@@ -22,18 +23,21 @@ export default async function CasesPage({
   if (!session) redirect("/login");
 
   const params = await searchParams;
-  const firmId = (session.user as any).firmId as string;
-  const userId = (session.user as any).id as string;
-  const role = (session.user as any).role as "ADMIN" | "ADVISOR" | "OPS";
+  const firmId = session.user.firmId;
+  const userId = session.user.id;
+  const role = session.user.role as "ADMIN" | "ADVISOR" | "OPS";
 
   const userRecord = await prisma.user.findUnique({
     where: { id: userId },
     select: { preferences: true },
   });
-  const prefs = (userRecord?.preferences as Record<string, any>) ?? {};
+  const prefs: Record<string, unknown> =
+    userRecord?.preferences !== null && typeof userRecord?.preferences === "object" && !Array.isArray(userRecord?.preferences)
+      ? (userRecord.preferences as Record<string, unknown>)
+      : {};
 
   const search = params.search ?? "";
-  const status = params.status ?? prefs.defaultStatusFilter ?? "";
+  const status = params.status ?? (prefs.defaultStatusFilter as string | undefined) ?? "";
   const advisorId = role === "ADMIN" ? (params.advisorId ?? "") : "";
   const opsId = role === "ADMIN" ? (params.opsId ?? "") : "";
 
@@ -72,7 +76,7 @@ export default async function CasesPage({
           ],
         }
       : {}),
-    ...(status ? { status: status as any } : {}),
+    ...(status ? { status: status as CaseStatus } : {}),
   };
 
   const [cases, users, advisorCountRows, opsCountRows] = await Promise.all([

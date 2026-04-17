@@ -11,7 +11,7 @@ export async function GET(_req: NextRequest, { params }: { params: Promise<{ id:
   if (!session?.user) return NextResponse.json({ error: "Unauthorized" }, { status: 401 });
 
   const { id } = await params;
-  const firmId = (session.user as any).firmId as string;
+  const firmId = session.user.firmId;
 
   const doc = await prisma.document.findFirst({
     where: { id },
@@ -40,9 +40,9 @@ export async function DELETE(_req: NextRequest, { params }: { params: Promise<{ 
   if (!session?.user) return NextResponse.json({ error: "Unauthorized" }, { status: 401 });
 
   const { id } = await params;
-  const firmId = (session.user as any).firmId as string;
-  const userId = (session.user as any).id as string;
-  const role = (session.user as any).role as string;
+  const firmId = session.user.firmId;
+  const userId = session.user.id;
+  const role = session.user.role;
 
   if (role !== "ADMIN" && role !== "OPS") {
     return NextResponse.json({ error: "Forbidden" }, { status: 403 });

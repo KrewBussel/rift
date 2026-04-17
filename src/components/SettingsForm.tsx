@@ -3,7 +3,7 @@
 import { useState } from "react";
 import { formatDate } from "@/lib/utils";
 
-interface UserPreferences {
+interface UserPreferences extends Record<string, unknown> {
   defaultStatusFilter?: string;
   defaultViewFilter?: string;
   timezone?: string;
@@ -612,6 +612,19 @@ function PreferencesSection({ user }: { user: User }) {
 
 /* ─── Notifications (Admin only) ──────────────────────────────────────────── */
 
+interface DryRunFirmResult {
+  firmId: string;
+  overdueTaskEmails: number;
+  stalledCaseEmails: number;
+  missingDocEmails: number;
+  skipped: string[];
+}
+
+interface DryRunResult {
+  totalEmails: number;
+  firms: DryRunFirmResult[];
+}
+
 function NotificationsSection({
   firmSettings: initial,
   cronSecret,
@@ -626,7 +639,7 @@ function NotificationsSection({
   const [missingDocs, setMissingDocs] = useState(initial.missingDocsReminders);
   const [saving, setSaving] = useState(false);
   const [message, setMessage] = useState<{ type: "success" | "error"; text: string } | null>(null);
-  const [testResult, setTestResult] = useState<any>(null);
+  const [testResult, setTestResult] = useState<DryRunResult | null>(null);
   const [testing, setTesting] = useState(false);
 
   async function handleSave(e: React.FormEvent) {
@@ -661,7 +674,7 @@ function NotificationsSection({
       `/api/cron/reminders?dry_run=true&secret=${encodeURIComponent(cronSecret)}`,
       { method: "POST" }
     );
-    const data = await res.json();
+    const data = await res.json() as DryRunResult;
     setTestResult(data);
     setTesting(false);
   }
@@ -782,7 +795,7 @@ function NotificationsSection({
               Dry-run results — {testResult.totalEmails} email
               {testResult.totalEmails !== 1 ? "s" : ""} would be sent
             </p>
-            {testResult.firms?.map((firm: any) => (
+            {testResult.firms?.map((firm: DryRunFirmResult) => (
               <div key={firm.firmId} className="space-y-2">
                 {firm.overdueTaskEmails === 0 &&
                 firm.stalledCaseEmails === 0 &&

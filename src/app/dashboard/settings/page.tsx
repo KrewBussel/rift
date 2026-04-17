@@ -8,9 +8,9 @@ export default async function SettingsPage() {
   const session = await auth();
   if (!session) redirect("/login");
 
-  const userId = (session.user as any).id as string;
-  const role = (session.user as any).role as string;
-  const firmId = (session.user as any).firmId as string;
+  const userId = session.user.id;
+  const role = session.user.role;
+  const firmId = session.user.firmId;
 
   const [user, firmSettings] = await Promise.all([
     prisma.user.findUnique({
@@ -34,7 +34,10 @@ export default async function SettingsPage() {
     <SettingsForm
       user={{
         ...user,
-        preferences: (user.preferences as Record<string, any>) ?? {},
+        preferences:
+          user.preferences !== null && typeof user.preferences === "object" && !Array.isArray(user.preferences)
+            ? (user.preferences as Record<string, unknown>)
+            : {},
         createdAt: user.createdAt.toISOString(),
       }}
       firmSettings={firmSettings}

@@ -7,7 +7,7 @@ export async function GET() {
   const session = await auth();
   if (!session?.user) return NextResponse.json({ error: "Unauthorized" }, { status: 401 });
 
-  const firmId = (session.user as any).firmId as string;
+  const firmId = session.user.firmId;
   const settings = await getOrCreateFirmSettings(firmId);
   return NextResponse.json(settings);
 }
@@ -16,23 +16,24 @@ export async function PATCH(req: Request) {
   const session = await auth();
   if (!session?.user) return NextResponse.json({ error: "Unauthorized" }, { status: 401 });
 
-  const role = (session.user as any).role as string;
+  const role = session.user.role;
   if (role !== "ADMIN") return NextResponse.json({ error: "Forbidden" }, { status: 403 });
 
-  const firmId = (session.user as any).firmId as string;
+  const firmId = session.user.firmId;
   const body = await req.json();
 
-  const allowed = [
-    "remindersEnabled",
-    "stalledCaseDays",
-    "overdueTaskReminders",
-    "stalledCaseReminders",
-    "missingDocsReminders",
-  ];
-  const data: Record<string, any> = {};
-  for (const key of allowed) {
-    if (body[key] !== undefined) data[key] = body[key];
-  }
+  const data: {
+    remindersEnabled?: boolean;
+    stalledCaseDays?: number;
+    overdueTaskReminders?: boolean;
+    stalledCaseReminders?: boolean;
+    missingDocsReminders?: boolean;
+  } = {};
+  if (body.remindersEnabled !== undefined) data.remindersEnabled = Boolean(body.remindersEnabled);
+  if (body.stalledCaseDays !== undefined) data.stalledCaseDays = Number(body.stalledCaseDays);
+  if (body.overdueTaskReminders !== undefined) data.overdueTaskReminders = Boolean(body.overdueTaskReminders);
+  if (body.stalledCaseReminders !== undefined) data.stalledCaseReminders = Boolean(body.stalledCaseReminders);
+  if (body.missingDocsReminders !== undefined) data.missingDocsReminders = Boolean(body.missingDocsReminders);
 
   const updated = await prisma.firmSettings.upsert({
     where: { firmId },

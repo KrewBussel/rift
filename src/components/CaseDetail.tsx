@@ -14,6 +14,9 @@ interface Note { id: string; body: string; createdAt: string; author: { id: stri
 interface ActivityEvent { id: string; eventType: string; eventDetails: string | null; createdAt: string; actor: { id: string; firstName: string; lastName: string }; }
 interface Task { id: string; title: string; description: string | null; status: "OPEN" | "COMPLETED" | "BLOCKED"; dueDate: string | null; assignee: { id: string; firstName: string; lastName: string } | null; createdBy: { id: string; firstName: string; lastName: string }; createdAt: string; }
 interface RolloverCase { id: string; clientFirstName: string; clientLastName: string; clientEmail: string; sourceProvider: string; destinationCustodian: string; accountType: string; status: string; highPriority: boolean; internalNotes: string | null; statusUpdatedAt: string; createdAt: string; updatedAt: string; assignedAdvisor: { id: string; firstName: string; lastName: string } | null; assignedOps: { id: string; firstName: string; lastName: string } | null; notes: Note[]; activityEvents: ActivityEvent[]; tasks: Task[]; }
+interface ChecklistDocument { id: string; name: string; fileType: string; fileSize: number; createdAt: string; uploadedBy: { id: string; firstName: string; lastName: string }; checklistItem: { id: string; name: string } | null; }
+type ChecklistStatus = "NOT_STARTED" | "REQUESTED" | "RECEIVED" | "REVIEWED" | "COMPLETE";
+interface ChecklistItem { id: string; name: string; required: boolean; status: ChecklistStatus; notes: string | null; sortOrder: number; documents: ChecklistDocument[]; }
 
 const STATUSES = [
   { value: "INTAKE", label: "Intake" },
@@ -58,7 +61,7 @@ const CARD_HEADER_BORDER = { borderBottom: "1px solid #21262d" };
 const ICON_BOX = { background: "#21262d", width: 28, height: 28, borderRadius: 8, display: "flex", alignItems: "center", justifyContent: "center", flexShrink: 0 as const };
 
 export default function CaseDetail({ rolloverCase: initial, users, currentUserId, userRole, initialChecklist, initialDocuments }: {
-  rolloverCase: RolloverCase; users: User[]; currentUserId: string; userRole: string; initialChecklist: any[]; initialDocuments: any[];
+  rolloverCase: RolloverCase; users: User[]; currentUserId: string; userRole: string; initialChecklist: ChecklistItem[]; initialDocuments: ChecklistDocument[];
 }) {
   const [docRefreshKey, setDocRefreshKey] = useState(0);
   const router = useRouter();
@@ -199,7 +202,7 @@ export default function CaseDetail({ rolloverCase: initial, users, currentUserId
                   { label: "Destination Custodian", key: "destinationCustodian", type: "input" },
                 ].map(({ label, key, type }) => (
                   <EditRow key={key} label={label}>
-                    <input type="text" value={(detailsDraft as any)[key]} onChange={(e) => setDetailsDraft((d) => ({ ...d, [key]: e.target.value }))} className={inputCls} style={inputStyle} />
+                    <input type="text" value={detailsDraft[key as keyof typeof detailsDraft] as string} onChange={(e) => setDetailsDraft((d) => ({ ...d, [key]: e.target.value }))} className={inputCls} style={inputStyle} />
                   </EditRow>
                 ))}
                 <EditRow label="Account Type">

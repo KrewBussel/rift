@@ -10,7 +10,7 @@ export async function GET(
   const session = await auth();
   if (!session?.user) return new Response("Unauthorized", { status: 401 });
 
-  const firmId = (session.user as any).firmId as string;
+  const firmId = session.user.firmId;
   const { id } = await params;
 
   const user = await prisma.user.findFirst({
@@ -20,7 +20,10 @@ export async function GET(
 
   if (!user) return new Response("Not Found", { status: 404 });
 
-  const prefs = (user.preferences as Record<string, any>) ?? {};
+  const prefs: Record<string, unknown> =
+    user.preferences !== null && typeof user.preferences === "object" && !Array.isArray(user.preferences)
+      ? (user.preferences as Record<string, unknown>)
+      : {};
   const key = prefs.avatarKey as string | undefined;
 
   if (!key) return new Response("Not Found", { status: 404 });

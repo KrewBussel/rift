@@ -7,8 +7,8 @@ export async function PATCH(request: NextRequest, { params }: { params: Promise<
   if (!session?.user) return NextResponse.json({ error: "Unauthorized" }, { status: 401 });
 
   const { id } = await params;
-  const userId = (session.user as any).id as string;
-  const firmId = (session.user as any).firmId as string;
+  const userId = session.user.id;
+  const firmId = session.user.firmId;
   const body = await request.json();
 
   const task = await prisma.task.findFirst({
@@ -58,7 +58,7 @@ export async function DELETE(_req: NextRequest, { params }: { params: Promise<{ 
   if (!session?.user) return NextResponse.json({ error: "Unauthorized" }, { status: 401 });
 
   const { id } = await params;
-  const firmId = (session.user as any).firmId as string;
+  const firmId = session.user.firmId;
 
   const task = await prisma.task.findFirst({
     where: { id },

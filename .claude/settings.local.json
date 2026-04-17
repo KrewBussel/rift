@@ -21,7 +21,11 @@
       "Bash(npx tsx:*)",
       "Skill(update-config)",
       "Skill(update-config:*)",
-      "WebSearch"
+      "WebSearch",
+      "Bash(npx eslint *)",
+      "Bash(python3 -c ' *)",
+      "Skill(claude-api)",
+      "Skill(claude-api:*)"
     ]
   }
 }

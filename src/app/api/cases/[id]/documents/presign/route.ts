@@ -25,7 +25,7 @@ export async function GET(
   if (!session?.user) return NextResponse.json({ error: "Unauthorized" }, { status: 401 });
 
   const { id: caseId } = await params;
-  const firmId = (session.user as any).firmId as string;
+  const firmId = session.user.firmId;
 
   const rolloverCase = await prisma.rolloverCase.findFirst({ where: { id: caseId, firmId } });
   if (!rolloverCase) return NextResponse.json({ error: "Not found" }, { status: 404 });

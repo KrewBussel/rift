@@ -9,6 +9,30 @@ import {
   type MissingDocCase,
 } from "./email";
 
+interface OverdueTaskPreview {
+  type: "OVERDUE_TASKS";
+  to: string;
+  name: string;
+  subject: string;
+  taskCount: number;
+}
+
+interface StalledCasePreview {
+  type: "STALLED_CASES";
+  to: string;
+  name: string;
+  subject: string;
+  caseCount: number;
+}
+
+interface MissingDocPreview {
+  type: "MISSING_DOCS";
+  to: string;
+  name: string;
+  subject: string;
+  caseCount: number;
+}
+
 export interface ReminderResult {
   firmId: string;
   firmName: string;
@@ -47,7 +71,7 @@ async function logReminder(
 async function sendOverdueTaskReminders(
   firmId: string,
   dryRun: boolean
-): Promise<{ sent: number; previews: any[] }> {
+): Promise<{ sent: number; previews: OverdueTaskPreview[] }> {
   const now = new Date();
 
   // Find all open overdue tasks for this firm, grouped by assignee
@@ -77,7 +101,7 @@ async function sendOverdueTaskReminders(
   }
 
   let sent = 0;
-  const previews: any[] = [];
+  const previews: OverdueTaskPreview[] = [];
 
   for (const [assigneeId, assigneeTasks] of byAssignee) {
     const assignee = assigneeTasks[0].assignee!;
@@ -120,7 +144,7 @@ async function sendStalledCaseReminders(
   firmId: string,
   thresholdDays: number,
   dryRun: boolean
-): Promise<{ sent: number; previews: any[] }> {
+): Promise<{ sent: number; previews: StalledCasePreview[] }> {
   const threshold = new Date(Date.now() - thresholdDays * 24 * 60 * 60 * 1000);
 
   const stalledCases = await prisma.rolloverCase.findMany({
@@ -156,7 +180,7 @@ async function sendStalledCaseReminders(
   }));
 
   let sent = 0;
-  const previews: any[] = [];
+  const previews: StalledCasePreview[] = [];
 
   for (const user of recipients) {
     const refId = `stalled-digest-${firmId}`;
@@ -190,7 +214,7 @@ async function sendStalledCaseReminders(
 async function sendMissingDocReminders(
   firmId: string,
   dryRun: boolean
-): Promise<{ sent: number; previews: any[] }> {
+): Promise<{ sent: number; previews: MissingDocPreview[] }> {
   // Find active cases (past INTAKE) with required checklist items not yet received
   const cases = await prisma.rolloverCase.findMany({
     where: {
@@ -224,7 +248,7 @@ async function sendMissingDocReminders(
   }
 
   let sent = 0;
-  const previews: any[] = [];
+  const previews: MissingDocPreview[] = [];
 
   for (const [opsId, { user, cases: opsCases }] of byOps) {
     const refId = `missing-docs-${opsId}`;

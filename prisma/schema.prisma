@@ -12,10 +12,11 @@ model Firm {
   createdAt DateTime @default(now())
   updatedAt DateTime @updatedAt
 
-  users        User[]
-  cases        RolloverCase[]
-  settings     FirmSettings?
-  reminderLogs ReminderLog[]
+  users          User[]
+  cases          RolloverCase[]
+  settings       FirmSettings?
+  reminderLogs   ReminderLog[]
+  custodianNotes CustodianNote[]
 }
 
 model FirmSettings {
@@ -65,6 +66,7 @@ model User {
   assignedTasks    Task[]         @relation("AssignedTasks")
   createdTasks     Task[]         @relation("CreatedTasks")
   uploadedDocuments Document[]
+  custodianNotes   CustodianNote[]
 }
 
 enum Role {
@@ -215,4 +217,58 @@ model Document {
   case          RolloverCase   @relation(fields: [caseId], references: [id], onDelete: Cascade)
   checklistItem ChecklistItem? @relation(fields: [checklistItemId], references: [id])
   uploadedBy    User           @relation(fields: [uploadedById], references: [id])
+}
+
+model Custodian {
+  id                      String   @id @default(cuid())
+  name                    String   @unique
+  legalName               String?
+  aliases                 String[] @default([])
+  phone                   String?
+  fax                     String?
+  email                   String?
+  website                 String?
+  mailingAddress          String?
+  overnightAddress        String?
+  wireInstructions        String?
+  typicalProcessingDays   Int?
+  minProcessingDays       Int?
+  maxProcessingDays       Int?
+  signatureRequirements   String?
+  medallionRequired       Boolean  @default(false)
+  medallionThreshold      Int?
+  notarizationRequired    Boolean  @default(false)
+  acceptsElectronic       Boolean  @default(false)
+  acceptsDigitalSignature Boolean  @default(false)
+  supportsACATS           Boolean  @default(true)
+  overview                String?
+  quirks                  String[] @default([])
+  commonForms             String[] @default([])
+  tags                    String[] @default([])
+  lastVerifiedAt          DateTime?
+  createdAt               DateTime @default(now())
+  updatedAt               DateTime @updatedAt
+
+  notes CustodianNote[]
+
+  @@index([name])
+}
+
+model CustodianNote {
+  id          String   @id @default(cuid())
+  custodianId String
+  firmId      String
+  authorId    String
+  title       String
+  body        String
+  category    String?
+  pinned      Boolean  @default(false)
+  createdAt   DateTime @default(now())
+  updatedAt   DateTime @updatedAt
+
+  custodian Custodian @relation(fields: [custodianId], references: [id], onDelete: Cascade)
+  firm      Firm      @relation(fields: [firmId], references: [id], onDelete: Cascade)
+  author    User      @relation(fields: [authorId], references: [id])
+
+  @@index([custodianId, firmId])
 }

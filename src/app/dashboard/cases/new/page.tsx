@@ -7,7 +7,7 @@ export default async function NewCasePage() {
   const session = await auth();
   if (!session) redirect("/login");
 
-  const firmId = (session.user as any).firmId as string;
+  const firmId = session.user.firmId;
 
   const users = await prisma.user.findMany({
     where: { firmId },

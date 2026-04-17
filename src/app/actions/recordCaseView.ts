@@ -6,14 +6,17 @@ import { prisma } from "@/lib/prisma";
 export async function recordCaseView(caseId: string) {
   const session = await auth();
   if (!session) return;
-  const userId = (session.user as any).id as string;
+  const userId = session.user.id;
 
   const user = await prisma.user.findUnique({
     where: { id: userId },
     select: { preferences: true },
   });
 
-  const prefs = (user?.preferences as Record<string, any>) ?? {};
+  const prefs: Record<string, unknown> =
+    user?.preferences !== null && typeof user?.preferences === "object" && !Array.isArray(user?.preferences)
+      ? (user.preferences as Record<string, unknown>)
+      : {};
   const recent: string[] = Array.isArray(prefs.recentlyViewedCaseIds)
     ? prefs.recentlyViewedCaseIds
     : [];
