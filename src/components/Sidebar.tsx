@@ -258,7 +258,7 @@ export default function Sidebar({ user }: Props) {
                 Cancel
               </button>
               <button
-                onClick={() => signOut({ callbackUrl: window.location.origin })}
+                onClick={async () => { await signOut({ redirect: false }); window.location.href = window.location.origin; }}
                 className="px-4 py-2 text-sm font-semibold rounded-lg transition-colors hover:bg-red-700"
                 style={{ background: "#b91c1c", color: "#fff" }}
               >
