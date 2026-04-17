@@ -30,7 +30,7 @@ export async function GET(
     const bytes = await result.Body?.transformToByteArray();
     if (!bytes) return new Response("Not Found", { status: 404 });
 
-    return new Response(bytes, {
+    return new Response(Buffer.from(bytes), {
       headers: {
         "Content-Type": result.ContentType ?? "image/jpeg",
         "Cache-Control": "private, max-age=3600",
