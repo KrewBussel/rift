@@ -140,6 +140,11 @@ function ProfileSection({ user }: { user: User }) {
   const [saving, setSaving] = useState(false);
   const [message, setMessage] = useState<{ type: "success" | "error"; text: string } | null>(null);
 
+  const [avatarVersion, setAvatarVersion] = useState(() => Date.now());
+  const [avatarError, setAvatarError] = useState(false);
+  const [avatarUploading, setAvatarUploading] = useState(false);
+  const [avatarMessage, setAvatarMessage] = useState<{ type: "success" | "error"; text: string } | null>(null);
+
   const isDirty = firstName !== user.firstName || lastName !== user.lastName;
 
   async function handleSave(e: React.FormEvent) {
@@ -163,16 +168,78 @@ function ProfileSection({ user }: { user: User }) {
     }
   }
 
+  async function handleAvatarChange(e: React.ChangeEvent<HTMLInputElement>) {
+    const file = e.target.files?.[0];
+    if (!file) return;
+
+    setAvatarUploading(true);
+    setAvatarMessage(null);
+
+    const fd = new FormData();
+    fd.append("file", file);
+
+    const res = await fetch("/api/settings/avatar", { method: "POST", body: fd });
+
+    setAvatarUploading(false);
+    if (res.ok) {
+      setAvatarError(false);
+      setAvatarVersion(Date.now());
+      setAvatarMessage({ type: "success", text: "Photo updated." });
+    } else {
+      const data = await res.json();
+      setAvatarMessage({ type: "error", text: data.error ?? "Upload failed." });
+    }
+    e.target.value = "";
+  }
+
   return (
     <div style={CARD_STYLE} className="p-6 space-y-6">
       {/* Avatar + info */}
       <div className="flex items-center gap-4">
-        <div
-          className="w-14 h-14 rounded-full flex items-center justify-center flex-shrink-0 text-lg font-semibold"
-          style={{ background: "#1f3a5f", color: "#79c0ff" }}
-        >
-          {user.firstName.charAt(0).toUpperCase()}
-        </div>
+        {/* Clickable avatar with camera overlay */}
+        <label className="relative flex-shrink-0 cursor-pointer group" title="Change photo">
+          <input
+            type="file"
+            accept="image/jpeg,image/png,image/webp"
+            className="sr-only"
+            onChange={handleAvatarChange}
+            disabled={avatarUploading}
+          />
+          {!avatarError ? (
+            <img
+              key={avatarVersion}
+              src={`/api/users/me/avatar?v=${avatarVersion}`}
+              alt="Profile photo"
+              className="w-14 h-14 rounded-full object-cover"
+              onError={() => setAvatarError(true)}
+            />
+          ) : (
+            <div
+              className="w-14 h-14 rounded-full flex items-center justify-center text-lg font-semibold"
+              style={{ background: "#1f3a5f", color: "#79c0ff" }}
+            >
+              {user.firstName.charAt(0).toUpperCase()}
+            </div>
+          )}
+          {/* Hover overlay */}
+          <div
+            className="absolute inset-0 rounded-full flex items-center justify-center opacity-0 group-hover:opacity-100 transition-opacity"
+            style={{ background: "rgba(0,0,0,0.55)" }}
+          >
+            {avatarUploading ? (
+              <svg className="animate-spin" width="16" height="16" viewBox="0 0 16 16" fill="none">
+                <circle cx="8" cy="8" r="6" stroke="white" strokeWidth="2" strokeOpacity="0.3" />
+                <path d="M8 2a6 6 0 0 1 6 6" stroke="white" strokeWidth="2" strokeLinecap="round" />
+              </svg>
+            ) : (
+              <svg width="16" height="16" viewBox="0 0 16 16" fill="none">
+                <path d="M2 12V5.5A1.5 1.5 0 0 1 3.5 4H5l1-1.5h4L11 4h1.5A1.5 1.5 0 0 1 14 5.5V12a1.5 1.5 0 0 1-1.5 1.5h-9A1.5 1.5 0 0 1 2 12Z" stroke="white" strokeWidth="1.3" />
+                <circle cx="8" cy="8.5" r="2" stroke="white" strokeWidth="1.3" />
+              </svg>
+            )}
+          </div>
+        </label>
+
         <div>
           <p className="text-sm font-semibold" style={{ color: "#e4e6ea" }}>
             {user.firstName} {user.lastName}
@@ -184,6 +251,16 @@ function ProfileSection({ user }: { user: User }) {
           >
             {ROLE_LABELS[user.role] ?? user.role}
           </span>
+          {avatarMessage && (
+            <p className="text-xs mt-1" style={{ color: avatarMessage.type === "success" ? "#3fb950" : "#f87171" }}>
+              {avatarMessage.text}
+            </p>
+          )}
+          {!avatarMessage && (
+            <p className="text-xs mt-1" style={{ color: "#484f58" }}>
+              Click photo to change · JPEG, PNG, WebP · max 2 MB
+            </p>
+          )}
         </div>
       </div>
 

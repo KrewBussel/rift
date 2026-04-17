@@ -2,6 +2,7 @@ import { auth } from "@/lib/auth";
 import { redirect, notFound } from "next/navigation";
 import { prisma } from "@/lib/prisma";
 import CaseDetail from "@/components/CaseDetail";
+import CaseViewTracker from "@/components/CaseViewTracker";
 
 export default async function CaseDetailPage({ params }: { params: Promise<{ id: string }> }) {
   const session = await auth();
@@ -84,13 +85,16 @@ export default async function CaseDetailPage({ params }: { params: Promise<{ id:
   }));
 
   return (
-    <CaseDetail
-      rolloverCase={rolloverCase as any}
-      users={users}
-      currentUserId={(session.user as any)?.id as string}
-      userRole={userRole}
-      initialChecklist={serializedChecklist as any}
-      initialDocuments={serializedDocuments as any}
-    />
+    <>
+      <CaseViewTracker caseId={id} />
+      <CaseDetail
+        rolloverCase={rolloverCase as any}
+        users={users}
+        currentUserId={(session.user as any)?.id as string}
+        userRole={userRole}
+        initialChecklist={serializedChecklist as any}
+        initialDocuments={serializedDocuments as any}
+      />
+    </>
   );
 }

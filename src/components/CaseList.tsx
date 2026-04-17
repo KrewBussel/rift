@@ -4,6 +4,7 @@ import { useRouter, usePathname } from "next/navigation";
 import Link from "next/link";
 import { formatDistanceToNow } from "@/lib/utils";
 import DarkSelect from "./DarkSelect";
+import UserAvatar from "./UserAvatar";
 
 interface User {
   id: string;
@@ -60,10 +61,10 @@ function StatusBadge({ status, label }: { status: string; label: string }) {
   const colors = STATUS_COLORS[status] ?? { bg: "#21262d", text: "#8b949e", dot: "#6e7681" };
   return (
     <span
-      className="inline-flex items-center gap-1.5 rounded-full px-2.5 py-1 text-xs font-medium whitespace-nowrap"
+      className="inline-flex items-center gap-1.5 rounded px-2.5 py-1 text-xs font-medium whitespace-nowrap"
       style={{ background: colors.bg, color: colors.text }}
     >
-      <span className="w-1.5 h-1.5 rounded-full flex-shrink-0" style={{ background: colors.dot }} />
+      <span className="w-1.5 h-1.5 flex-shrink-0" style={{ background: colors.dot }} />
       {label}
     </span>
   );
@@ -302,7 +303,7 @@ export default function CaseList({
 
       {/* Filter panel */}
       <div
-        className="rounded-xl mb-4 overflow-hidden"
+        className="rounded-xl mb-4"
         style={{ background: "#161b22", border: "1px solid #21262d" }}
       >
         {/* Search + status row */}
@@ -419,100 +420,61 @@ export default function CaseList({
           </p>
         </div>
       ) : (
-        <div
-          className="rounded-xl overflow-hidden"
-          style={{ background: "#161b22", border: "1px solid #21262d" }}
-        >
-          {/* Column headers — admin gets advisor + ops columns */}
-          <div
-            className="hidden md:flex items-center gap-4 px-5 py-2"
-            style={{ borderBottom: "1px solid #21262d" }}
-          >
-            <div className="flex-1 text-xs font-medium" style={{ color: "#484f58" }}>
-              Client
-            </div>
-            {isAdmin && (
-              <>
-                <div className="w-32 text-xs font-medium" style={{ color: "#484f58" }}>
-                  Advisor
-                </div>
-                <div className="w-28 text-xs font-medium hidden lg:block" style={{ color: "#484f58" }}>
-                  Ops
-                </div>
-              </>
-            )}
-            {!isAdmin && (
-              <div className="w-36 text-xs font-medium" style={{ color: "#484f58" }}>
-                Advisor
-              </div>
-            )}
-            <div className="w-36 text-xs font-medium text-right" style={{ color: "#484f58" }}>
-              Status
-            </div>
-          </div>
-
-          {cases.map((c, i) => (
+        <div className="flex flex-col gap-2">
+          {cases.map((c) => (
             <Link
               key={c.id}
               href={`/dashboard/cases/${c.id}`}
-              className={`flex items-center gap-4 px-5 transition-colors hover:bg-[#1c2128] group ${
-                compact ? "py-2.5" : "py-3.5"
-              }`}
+              className="block group rounded overflow-hidden transition-colors"
               style={{
-                borderTop: i !== 0 ? "1px solid #21262d" : undefined,
-                borderLeft: c.highPriority ? "2px solid #f87171" : "2px solid transparent",
+                border: "1px solid #21262d",
+                borderLeft: c.highPriority ? "3px solid #f87171" : "1px solid #21262d",
               }}
             >
-              {/* Client info */}
-              <div className="flex-1 min-w-0">
-                <div className="flex items-center gap-2">
-                  <p
-                    className="text-sm font-medium truncate group-hover:text-blue-400 transition-colors"
-                    style={{ color: "#c9d1d9" }}
-                  >
-                    {c.clientFirstName} {c.clientLastName}
-                  </p>
-                  {c.highPriority && (
+              {/* Main body */}
+              <div
+                className="flex items-start justify-between gap-4 px-4 pt-3.5 pb-3 transition-colors group-hover:bg-[#1c2128]"
+                style={{ background: "#161b22" }}
+              >
+                <div className="min-w-0 flex-1">
+                  <div className="flex items-center gap-2 flex-wrap">
                     <span
-                      className="flex-shrink-0 text-[10px] font-bold px-1.5 py-0.5 rounded uppercase tracking-wide"
-                      style={{ background: "#3d1f1f", color: "#f87171" }}
+                      className="text-sm font-semibold truncate transition-colors group-hover:text-blue-400"
+                      style={{ color: "#e4e6ea" }}
                     >
-                      Priority
+                      {c.clientFirstName} {c.clientLastName}
                     </span>
-                  )}
+                    {c.highPriority && (
+                      <span
+                        className="flex-shrink-0 text-[10px] font-bold px-1.5 py-0.5 uppercase tracking-widest"
+                        style={{ background: "#3d1f1f", color: "#f87171" }}
+                      >
+                        Priority
+                      </span>
+                    )}
+                  </div>
+                  <p className="text-xs mt-1 truncate" style={{ color: "#7d8590" }}>
+                    {c.sourceProvider}
+                    <span className="mx-1.5" style={{ color: "#484f58" }}>→</span>
+                    {c.destinationCustodian}
+                  </p>
                 </div>
-                <p className="text-xs mt-0.5 truncate" style={{ color: "#7d8590" }}>
-                  {c.sourceProvider}
-                  <span className="mx-1" style={{ color: "#484f58" }}>→</span>
-                  {c.destinationCustodian}
-                </p>
+                <div className="flex-shrink-0 mt-0.5">
+                  <StatusBadge status={c.status} label={statusLabels[c.status] ?? c.status} />
+                </div>
               </div>
 
-              {/* Advisor column */}
-              {isAdmin ? (
-                <div className="hidden md:flex items-center gap-1.5 flex-shrink-0 w-32">
+              {/* Footer strip */}
+              <div
+                className="flex items-center gap-5 px-4 py-2 transition-colors group-hover:bg-[#161b22]"
+                style={{ background: "#0d1117", borderTop: "1px solid #21262d" }}
+              >
+                {/* Advisor */}
+                <div className="flex items-center gap-1.5 min-w-0">
+                  <span className="text-[10px] uppercase tracking-wider font-medium mr-0.5" style={{ color: "#484f58" }}>Adv</span>
                   {c.assignedAdvisor ? (
                     <>
-                      <PersonAvatar
-                        name={`${c.assignedAdvisor.firstName} ${c.assignedAdvisor.lastName}`}
-                      />
-                      <span className="text-xs truncate" style={{ color: "#8b949e" }}>
-                        {c.assignedAdvisor.firstName} {c.assignedAdvisor.lastName}
-                      </span>
-                    </>
-                  ) : (
-                    <span className="text-xs" style={{ color: "#484f58" }}>
-                      —
-                    </span>
-                  )}
-                </div>
-              ) : (
-                <div className="hidden md:flex items-center gap-1.5 flex-shrink-0 w-36">
-                  {c.assignedAdvisor ? (
-                    <>
-                      <PersonAvatar
-                        name={`${c.assignedAdvisor.firstName} ${c.assignedAdvisor.lastName}`}
-                      />
+                      <UserAvatar userId={c.assignedAdvisor.id} name={`${c.assignedAdvisor.firstName} ${c.assignedAdvisor.lastName}`} size="xs" />
                       <span className="text-xs truncate" style={{ color: "#8b949e" }}>
                         {c.assignedAdvisor.firstName} {c.assignedAdvisor.lastName}
                       </span>
@@ -521,37 +483,27 @@ export default function CaseList({
                     <span className="text-xs" style={{ color: "#484f58" }}>Unassigned</span>
                   )}
                 </div>
-              )}
 
-              {/* Ops column — admin only, hidden below lg */}
-              {isAdmin && (
-                <div className="hidden lg:flex items-center gap-1.5 flex-shrink-0 w-28">
-                  {c.assignedOps ? (
-                    <>
-                      <PersonAvatar
-                        name={`${c.assignedOps.firstName} ${c.assignedOps.lastName}`}
-                      />
-                      <span className="text-xs truncate" style={{ color: "#8b949e" }}>
-                        {c.assignedOps.firstName} {c.assignedOps.lastName}
-                      </span>
-                    </>
-                  ) : (
-                    <span className="text-xs" style={{ color: "#484f58" }}>
-                      —
-                    </span>
-                  )}
-                </div>
-              )}
+                {/* Ops — admin only */}
+                {isAdmin && (
+                  <div className="flex items-center gap-1.5 min-w-0">
+                    <span className="text-[10px] uppercase tracking-wider font-medium mr-0.5" style={{ color: "#484f58" }}>Ops</span>
+                    {c.assignedOps ? (
+                      <>
+                        <UserAvatar userId={c.assignedOps.id} name={`${c.assignedOps.firstName} ${c.assignedOps.lastName}`} size="xs" />
+                        <span className="text-xs truncate" style={{ color: "#8b949e" }}>
+                          {c.assignedOps.firstName} {c.assignedOps.lastName}
+                        </span>
+                      </>
+                    ) : (
+                      <span className="text-xs" style={{ color: "#484f58" }}>—</span>
+                    )}
+                  </div>
+                )}
 
-              {/* Time + status */}
-              <div className="flex items-center gap-3 flex-shrink-0">
-                <span
-                  className="text-xs hidden sm:block whitespace-nowrap"
-                  style={{ color: "#7d8590" }}
-                >
+                <span className="text-xs ml-auto whitespace-nowrap" style={{ color: "#484f58" }}>
                   {formatDistanceToNow(c.statusUpdatedAt)}
                 </span>
-                <StatusBadge status={c.status} label={statusLabels[c.status] ?? c.status} />
               </div>
             </Link>
           ))}

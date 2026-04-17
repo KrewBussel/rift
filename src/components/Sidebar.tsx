@@ -3,18 +3,17 @@
 import { signOut } from "next-auth/react";
 import Link from "next/link";
 import { usePathname } from "next/navigation";
-import { useState, useEffect } from "react";
+import { useState, useEffect, useRef } from "react";
 
 interface Props {
-  user: { name?: string | null; email?: string | null };
+  user: { id?: string; name?: string | null; email?: string | null };
 }
 
 const NAV_ITEMS = [
   {
     href: "/dashboard",
     label: "Overview",
-    // active on /dashboard and all /dashboard/cases/* pages
-    matchPrefixes: ["/dashboard/cases"],
+    matchPrefixes: [] as string[],
     exact: true,
     icon: (
       <svg width="16" height="16" viewBox="0 0 16 16" fill="none" aria-hidden>
@@ -24,6 +23,18 @@ const NAV_ITEMS = [
           strokeWidth="1.3"
           strokeLinejoin="round"
         />
+      </svg>
+    ),
+  },
+  {
+    href: "/dashboard/cases",
+    label: "Cases",
+    matchPrefixes: [] as string[],
+    exact: false,
+    icon: (
+      <svg width="16" height="16" viewBox="0 0 16 16" fill="none" aria-hidden>
+        <rect x="2" y="3" width="12" height="10" rx="1.5" stroke="currentColor" strokeWidth="1.3" />
+        <path d="M5 7h6M5 10h4" stroke="currentColor" strokeWidth="1.3" strokeLinecap="round" />
       </svg>
     ),
   },
@@ -54,11 +65,20 @@ export default function Sidebar({ user }: Props) {
   const [collapsed, setCollapsed] = useState(false);
   const [confirmOpen, setConfirmOpen] = useState(false);
   const [mounted, setMounted] = useState(false);
+  const [avatarError, setAvatarError] = useState(false);
+  const avatarRef = useRef<HTMLImageElement>(null);
 
   useEffect(() => {
     const saved = localStorage.getItem("rift-sidebar-collapsed");
     if (saved !== null) setCollapsed(saved === "true");
     setMounted(true);
+  }, []);
+
+  useEffect(() => {
+    const img = avatarRef.current;
+    if (img && img.complete && img.naturalWidth === 0) {
+      setAvatarError(true);
+    }
   }, []);
 
   function toggle() {
@@ -92,26 +112,26 @@ export default function Sidebar({ user }: Props) {
         {/* Logo + toggle */}
         <div
           className="flex items-center h-14 flex-shrink-0 px-3"
-          style={{ borderBottom: "1px solid #21262d" }}
+          style={{ borderBottom: "1px solid #21262d", justifyContent: collapsed ? "center" : "space-between" }}
         >
-          <Link
-            href="/dashboard"
-            className="flex items-center gap-2.5 select-none flex-1 min-w-0"
-          >
-            <svg width="22" height="19" viewBox="0 0 32 28" fill="none" className="flex-shrink-0">
-              <rect x="0" y="0" width="14" height="28" rx="2" fill="#388bfd" />
-              <rect x="6" y="0" width="18" height="14" rx="2" fill="#79c0ff" opacity="0.85" />
-              <rect x="12" y="12" width="16" height="16" rx="2" fill="#388bfd" opacity="0.55" />
-            </svg>
-            {!collapsed && (
+          {!collapsed && (
+            <Link
+              href="/dashboard"
+              className="flex items-center gap-2.5 select-none min-w-0"
+            >
+              <svg width="22" height="19" viewBox="0 0 32 28" fill="none" className="flex-shrink-0">
+                <rect x="0" y="0" width="14" height="28" rx="2" fill="#388bfd" />
+                <rect x="6" y="0" width="18" height="14" rx="2" fill="#79c0ff" opacity="0.85" />
+                <rect x="12" y="12" width="16" height="16" rx="2" fill="#388bfd" opacity="0.55" />
+              </svg>
               <span
                 className="font-black text-[15px] truncate"
                 style={{ color: "#e4e6ea", letterSpacing: "-0.02em" }}
               >
                 Rift
               </span>
-            )}
-          </Link>
+            </Link>
+          )}
 
           <button
             onClick={toggle}
@@ -163,12 +183,22 @@ export default function Sidebar({ user }: Props) {
               className="flex items-center gap-2.5 px-2.5 py-2 rounded-md transition-colors hover:bg-[#21262d] mb-0.5"
               style={{ color: "#8b949e" }}
             >
-              <div
-                className="w-6 h-6 rounded-full flex items-center justify-center flex-shrink-0 text-xs font-semibold"
-                style={{ background: "#2d333b", color: "#e4e6ea" }}
-              >
-                {user.name?.charAt(0).toUpperCase() ?? "?"}
-              </div>
+              {!avatarError && user.id ? (
+                <img
+                  ref={avatarRef}
+                  src={`/api/users/${user.id}/avatar`}
+                  alt=""
+                  className="w-6 h-6 rounded-full object-cover flex-shrink-0"
+                  onError={() => setAvatarError(true)}
+                />
+              ) : (
+                <div
+                  className="w-6 h-6 rounded-full flex items-center justify-center flex-shrink-0 text-xs font-semibold"
+                  style={{ background: "#2d333b", color: "#e4e6ea" }}
+                >
+                  {user.name?.charAt(0).toUpperCase() ?? "?"}
+                </div>
+              )}
               {!collapsed && (
                 <span className="text-sm truncate" style={{ color: "#8b949e" }}>
                   {user.name ?? user.email}
