@@ -1,6 +1,7 @@
 import { auth } from "@/lib/auth";
 import { redirect } from "next/navigation";
 import { prisma } from "@/lib/prisma";
+import { getOrCreateFirmSettings } from "@/lib/reminders";
 import IntelligenceWorkspace from "@/components/IntelligenceWorkspace";
 
 export default async function IntelligencePage() {
@@ -9,18 +10,22 @@ export default async function IntelligencePage() {
 
   const firmId = session.user.firmId;
 
-  const custodians = await prisma.custodian.findMany({
-    orderBy: { name: "asc" },
-    include: {
-      notes: {
-        where: { firmId },
-        orderBy: [{ pinned: "desc" }, { updatedAt: "desc" }],
-        include: {
-          author: { select: { firstName: true, lastName: true } },
+  const [custodians, firmSettings] = await Promise.all([
+    prisma.custodian.findMany({
+      orderBy: { name: "asc" },
+      include: {
+        mailingRoutes: { orderBy: { label: "asc" } },
+        notes: {
+          where: { firmId },
+          orderBy: [{ pinned: "desc" }, { updatedAt: "desc" }],
+          include: {
+            author: { select: { firstName: true, lastName: true } },
+          },
         },
       },
-    },
-  });
+    }),
+    getOrCreateFirmSettings(firmId),
+  ]);
 
   const serialized = custodians.map((c) => ({
     id: c.id,
@@ -49,6 +54,13 @@ export default async function IntelligencePage() {
     commonForms: c.commonForms,
     tags: c.tags,
     lastVerifiedAt: c.lastVerifiedAt?.toISOString() ?? null,
+    mailingRoutes: c.mailingRoutes.map((r) => ({
+      id: r.id,
+      label: r.label,
+      states: r.states,
+      mailingAddress: r.mailingAddress,
+      overnightAddress: r.overnightAddress,
+    })),
     notes: c.notes.map((n) => ({
       id: n.id,
       title: n.title,
@@ -77,7 +89,10 @@ export default async function IntelligencePage() {
           Ask anything about a custodian, or browse the full directory. Firm-specific notes are tracked alongside industry facts.
         </p>
       </div>
-      <IntelligenceWorkspace custodians={serialized} />
+      <IntelligenceWorkspace
+        custodians={serialized}
+        firmOperatingStates={firmSettings.operatingStates}
+      />
     </>
   );
 }

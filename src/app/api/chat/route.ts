@@ -42,6 +42,7 @@ export async function POST(req: Request) {
   }
 
   const firmId = session.user.firmId;
+  const userId = session.user.id;
 
   let body: { messages: ChatMessage[] };
   try {
@@ -54,6 +55,35 @@ export async function POST(req: Request) {
   if (!Array.isArray(messages) || messages.length === 0) {
     return NextResponse.json({ error: "messages array is required" }, { status: 400 });
   }
+
+  // ── Monthly limit check ───────────────────────────────────────────────────
+  const now = new Date();
+  const monthStart = new Date(now.getFullYear(), now.getMonth(), 1);
+
+  const [monthlyCount, firmSettings] = await Promise.all([
+    prisma.aiUsage.count({
+      where: { firmId, createdAt: { gte: monthStart } },
+    }),
+    prisma.firmSettings.findUnique({
+      where: { firmId },
+      select: { aiMonthlyLimit: true },
+    }),
+  ]);
+
+  const monthlyLimit = firmSettings?.aiMonthlyLimit ?? 500;
+
+  if (monthlyCount >= monthlyLimit) {
+    return NextResponse.json(
+      {
+        error: `Monthly AI question limit reached (${monthlyCount}/${monthlyLimit}). Contact your administrator to increase the limit.`,
+        limitReached: true,
+        used: monthlyCount,
+        limit: monthlyLimit,
+      },
+      { status: 429 },
+    );
+  }
+  // ─────────────────────────────────────────────────────────────────────────
 
   const client = new Anthropic();
 
@@ -77,7 +107,9 @@ export async function POST(req: Request) {
         },
         required: ["query"],
       },
-    },
+      // Cache the tool definition — it never changes between requests
+      cache_control: { type: "ephemeral" },
+    } as Anthropic.Tool,
   ];
 
   const conversation: Anthropic.MessageParam[] = messages.map((m) => ({
@@ -89,14 +121,37 @@ export async function POST(req: Request) {
   let finalText = "";
   const toolCalls: Array<{ query: string; resultCount: number }> = [];
 
+  // Accumulate token usage across all turns
+  let totalInputTokens = 0;
+  let totalOutputTokens = 0;
+  let totalCacheHitTokens = 0;
+  let turnCount = 0;
+
   for (let turn = 0; turn < MAX_TURNS; turn++) {
     const response: Anthropic.Message = await client.messages.create({
       model: "claude-opus-4-7",
       max_tokens: 4096,
-      system: SYSTEM_PROMPT,
+      system: [
+        {
+          type: "text",
+          text: SYSTEM_PROMPT,
+          cache_control: { type: "ephemeral" },
+        },
+      ],
       tools,
       messages: conversation,
     });
+
+    turnCount++;
+
+    // Accumulate token counts
+    const u = response.usage as Anthropic.Usage & {
+      cache_read_input_tokens?: number;
+      cache_creation_input_tokens?: number;
+    };
+    totalInputTokens += u.input_tokens;
+    totalOutputTokens += u.output_tokens;
+    totalCacheHitTokens += u.cache_read_input_tokens ?? 0;
 
     conversation.push({ role: "assistant", content: response.content });
 
@@ -152,9 +207,29 @@ export async function POST(req: Request) {
     finalText = "Sorry — I wasn't able to generate a response. Try rephrasing.";
   }
 
+  // ── Log usage (fire-and-forget, don't block the response) ─────────────────
+  prisma.aiUsage
+    .create({
+      data: {
+        firmId,
+        userId,
+        inputTokens: totalInputTokens,
+        outputTokens: totalOutputTokens,
+        cacheHitTokens: totalCacheHitTokens,
+        turnCount,
+        toolCallCount: toolCalls.length,
+      },
+    })
+    .catch((err) => console.error("[AiUsage] Failed to log usage:", err));
+  // ─────────────────────────────────────────────────────────────────────────
+
   return NextResponse.json({
     message: finalText,
     toolCalls,
+    usage: {
+      used: monthlyCount + 1,
+      limit: monthlyLimit,
+    },
   });
 }
 

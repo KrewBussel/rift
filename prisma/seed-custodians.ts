@@ -92,8 +92,7 @@ const CUSTODIANS: CustodianSeed[] = [
     aliases: ["Schwab", "Schwab Retirement Plan Services", "SRPS"],
     phone: "800-435-4000",
     website: "https://www.schwab.com",
-    mailingAddress: "Charles Schwab & Co., PO Box 628291, Orlando, FL 32862-8291",
-    overnightAddress: "Charles Schwab & Co., 1958 Summit Park Drive Suite 200, Orlando, FL 32810",
+    // Mailing address is state-based — seeded separately as CustodianMailingRoutes below
     typicalProcessingDays: 5,
     minProcessingDays: 3,
     maxProcessingDays: 7,
@@ -607,6 +606,35 @@ const CUSTODIANS: CustodianSeed[] = [
     tags: ["recordkeeper", "457", "401a", "public-sector"],
   },
   {
+    name: "MetLife",
+    legalName: "Metropolitan Life Insurance Company",
+    aliases: ["Metropolitan Life", "MetLife Insurance", "MetLife Retirement & Income Solutions", "MLIC", "MetLife Investors"],
+    phone: "800-638-7732",
+    fax: "877-547-9666",
+    website: "https://www.metlife.com",
+    mailingAddress: "MetLife, PO Box 10356, Des Moines, IA 50306-0356",
+    typicalProcessingDays: 14,
+    minProcessingDays: 10,
+    maxProcessingDays: 21,
+    signatureRequirements: "Wet signature required on all distribution and rollover forms. Medallion Signature Guarantee required on certain transfers — requirements vary by contract type; confirm with MetLife before submitting.",
+    medallionRequired: true,
+    notarizationRequired: false,
+    acceptsElectronic: false,
+    acceptsDigitalSignature: false,
+    supportsACATS: false,
+    overview: "Insurance company and annuity provider. MetLife spun off its U.S. retail life and annuity business as Brighthouse Financial in 2017 — always confirm whether the client's contract is a legacy MetLife policy or has transitioned to Brighthouse before initiating a rollover. MetLife Retirement & Income Solutions (1-800-560-5001) handles group annuity contracts and pension risk transfer for defined benefit plans and is a completely separate team from individual annuity servicing (1-800-638-7732).",
+    quirks: [
+      "Confirm whether the contract is with Metropolitan Life Insurance Company (MetLife) or Brighthouse Financial before doing anything — they separated in 2017 and use different servicing teams, forms, and addresses",
+      "Group annuity and DB pension contracts route through MetLife Retirement & Income Solutions at 1-800-560-5001, not the individual annuity line",
+      "Annuity contracts frequently carry surrender charges and/or surrender restriction periods — verify before initiating a rollover or the client may face a penalty",
+      "Distribution forms are contract-specific; always pull the correct form from metlife.com/support-and-manage/forms-library/ for the exact contract type — generic forms are rejected",
+      "Processing is significantly slower than brokerage custodians — plan for 10-21 business days after paperwork is accepted in good order",
+      "MetLife was a common 403(b) annuity provider in school districts and non-profits; these legacy contracts may still be serviced by MetLife even if the client has not heard from them recently",
+    ],
+    commonForms: ["Annuity Distribution Request", "Qualified Transfer Request (Form 13389)", "Annuity Claim Form"],
+    tags: ["annuity", "insurance", "pension", "group-annuity", "403b"],
+  },
+  {
     name: "Securian Financial",
     legalName: "Securian Financial Group, Inc.",
     aliases: ["Securian", "Minnesota Life"],
@@ -652,6 +680,35 @@ async function main() {
       },
     });
     console.log(`  ✓ ${c.name}`);
+  }
+
+  // ── State-based mailing routes ────────────────────────────────────────────
+  const schwab = await prisma.custodian.findUnique({ where: { name: "Charles Schwab" }, select: { id: true } });
+  if (schwab) {
+    await prisma.custodianMailingRoute.deleteMany({ where: { custodianId: schwab.id } });
+    await prisma.custodianMailingRoute.createMany({
+      data: [
+        {
+          custodianId: schwab.id,
+          label: "El Paso Operations Center",
+          // AK AZ CA CO HI IA ID KS MT ND NE NM NV OK OR SD TX UT WA WY
+          states: ["AK","AZ","CA","CO","HI","IA","ID","KS","MT","ND","NE","NM","NV","OK","OR","SD","TX","UT","WA","WY"],
+          mailingAddress: "Charles Schwab & Co., Inc.\nEl Paso Operation Center\nP.O. Box 982600\nEl Paso, TX 79998",
+          overnightAddress: "Charles Schwab & Co., Inc.\nEl Paso Operation Center\n1945 Northwestern Drive\nEl Paso, TX 79912",
+          updatedAt: new Date(),
+        },
+        {
+          custodianId: schwab.id,
+          label: "Omaha Operations Center",
+          // AL AR CT DC DE FL GA IL IN KY LA MA MD ME MI MN MO MS NC NH NJ NY OH PA RI SC TN VA VT WI WV
+          states: ["AL","AR","CT","DC","DE","FL","GA","IL","IN","KY","LA","MA","MD","ME","MI","MN","MO","MS","NC","NH","NJ","NY","OH","PA","RI","SC","TN","VA","VT","WI","WV"],
+          mailingAddress: "Charles Schwab & Co., Inc.\nOmaha Operations Center\nP.O. Box 2339\nOmaha, NE 68103",
+          overnightAddress: "Charles Schwab & Co., Inc.\nOmaha Operations Center\n200 S 108th Ave\nOmaha, NE 68154",
+          updatedAt: new Date(),
+        },
+      ],
+    });
+    console.log("  ✓ Charles Schwab mailing routes");
   }
 
   console.log("Done.");

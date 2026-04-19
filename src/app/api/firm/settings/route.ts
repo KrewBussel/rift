@@ -28,12 +28,21 @@ export async function PATCH(req: Request) {
     overdueTaskReminders?: boolean;
     stalledCaseReminders?: boolean;
     missingDocsReminders?: boolean;
+    operatingStates?: string[];
+    aiMonthlyLimit?: number;
   } = {};
   if (body.remindersEnabled !== undefined) data.remindersEnabled = Boolean(body.remindersEnabled);
   if (body.stalledCaseDays !== undefined) data.stalledCaseDays = Number(body.stalledCaseDays);
   if (body.overdueTaskReminders !== undefined) data.overdueTaskReminders = Boolean(body.overdueTaskReminders);
   if (body.stalledCaseReminders !== undefined) data.stalledCaseReminders = Boolean(body.stalledCaseReminders);
   if (body.missingDocsReminders !== undefined) data.missingDocsReminders = Boolean(body.missingDocsReminders);
+  if (body.operatingStates !== undefined && Array.isArray(body.operatingStates)) {
+    data.operatingStates = body.operatingStates.map((s: unknown) => String(s).toUpperCase()).filter(Boolean);
+  }
+  if (body.aiMonthlyLimit !== undefined) {
+    const limit = Math.floor(Number(body.aiMonthlyLimit));
+    if (!isNaN(limit) && limit >= 0) data.aiMonthlyLimit = Math.min(limit, 100_000);
+  }
 
   const updated = await prisma.firmSettings.upsert({
     where: { firmId },

@@ -17,6 +17,7 @@ model Firm {
   settings       FirmSettings?
   reminderLogs   ReminderLog[]
   custodianNotes CustodianNote[]
+  aiUsage        AiUsage[]
 }
 
 model FirmSettings {
@@ -27,6 +28,8 @@ model FirmSettings {
   overdueTaskReminders Boolean  @default(true)
   stalledCaseReminders Boolean  @default(true)
   missingDocsReminders Boolean  @default(false)
+  operatingStates      String[] @default([])
+  aiMonthlyLimit       Int      @default(500)
   createdAt            DateTime @default(now())
   updatedAt            DateTime @updatedAt
 
@@ -67,6 +70,7 @@ model User {
   createdTasks     Task[]         @relation("CreatedTasks")
   uploadedDocuments Document[]
   custodianNotes   CustodianNote[]
+  aiUsage          AiUsage[]
 }
 
 enum Role {
@@ -249,9 +253,25 @@ model Custodian {
   createdAt               DateTime @default(now())
   updatedAt               DateTime @updatedAt
 
-  notes CustodianNote[]
+  notes         CustodianNote[]
+  mailingRoutes CustodianMailingRoute[]
 
   @@index([name])
+}
+
+model CustodianMailingRoute {
+  id               String   @id @default(cuid())
+  custodianId      String
+  label            String
+  states           String[] @default([])
+  mailingAddress   String?
+  overnightAddress String?
+  createdAt        DateTime @default(now())
+  updatedAt        DateTime @updatedAt
+
+  custodian Custodian @relation(fields: [custodianId], references: [id], onDelete: Cascade)
+
+  @@index([custodianId])
 }
 
 model CustodianNote {
@@ -271,4 +291,22 @@ model CustodianNote {
   author    User      @relation(fields: [authorId], references: [id])
 
   @@index([custodianId, firmId])
+}
+
+model AiUsage {
+  id             String   @id @default(cuid())
+  firmId         String
+  userId         String
+  inputTokens    Int      @default(0)
+  outputTokens   Int      @default(0)
+  cacheHitTokens Int      @default(0)
+  turnCount      Int      @default(1)
+  toolCallCount  Int      @default(0)
+  createdAt      DateTime @default(now())
+
+  firm Firm @relation(fields: [firmId], references: [id], onDelete: Cascade)
+  user User @relation(fields: [userId], references: [id], onDelete: Cascade)
+
+  @@index([firmId, createdAt])
+  @@index([userId, createdAt])
 }

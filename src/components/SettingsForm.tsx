@@ -1,6 +1,6 @@
 "use client";
 
-import { useState } from "react";
+import { useEffect, useState } from "react";
 import { formatDate } from "@/lib/utils";
 
 interface UserPreferences extends Record<string, unknown> {
@@ -27,6 +27,8 @@ interface FirmSettings {
   overdueTaskReminders: boolean;
   stalledCaseReminders: boolean;
   missingDocsReminders: boolean;
+  operatingStates: string[];
+  aiMonthlyLimit: number;
 }
 
 interface Props {
@@ -84,12 +86,12 @@ const DIVIDER_STYLE: React.CSSProperties = {
   borderTop: "1px solid #21262d",
 };
 
-type Tab = "profile" | "password" | "preferences" | "notifications";
+type Tab = "profile" | "password" | "preferences" | "notifications" | "firm";
 
 export default function SettingsForm({ user, firmSettings, cronSecret }: Props) {
   const isAdmin = user.role === "ADMIN";
   const tabs: Tab[] = isAdmin
-    ? ["profile", "password", "preferences", "notifications"]
+    ? ["profile", "password", "preferences", "firm", "notifications"]
     : ["profile", "password", "preferences"];
 
   const [activeTab, setActiveTab] = useState<Tab>("profile");
@@ -125,6 +127,9 @@ export default function SettingsForm({ user, firmSettings, cronSecret }: Props) 
       {activeTab === "profile" && <ProfileSection user={user} />}
       {activeTab === "password" && <PasswordSection />}
       {activeTab === "preferences" && <PreferencesSection user={user} />}
+      {activeTab === "firm" && isAdmin && firmSettings && (
+        <FirmSection firmSettings={firmSettings} />
+      )}
       {activeTab === "notifications" && isAdmin && firmSettings && (
         <NotificationsSection firmSettings={firmSettings} cronSecret={cronSecret} />
       )}
@@ -606,6 +611,253 @@ function PreferencesSection({ user }: { user: User }) {
           </button>
         </div>
       </form>
+    </div>
+  );
+}
+
+/* ─── Firm (Admin only) ───────────────────────────────────────────────────── */
+
+const US_STATES = [
+  "AK","AL","AR","AZ","CA","CO","CT","DC","DE","FL","GA","HI","IA","ID","IL","IN",
+  "KS","KY","LA","MA","MD","ME","MI","MN","MO","MS","MT","NC","ND","NE","NH","NJ",
+  "NM","NV","NY","OH","OK","OR","PA","RI","SC","SD","TN","TX","UT","VA","VT","WA",
+  "WI","WV","WY",
+];
+
+interface AiUsageStats {
+  used: number;
+  limit: number;
+  inputTokens: number;
+  outputTokens: number;
+  cacheHitTokens: number;
+  estimatedCostCents: number;
+}
+
+function FirmSection({ firmSettings: initial }: { firmSettings: FirmSettings }) {
+  const [states, setStates] = useState<string[]>(initial.operatingStates ?? []);
+  const [aiLimit, setAiLimit] = useState(String(initial.aiMonthlyLimit ?? 500));
+  const [saving, setSaving] = useState(false);
+  const [message, setMessage] = useState<{ type: "success" | "error"; text: string } | null>(null);
+  const [aiStats, setAiStats] = useState<AiUsageStats | null>(null);
+  const [loadingStats, setLoadingStats] = useState(true);
+
+  // Load AI usage stats on mount
+  useEffect(() => {
+    fetch("/api/firm/ai-usage")
+      .then((r) => r.json())
+      .then((data) => setAiStats(data))
+      .catch(() => setAiStats(null))
+      .finally(() => setLoadingStats(false));
+  }, []);
+
+  function toggleState(s: string) {
+    setStates((prev) =>
+      prev.includes(s) ? prev.filter((x) => x !== s) : [...prev, s].sort()
+    );
+  }
+
+  const isDirty =
+    JSON.stringify([...states].sort()) !==
+      JSON.stringify([...(initial.operatingStates ?? [])].sort()) ||
+    Number(aiLimit) !== (initial.aiMonthlyLimit ?? 500);
+
+  async function handleSave(e: React.FormEvent) {
+    e.preventDefault();
+    setSaving(true);
+    setMessage(null);
+    const res = await fetch("/api/firm/settings", {
+      method: "PATCH",
+      headers: { "Content-Type": "application/json" },
+      body: JSON.stringify({
+        operatingStates: states,
+        aiMonthlyLimit: Math.max(0, Math.floor(Number(aiLimit) || 0)),
+      }),
+    });
+    setSaving(false);
+    setMessage(
+      res.ok
+        ? { type: "success", text: "Firm settings saved." }
+        : { type: "error", text: "Failed to save." }
+    );
+  }
+
+  const usedPct = aiStats
+    ? Math.min(100, Math.round((aiStats.used / aiStats.limit) * 100))
+    : 0;
+  const barColor =
+    usedPct >= 90 ? "#f87171" : usedPct >= 70 ? "#f59e0b" : "#3fb950";
+
+  return (
+    <div className="space-y-4">
+      {/* ── AI Usage Card ─────────────────────────────────────────────── */}
+      <div style={CARD_STYLE} className="p-5">
+        <h3 className="text-sm font-semibold mb-1" style={{ color: "#e4e6ea" }}>
+          Intelligence Usage — This Month
+        </h3>
+        <p className="text-xs mb-4" style={{ color: "#7d8590" }}>
+          Every question asked in Rift Intelligence counts against this firm&apos;s monthly limit.
+        </p>
+
+        {loadingStats ? (
+          <p className="text-xs" style={{ color: "#484f58" }}>Loading…</p>
+        ) : aiStats ? (
+          <div className="space-y-3">
+            {/* Progress bar */}
+            <div>
+              <div className="flex justify-between text-xs mb-1.5" style={{ color: "#7d8590" }}>
+                <span>
+                  <span style={{ color: "#e4e6ea", fontWeight: 600 }}>{aiStats.used.toLocaleString()}</span>
+                  {" "}of{" "}
+                  <span style={{ color: "#e4e6ea", fontWeight: 600 }}>{aiStats.limit.toLocaleString()}</span>
+                  {" "}questions used
+                </span>
+                <span style={{ color: usedPct >= 90 ? "#f87171" : "#7d8590" }}>
+                  {usedPct}%
+                </span>
+              </div>
+              <div className="rounded-full overflow-hidden" style={{ height: 8, background: "#0d1117", border: "1px solid #21262d" }}>
+                <div
+                  className="h-full rounded-full transition-all"
+                  style={{ width: `${usedPct}%`, background: barColor }}
+                />
+              </div>
+            </div>
+
+            {/* Token & cost breakdown */}
+            <div className="grid grid-cols-3 gap-2 pt-1">
+              <div className="rounded-lg p-2.5 text-center" style={{ background: "#0d1117", border: "1px solid #21262d" }}>
+                <p className="text-xs font-mono font-semibold" style={{ color: "#e4e6ea" }}>
+                  {(aiStats.inputTokens / 1000).toFixed(1)}K
+                </p>
+                <p className="text-xs mt-0.5" style={{ color: "#7d8590" }}>input tokens</p>
+              </div>
+              <div className="rounded-lg p-2.5 text-center" style={{ background: "#0d1117", border: "1px solid #21262d" }}>
+                <p className="text-xs font-mono font-semibold" style={{ color: "#e4e6ea" }}>
+                  {(aiStats.outputTokens / 1000).toFixed(1)}K
+                </p>
+                <p className="text-xs mt-0.5" style={{ color: "#7d8590" }}>output tokens</p>
+              </div>
+              <div className="rounded-lg p-2.5 text-center" style={{ background: "#0d1117", border: "1px solid #21262d" }}>
+                <p className="text-xs font-mono font-semibold" style={{ color: "#3fb950" }}>
+                  ${(aiStats.estimatedCostCents / 100).toFixed(2)}
+                </p>
+                <p className="text-xs mt-0.5" style={{ color: "#7d8590" }}>est. API cost</p>
+              </div>
+            </div>
+
+            {aiStats.cacheHitTokens > 0 && (
+              <p className="text-xs" style={{ color: "#7d8590" }}>
+                ⚡ {(aiStats.cacheHitTokens / 1000).toFixed(1)}K tokens served from cache (90% cheaper)
+              </p>
+            )}
+          </div>
+        ) : (
+          <p className="text-xs" style={{ color: "#484f58" }}>Could not load usage data.</p>
+        )}
+      </div>
+
+      {/* ── Settings form ─────────────────────────────────────────────── */}
+      <div style={CARD_STYLE} className="p-6">
+        <form onSubmit={handleSave} className="space-y-6">
+
+          {/* Monthly AI question limit */}
+          <div>
+            <h3 className="text-sm font-semibold mb-1" style={{ color: "#e4e6ea" }}>
+              Monthly Question Limit
+            </h3>
+            <p className="text-xs mb-3" style={{ color: "#7d8590" }}>
+              Set the maximum number of Intelligence questions allowed per month for this firm.
+              Users see a clear error when the limit is reached.
+            </p>
+            <div className="flex items-center gap-3">
+              <input
+                type="number"
+                min={0}
+                max={100000}
+                step={50}
+                value={aiLimit}
+                onChange={(e) => setAiLimit(e.target.value)}
+                className={`${inputCls} w-36 rounded-lg`}
+                style={INPUT_STYLE}
+              />
+              <span className="text-xs" style={{ color: "#7d8590" }}>questions / month</span>
+            </div>
+          </div>
+
+          <div style={DIVIDER_STYLE} />
+
+          {/* Operating states */}
+          <div>
+            <h3 className="text-sm font-semibold mb-1" style={{ color: "#e4e6ea" }}>
+              Operating States
+            </h3>
+            <p className="text-xs mb-4" style={{ color: "#7d8590" }}>
+              Select the states your firm serves. Custodian Intelligence will automatically
+              highlight the correct mailing address for each custodian based on your client&apos;s location.
+            </p>
+
+            {states.length > 0 && (
+              <div className="flex flex-wrap gap-1.5 mb-4 p-2.5 rounded-lg" style={{ background: "#0d1117", border: "1px solid #21262d" }}>
+                {states.map((s) => (
+                  <button
+                    key={s}
+                    type="button"
+                    onClick={() => toggleState(s)}
+                    className="text-xs px-2 py-1 rounded font-mono font-semibold transition-colors"
+                    style={{ background: "#1f6feb", color: "#e4e6ea", border: "1px solid #388bfd" }}
+                    title={`Remove ${s}`}
+                  >
+                    {s} ×
+                  </button>
+                ))}
+              </div>
+            )}
+
+            <div className="grid grid-cols-8 gap-1">
+              {US_STATES.map((s) => {
+                const selected = states.includes(s);
+                return (
+                  <button
+                    key={s}
+                    type="button"
+                    onClick={() => toggleState(s)}
+                    className="text-xs py-1.5 rounded font-mono transition-colors"
+                    style={{
+                      background: selected ? "#1f6feb" : "#0d1117",
+                      border: `1px solid ${selected ? "#388bfd" : "#21262d"}`,
+                      color: selected ? "#e4e6ea" : "#7d8590",
+                    }}
+                  >
+                    {s}
+                  </button>
+                );
+              })}
+            </div>
+
+            {states.length === 0 && (
+              <p className="text-xs mt-3 text-center" style={{ color: "#484f58" }}>
+                No states selected — select all states your clients reside in.
+              </p>
+            )}
+          </div>
+
+          <div className="flex items-center justify-end gap-3 pt-2" style={DIVIDER_STYLE}>
+            {message && (
+              <span className="text-xs" style={{ color: message.type === "success" ? "#3fb950" : "#f87171" }}>
+                {message.text}
+              </span>
+            )}
+            <button
+              type="submit"
+              disabled={saving || !isDirty}
+              className="rounded-lg px-4 py-2 text-sm font-medium text-white transition-colors disabled:opacity-50 disabled:cursor-not-allowed"
+              style={{ background: "#2563eb" }}
+            >
+              {saving ? "Saving…" : "Save Firm Settings"}
+            </button>
+          </div>
+        </form>
+      </div>
     </div>
   );
 }
