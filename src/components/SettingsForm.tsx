@@ -246,7 +246,7 @@ function ProfileSection({ user }: { user: User }) {
   const [saving, setSaving] = useState(false);
   const [message, setMessage] = useState<{ type: "success" | "error"; text: string } | null>(null);
 
-  const [avatarVersion, setAvatarVersion] = useState(() => Date.now());
+  const [avatarVersion, setAvatarVersion] = useState(0);
   const [avatarError, setAvatarError] = useState(false);
   const [avatarUploading, setAvatarUploading] = useState(false);
   const [avatarMessage, setAvatarMessage] = useState<{ type: "success" | "error"; text: string } | null>(null);
