@@ -214,7 +214,7 @@ model Custodian {
   lastVerifiedAt          DateTime?
   createdAt               DateTime                @default(now())
   updatedAt               DateTime                @updatedAt
-  CustodianMailingRoute   CustodianMailingRoute[]
+  mailingRoutes           CustodianMailingRoute[]
   notes                   CustodianNote[]
 
   @@index([name])
@@ -272,17 +272,16 @@ model AIUsageLog {
   @@index([firmId, createdAt])
 }
 
-/// This model contains row level security and requires additional setup for migrations. Visit https://pris.ly/d/row-level-security for more info.
 model CustodianMailingRoute {
-  id               String    @id
+  id               String    @id @default(cuid())
   custodianId      String
   label            String
   states           String[]  @default([])
   mailingAddress   String?
   overnightAddress String?
   createdAt        DateTime  @default(now())
-  updatedAt        DateTime  @default(now())
-  Custodian        Custodian @relation(fields: [custodianId], references: [id], onDelete: Cascade)
+  updatedAt        DateTime  @default(now()) @updatedAt
+  custodian        Custodian @relation(fields: [custodianId], references: [id], onDelete: Cascade)
 
   @@index([custodianId])
 }

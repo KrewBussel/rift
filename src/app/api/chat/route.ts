@@ -74,35 +74,6 @@ export async function POST(req: Request) {
   if (parsed instanceof NextResponse) return parsed;
   const { messages } = parsed.data;
 
-  // ── Monthly limit check ───────────────────────────────────────────────────
-  const now = new Date();
-  const monthStart = new Date(now.getFullYear(), now.getMonth(), 1);
-
-  const [monthlyCount, firmSettings] = await Promise.all([
-    prisma.aiUsage.count({
-      where: { firmId, createdAt: { gte: monthStart } },
-    }),
-    prisma.firmSettings.findUnique({
-      where: { firmId },
-      select: { aiMonthlyLimit: true },
-    }),
-  ]);
-
-  const monthlyLimit = firmSettings?.aiMonthlyLimit ?? 500;
-
-  if (monthlyCount >= monthlyLimit) {
-    return NextResponse.json(
-      {
-        error: `Monthly AI question limit reached (${monthlyCount}/${monthlyLimit}). Contact your administrator to increase the limit.`,
-        limitReached: true,
-        used: monthlyCount,
-        limit: monthlyLimit,
-      },
-      { status: 429 },
-    );
-  }
-  // ─────────────────────────────────────────────────────────────────────────
-
   const client = new Anthropic();
 
   const tools: Anthropic.Tool[] = [
@@ -125,7 +96,6 @@ export async function POST(req: Request) {
         },
         required: ["query"],
       },
-      // Cache the tool definition — it never changes between requests
       cache_control: { type: "ephemeral" },
     } as Anthropic.Tool,
   ];
@@ -143,12 +113,6 @@ export async function POST(req: Request) {
   let totalCacheReadTokens = 0;
   let totalCacheWriteTokens = 0;
   const model = "claude-opus-4-7";
-
-  // Accumulate token usage across all turns
-  let totalInputTokens = 0;
-  let totalOutputTokens = 0;
-  let totalCacheHitTokens = 0;
-  let turnCount = 0;
 
   for (let turn = 0; turn < MAX_TURNS; turn++) {
     const response: Anthropic.Message = await client.messages.create({
@@ -239,10 +203,6 @@ export async function POST(req: Request) {
   return NextResponse.json({
     message: finalText,
     toolCalls,
-    usage: {
-      used: monthlyCount + 1,
-      limit: monthlyLimit,
-    },
   });
 }
 
