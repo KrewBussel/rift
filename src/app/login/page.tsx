@@ -38,11 +38,43 @@ export default function LoginPage() {
       <div className="w-full max-w-sm">
         {/* Brand */}
         <div className="flex flex-col items-center mb-8">
-          <div className="mb-4">
-            <svg width="36" height="31" viewBox="0 0 32 28" fill="none">
-              <rect x="0" y="0" width="14" height="28" rx="2" fill="#388bfd" />
-              <rect x="6" y="0" width="18" height="14" rx="2" fill="#79c0ff" opacity="0.85" />
-              <rect x="12" y="12" width="16" height="16" rx="2" fill="#388bfd" opacity="0.55" />
+          <div
+            className="mb-4"
+            style={{
+              width: 44,
+              height: 44,
+              borderRadius: 11,
+              background: "#0e0b08",
+              boxShadow:
+                "inset 0 1px 0 rgba(255,255,255,0.08), inset 0 0 0 1px rgba(234,195,120,0.25), 0 0 22px rgba(234,195,120,0.3)",
+              display: "inline-flex",
+              alignItems: "center",
+              justifyContent: "center",
+            }}
+          >
+            <svg width="36" height="36" viewBox="0 0 28 28" fill="none">
+              <defs>
+                <linearGradient id="rift-login-seam" x1="0" y1="0" x2="0" y2="1">
+                  <stop offset="0" stopColor="#f9eac8" />
+                  <stop offset="0.55" stopColor="#e9d4a3" />
+                  <stop offset="1" stopColor="#c19a5b" />
+                </linearGradient>
+              </defs>
+              <path
+                d="M10 4 L14 13 L17 15 L21 24"
+                stroke="#c19a5b"
+                strokeOpacity="0.32"
+                strokeWidth="4.2"
+                strokeLinecap="round"
+                strokeLinejoin="round"
+              />
+              <path
+                d="M10 4 L14 13 L17 15 L21 24"
+                stroke="url(#rift-login-seam)"
+                strokeWidth="2.3"
+                strokeLinecap="round"
+                strokeLinejoin="round"
+              />
             </svg>
           </div>
           <h1

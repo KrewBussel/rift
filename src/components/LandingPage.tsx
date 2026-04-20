@@ -1,1943 +1,1663 @@
 "use client";
 
-import { useState, useRef, useEffect } from "react";
+import { useEffect, useRef } from "react";
 import Link from "next/link";
 
-// ─── Design tokens ─────────────────────────────────────────────────────────────
-// Accent is gold/bronze (#b8860b / #d4a017). If you hand-write rgba, use rgba(184,134,11,α).
-const C = {
-  heroBlack: "#0c0a07",
-  accent: "#b8860b",
-  accentLight: "#d4a017",
-  cream: "#faf8f4",
-  darkGreen: "#0b1f14",
-  warmWhite: "#f5f0e8",
-  muted: "#9c8f7a",
-  diagonalHatch: `repeating-linear-gradient(45deg, rgba(255,255,255,0.03) 0, rgba(255,255,255,0.03) 1px, transparent 0, transparent 50%)`,
-};
+const LANDING_CSS = `
+:root{
+  --bg:        #0a0b0e;
+  --bg-2:      #101117;
+  --ink:       #f6f2ea;
+  --ink-dim:   #b8b3a8;
+  --ink-mute:  #6f6a60;
+  --line:      rgba(246,242,234,0.08);
+  --line-2:    rgba(246,242,234,0.14);
 
+  --gold-1: #e9d4a3;
+  --gold-2: #c19a5b;
+  --gold-3: #8a6434;
+  --gold-4: #f9eac8;
+  --gold-glow: 234 195 120;
 
-// ─── Data ──────────────────────────────────────────────────────────────────────
+  --glass: rgba(246,242,234,0.04);
+  --glass-strong: rgba(246,242,234,0.07);
+  --glass-border: rgba(246,242,234,0.10);
 
-const TRUSTED_FIRMS = [
-  "Apex Wealth Advisors",
-  "Summit Capital Group",
-  "Harbor Financial Partners",
-  "Meridian Wealth Management",
-  "Cornerstone Advisors",
-  "Clearwater Financial",
-  "BlueSky Wealth Partners",
-  "Legacy Capital Group",
-  "Pinnacle Wealth Advisors",
-  "Ridgeline Advisors",
-  "Coastal Capital Management",
-  "Northstar Wealth Partners",
-  "Ironwood Financial",
-  "Silverline Advisors",
-  "Crestview Wealth Group",
-];
-
-const PIPELINE_STAGES = [
-  { label: "Intake", count: 3, active: false },
-  { label: "Awaiting Client", count: 7, active: false },
-  { label: "Ready to Submit", count: 2, active: false },
-  { label: "Processing", count: 5, active: true },
-  { label: "Awaiting Confirmation", count: 4, active: false },
-  { label: "Under Review", count: 1, active: false },
-  { label: "Completed", count: 12, active: false },
-];
-
-// Pre-computed clock tick coordinates — avoids Node.js / browser trig precision divergence
-// (Math.sin/cos can differ at the 15th decimal place between JS engines, causing hydration errors)
-const r3 = (n: number) => Math.round(n * 1000) / 1000;
-const CLOCK_TICKS = Array.from({ length: 12 }, (_, i) => {
-  const a = (i * 30 - 90) * (Math.PI / 180);
-  return {
-    x1: r3(20 + 12 * Math.cos(a)),
-    y1: r3(20 + 12 * Math.sin(a)),
-    x2: r3(20 + 14 * Math.cos(a)),
-    y2: r3(20 + 14 * Math.sin(a)),
-    major: i % 3 === 0,
-  };
-});
-
-const FEATURES = [
-  {
-    title: "Case Pipeline",
-    desc: "A clear status model from Intake to Completed. Every case has a single source of truth — no more hunting through email threads.",
-    span: "",
-    accentColor: C.accent,
-    icon: (
-      <svg width="48" height="48" viewBox="0 0 48 48" fill="none">
-        {/* Progress bar segments */}
-        <rect x="4" y="20" width="8" height="10" rx="2" fill="#b8683d"/>
-        <rect x="14" y="20" width="8" height="10" rx="2" fill="#b8683d"/>
-        <rect x="24" y="20" width="8" height="10" rx="2" fill="#b8683d"/>
-        <rect x="34" y="20" width="8" height="10" rx="2" fill="#3a3228"/>
-        <rect x="44" y="20" width="0" height="10" rx="2" fill="#3a3228"/>
-        {/* Connector dots */}
-        <circle cx="12" cy="25" r="1.5" fill="#f5f0e8"/>
-        <circle cx="22" cy="25" r="1.5" fill="#f5f0e8"/>
-        <circle cx="32" cy="25" r="1.5" fill="#f5f0e8"/>
-        {/* Label lines */}
-        <rect x="4" y="34" width="8" height="2" rx="1" fill="#9c8f7a"/>
-        <rect x="14" y="34" width="8" height="2" rx="1" fill="#9c8f7a"/>
-        <rect x="24" y="34" width="8" height="2" rx="1" fill="#9c8f7a"/>
-        <rect x="34" y="34" width="8" height="2" rx="1" fill="#3a3228"/>
-        {/* Arrow */}
-        <path d="M38 24l4-4m0 0l-4-4m4 4H28" stroke="#e0905c" strokeWidth="1.5" strokeLinecap="round" strokeLinejoin="round"/>
-      </svg>
-    ),
-  },
-  {
-    title: "Smart Checklists",
-    desc: "Auto-generated required document checklists per rollover type. Track what's been requested, received, and reviewed.",
-    span: "",
-    accentColor: "#4a7c59",
-    icon: (
-      <svg width="40" height="40" viewBox="0 0 40 40" fill="none">
-        <rect x="4" y="8" width="6" height="6" rx="1" fill="#b8683d"/>
-        <path d="M6 11l1.5 1.5L10 9" stroke="#0c0a07" strokeWidth="1.4" strokeLinecap="round" strokeLinejoin="round"/>
-        <rect x="14" y="9" width="20" height="4" rx="1" fill="#3a3228"/>
-        <rect x="4" y="19" width="6" height="6" rx="1" stroke="#5a4f3e" strokeWidth="1.5" fill="none"/>
-        <rect x="14" y="20" width="16" height="4" rx="1" fill="#3a3228"/>
-        <rect x="4" y="30" width="6" height="6" rx="1" fill="#b8683d"/>
-        <path d="M6 33l1.5 1.5L10 31" stroke="#0c0a07" strokeWidth="1.4" strokeLinecap="round" strokeLinejoin="round"/>
-        <rect x="14" y="31" width="22" height="4" rx="1" fill="#3a3228"/>
-      </svg>
-    ),
-  },
-  {
-    title: "Task Engine",
-    desc: "Assign work to advisors or ops with due dates and status tracking. Get alerts before tasks go overdue.",
-    span: "",
-    accentColor: "#b07d2a",
-    icon: (
-      <svg width="40" height="40" viewBox="0 0 40 40" fill="none">
-        {/* Calendar grid */}
-        <rect x="4" y="8" width="22" height="22" rx="3" fill="#1e1810" stroke="#3a3228" strokeWidth="1.5"/>
-        <rect x="4" y="8" width="22" height="6" rx="3" fill="#3a3228"/>
-        <rect x="4" y="11" width="22" height="3" fill="#3a3228"/>
-        <line x1="10" y1="18" x2="10" y2="18" stroke="#9c8f7a" strokeWidth="2" strokeLinecap="round"/>
-        <line x1="16" y1="18" x2="16" y2="18" stroke="#9c8f7a" strokeWidth="2" strokeLinecap="round"/>
-        <line x1="22" y1="18" x2="22" y2="18" stroke="#b8683d" strokeWidth="2" strokeLinecap="round"/>
-        <line x1="10" y1="23" x2="10" y2="23" stroke="#9c8f7a" strokeWidth="2" strokeLinecap="round"/>
-        <line x1="16" y1="23" x2="16" y2="23" stroke="#9c8f7a" strokeWidth="2" strokeLinecap="round"/>
-        {/* Clock overlay */}
-        <circle cx="28" cy="28" r="10" fill="#1e1810" stroke="#b8683d" strokeWidth="1.5"/>
-        <line x1="28" y1="23" x2="28" y2="28" stroke="#e0905c" strokeWidth="1.5" strokeLinecap="round"/>
-        <line x1="28" y1="28" x2="32" y2="31" stroke="#b8683d" strokeWidth="1.5" strokeLinecap="round"/>
-        <circle cx="28" cy="28" r="1.5" fill="#e0905c"/>
-      </svg>
-    ),
-  },
-  {
-    title: "Document Vault",
-    desc: "Secure file storage tied directly to each case. No more emailing PDFs back and forth.",
-    span: "",
-    accentColor: "#7b5ea7",
-    icon: (
-      <svg width="40" height="40" viewBox="0 0 40 40" fill="none">
-        {/* 3 stacked sheets */}
-        <rect x="14" y="14" width="18" height="22" rx="2" fill="#2a2218" stroke="#3a3228" strokeWidth="1.2"/>
-        <rect x="10" y="10" width="18" height="22" rx="2" fill="#221c14" stroke="#3a3228" strokeWidth="1.2"/>
-        <rect x="6" y="6" width="18" height="22" rx="2" fill="#1a1510" stroke="#5a4f3e" strokeWidth="1.5"/>
-        {/* Lines on top sheet */}
-        <rect x="9" y="12" width="10" height="2" rx="1" fill="#9c8f7a"/>
-        <rect x="9" y="17" width="12" height="2" rx="1" fill="#9c8f7a"/>
-        <rect x="9" y="22" width="8" height="2" rx="1" fill="#9c8f7a"/>
-        {/* Gold clip */}
-        <rect x="11" y="3" width="10" height="7" rx="2" fill="none" stroke="#b8683d" strokeWidth="2"/>
-        <rect x="14" y="1" width="4" height="4" rx="1" fill="#b8683d"/>
-      </svg>
-    ),
-  },
-  {
-    title: "Compliance Audit Trail",
-    desc: "Every status change, note, and action is logged with a timestamp and actor. Always know what happened and when.",
-    span: "",
-    accentColor: "#c04a3a",
-    icon: (
-      <svg width="40" height="40" viewBox="0 0 40 40" fill="none">
-        {/* Clock face */}
-        <circle cx="20" cy="20" r="16" fill="#1a1510" stroke="#5a4f3e" strokeWidth="1.5"/>
-        {/* Hour tick marks — use pre-computed coords to prevent SSR/client trig divergence */}
-        {CLOCK_TICKS.map((t, i) => (
-          <line
-            key={i}
-            x1={t.x1} y1={t.y1}
-            x2={t.x2} y2={t.y2}
-            stroke={t.major ? "#b8683d" : "#5a4f3e"}
-            strokeWidth={t.major ? 1.5 : 1}
-            strokeLinecap="round"
-          />
-        ))}
-        {/* Sweeping arrow hand */}
-        <path d="M20 20 L28 10" stroke="#e0905c" strokeWidth="1.5" strokeLinecap="round"/>
-        <path d="M28 10 L30 14 M28 10 L24 10" stroke="#e0905c" strokeWidth="1.2" strokeLinecap="round"/>
-        <line x1="20" y1="20" x2="20" y2="12" stroke="#b8683d" strokeWidth="2" strokeLinecap="round"/>
-        <line x1="20" y1="20" x2="26" y2="22" stroke="#9c8f7a" strokeWidth="1.5" strokeLinecap="round"/>
-        <circle cx="20" cy="20" r="2" fill="#b8683d"/>
-      </svg>
-    ),
-  },
-  {
-    title: "Team Coordination",
-    desc: "Advisors and ops work from the same case view. Assign roles, see who owns what, and never duplicate effort.",
-    span: "",
-    accentColor: "#3a6b8a",
-    icon: (
-      <svg width="40" height="40" viewBox="0 0 40 40" fill="none">
-        {/* Two avatar circles */}
-        <circle cx="14" cy="16" r="8" fill="#2a3a28" stroke="#b8683d" strokeWidth="1.5"/>
-        <circle cx="26" cy="16" r="8" fill="#1a2834" stroke="#4a7c59" strokeWidth="1.5"/>
-        {/* Face dots */}
-        <circle cx="11" cy="15" r="1.2" fill="#b8683d"/>
-        <circle cx="17" cy="15" r="1.2" fill="#b8683d"/>
-        <circle cx="23" cy="15" r="1.2" fill="#9c8f7a"/>
-        <circle cx="29" cy="15" r="1.2" fill="#9c8f7a"/>
-        {/* Connector line */}
-        <line x1="14" y1="16" x2="26" y2="16" stroke="#b8683d" strokeWidth="1" strokeDasharray="2 2"/>
-        {/* Shared document at bottom */}
-        <rect x="13" y="27" width="14" height="10" rx="2" fill="#1a1510" stroke="#b8683d" strokeWidth="1.2"/>
-        <rect x="15" y="30" width="8" height="1.5" rx="0.5" fill="#9c8f7a"/>
-        <rect x="15" y="33" width="6" height="1.5" rx="0.5" fill="#9c8f7a"/>
-        {/* Connector lines from avatars to document */}
-        <line x1="14" y1="24" x2="17" y2="27" stroke="#b8683d" strokeWidth="1" strokeDasharray="2 2"/>
-        <line x1="26" y1="24" x2="23" y2="27" stroke="#4a7c59" strokeWidth="1" strokeDasharray="2 2"/>
-      </svg>
-    ),
-  },
-];
-
-const STEPS = [
-  {
-    num: "01",
-    title: "Open a case",
-    desc: "Enter client details, source provider, and destination custodian. Rift auto-generates a tailored document checklist and a default task set so nothing gets missed from day one.",
-    tag: null,
-  },
-  {
-    num: "02",
-    title: "Work the pipeline",
-    desc: "Track status, collect documents, assign tasks to advisors or ops, and log notes — all in one place, with real-time visibility for your whole team.",
-    tag: null,
-  },
-  {
-    num: "03",
-    title: "Automatic alerts",
-    desc: "Rift monitors every open case and fires email reminders when documents go stale, tasks are overdue, or a case hasn't moved in days. Your team gets alerted before the client has to chase you.",
-    tag: "Automated",
-  },
-  {
-    num: "04",
-    title: "Close it clean",
-    desc: "Mark the rollover complete with a full timestamped audit log of every action, status change, and note. Export a case summary for your records or compliance review.",
-    tag: null,
-  },
-];
-
-const TESTIMONIALS = [
-  {
-    quote: "We used to track rollovers in a shared spreadsheet that three people were editing at once. Rift replaced that in a week. We haven't touched the spreadsheet since.",
-    name: "Sarah Mitchell",
-    title: "Director of Operations",
-    firm: "Apex Wealth Advisors",
-    initials: "SM",
-  },
-  {
-    quote: "The checklist feature alone is worth it. We used to lose track of which forms were signed and which weren't. Now it's all right there, and the ops team doesn't have to ask twice.",
-    name: "James Carter",
-    title: "Senior Financial Advisor",
-    firm: "Summit Capital Group",
-    initials: "JC",
-  },
-  {
-    quote: "Our average rollover completion time dropped from 6 weeks to under 3 once advisors and ops were working from the same tool instead of their inboxes.",
-    name: "Priya Sharma",
-    title: "Head of Client Services",
-    firm: "Harbor Financial Partners",
-    initials: "PS",
-  },
-];
-
-const STATS = [
-  { value: "500+", label: "Rollovers tracked" },
-  { value: "3×", label: "Faster completion" },
-  { value: "94%", label: "Document accuracy" },
-  { value: "30+", label: "Firms onboarded" },
-];
-
-// ─── Demo Modal ────────────────────────────────────────────────────────────────
-
-function DemoModal({ onClose }: { onClose: () => void }) {
-  const [submitted, setSubmitted] = useState(false);
-  const [form, setForm] = useState({ name: "", email: "", firm: "", volume: "" });
-
-  function handleSubmit(e: React.FormEvent) {
-    e.preventDefault();
-    setSubmitted(true);
-  }
-
-  return (
-    <div
-      className="fixed inset-0 z-50 flex items-center justify-center p-4"
-      style={{ background: "rgba(0,0,0,0.72)", backdropFilter: "blur(4px)" }}
-    >
-      <div
-        className="w-full max-w-md relative overflow-hidden"
-        style={{
-          background: C.cream,
-          borderRadius: "16px",
-          boxShadow: "0 32px 80px rgba(0,0,0,0.5)",
-        }}
-      >
-        {/* Gold top accent bar */}
-        <div
-          style={{
-            height: "5px",
-            background: `linear-gradient(90deg, ${C.accent}, ${C.accentLight})`,
-          }}
-        />
-
-        <div className="p-8">
-          <button
-            onClick={onClose}
-            className="absolute top-6 right-6 w-7 h-7 rounded-full flex items-center justify-center transition-colors"
-            style={{ background: "rgba(0,0,0,0.06)", color: "#6b6050" }}
-          >
-            <svg width="10" height="10" viewBox="0 0 10 10" fill="none">
-              <path d="M1 1l8 8M9 1L1 9" stroke="currentColor" strokeWidth="1.5" strokeLinecap="round"/>
-            </svg>
-          </button>
-
-          {!submitted ? (
-            <>
-              <h2
-                className="text-xl font-bold mb-1"
-                style={{ color: "#1a1510" }}
-              >
-                Request a demo
-              </h2>
-              <p className="text-sm mb-6" style={{ color: C.muted }}>
-                We'll set up a 30-minute walkthrough tailored to your firm's workflow.
-              </p>
-
-              <form onSubmit={handleSubmit} className="space-y-4">
-                {(
-                  [
-                    { key: "name", label: "Full Name", type: "text", placeholder: "Jane Smith" },
-                    { key: "email", label: "Work Email", type: "email", placeholder: "jane@yourfirm.com" },
-                    { key: "firm", label: "Firm Name", type: "text", placeholder: "Apex Wealth Advisors" },
-                  ] as { key: keyof typeof form; label: string; type: string; placeholder: string }[]
-                ).map(({ key, label, type, placeholder }) => (
-                  <div key={key}>
-                    <label
-                      className="block text-xs font-semibold uppercase tracking-widest mb-1.5"
-                      style={{ color: C.muted }}
-                    >
-                      {label}
-                    </label>
-                    <input
-                      type={type}
-                      required
-                      value={form[key]}
-                      onChange={(e) => setForm((f) => ({ ...f, [key]: e.target.value }))}
-                      placeholder={placeholder}
-                      className="w-full rounded-lg px-3 py-2.5 text-sm focus:outline-none"
-                      style={{
-                        border: "1.5px solid #d8cfc4",
-                        background: "#fff",
-                        color: "#1a1510",
-                      }}
-                    />
-                  </div>
-                ))}
-
-                <div>
-                  <label
-                    className="block text-xs font-semibold uppercase tracking-widest mb-1.5"
-                    style={{ color: C.muted }}
-                  >
-                    Monthly Rollovers (approx.)
-                  </label>
-                  <select
-                    value={form.volume}
-                    onChange={(e) => setForm((f) => ({ ...f, volume: e.target.value }))}
-                    className="w-full rounded-lg px-3 py-2.5 text-sm focus:outline-none"
-                    style={{
-                      border: "1.5px solid #d8cfc4",
-                      background: "#fff",
-                      color: form.volume ? "#1a1510" : "#9c8f7a",
-                    }}
-                  >
-                    <option value="">Select range…</option>
-                    <option value="1-5">1–5</option>
-                    <option value="6-15">6–15</option>
-                    <option value="16-30">16–30</option>
-                    <option value="30+">30+</option>
-                  </select>
-                </div>
-
-                <button
-                  type="submit"
-                  className="w-full rounded-lg py-2.5 text-sm font-bold mt-1 transition-opacity hover:opacity-90"
-                  style={{
-                    background: C.accent,
-                    color: "#0c0a07",
-                    letterSpacing: "0.04em",
-                  }}
-                >
-                  Request Demo →
-                </button>
-              </form>
-            </>
-          ) : (
-            <div className="py-8 text-center">
-              <div
-                className="w-14 h-14 rounded-full flex items-center justify-center mx-auto mb-4"
-                style={{ background: C.darkGreen }}
-              >
-                <svg width="24" height="24" viewBox="0 0 24 24" fill="none">
-                  <path d="M4 12l5 5L20 7" stroke={C.accentLight} strokeWidth="2.2" strokeLinecap="round" strokeLinejoin="round"/>
-                </svg>
-              </div>
-              <h3 className="text-lg font-bold mb-2" style={{ color: "#1a1510" }}>
-                You're on the list
-              </h3>
-              <p className="text-sm mb-6" style={{ color: C.muted, maxWidth: "260px", margin: "0 auto 24px" }}>
-                We'll reach out within one business day to schedule your walkthrough.
-              </p>
-              <button
-                onClick={onClose}
-                className="rounded-lg px-6 py-2.5 text-sm font-bold transition-opacity hover:opacity-90"
-                style={{ background: C.accent, color: "#0c0a07" }}
-              >
-                Close
-              </button>
-            </div>
-          )}
-        </div>
-      </div>
-    </div>
-  );
+  --status-intake: #7a93b8;
+  --status-wait:   #c89a5b;
+  --status-ready:  #b8a668;
+  --status-submit: #8a9e7c;
+  --status-proc:   #7ea39a;
+  --status-transit:#6e8fb3;
+  --status-done:   #6da57f;
 }
 
-// ─── Process timeline — horizontal filmstrip, scroll-driven ──────────────────
-// A single translate3d on the strip gives a butter-smooth slide with zero
-// crossfade/overlap artifacts. Each panel is a fully-formed scene with a
-// rich mock UI — no empty space, nothing to "click" between.
+.rift-landing, .rift-landing *{box-sizing:border-box}
+.rift-landing{
+  background: var(--bg);
+  color: var(--ink);
+  font-family: var(--font-inter-tight), 'Inter Tight', -apple-system, sans-serif;
+  font-feature-settings: "ss01","cv11";
+  -webkit-font-smoothing: antialiased;
+  overflow-x:hidden;
+  line-height:1.5;
+  min-height: 100vh;
+  position: relative;
+}
+.rift-landing .mono{font-family: var(--font-jetbrains-mono), 'JetBrains Mono', monospace; font-feature-settings: "ss02";}
+.rift-landing .serif{font-family: var(--font-instrument-serif), 'Instrument Serif', serif; font-weight:400;}
 
-type Step = typeof STEPS[number];
+.rift-landing a{ color: inherit; }
 
-function ProcessTimeline() {
-  const containerRef   = useRef<HTMLDivElement>(null);
-  const stripRef       = useRef<HTMLDivElement>(null);
-  const progressBarRef = useRef<HTMLDivElement>(null);
-  const glowRef        = useRef<HTMLDivElement>(null);
-  const labelRefs      = useRef<(HTMLDivElement | null)[]>([]);
-
-  useEffect(() => {
-    const strip       = stripRef.current;
-    const progressBar = progressBarRef.current;
-    const glow        = glowRef.current;
-    const labels      = labelRefs.current;
-
-    let targetProgress  = 0;
-    let currentProgress = 0;
-    let rafId   = 0;
-    let running = false;
-
-    function updateTarget() {
-      const container = containerRef.current;
-      if (!container) return;
-      const rect       = container.getBoundingClientRect();
-      const scrolled   = Math.max(0, -rect.top);
-      const scrollable = container.offsetHeight - window.innerHeight;
-      if (scrollable <= 0) { targetProgress = 0; return; }
-      const t = Math.min(1, Math.max(0, scrolled / scrollable));
-      targetProgress = t * (STEPS.length - 1);
-      if (!running) {
-        running = true;
-        rafId = requestAnimationFrame(tick);
-      }
-    }
-
-    function tick() {
-      // Lerp current → target. This is what makes scroll wheel ticks feel
-      // like a continuous glide instead of discrete steps ("clicky").
-      const delta = targetProgress - currentProgress;
-      currentProgress += delta * 0.13;
-      if (Math.abs(delta) < 0.0004) currentProgress = targetProgress;
-
-      const progress = currentProgress;
-      const pct      = progress / (STEPS.length - 1); // 0 → 1
-
-      // One transform on the strip. Each panel occupies 1/N of the strip,
-      // so moving by (progress / N * 100)% of the strip's own width
-      // scrolls us exactly (progress * panel-width) px. No per-frame math.
-      if (strip) {
-        const tx = -progress * (100 / STEPS.length);
-        strip.style.transform = `translate3d(${tx.toFixed(4)}%, 0, 0)`;
-      }
-
-      if (progressBar) {
-        progressBar.style.transform = `scaleX(${pct.toFixed(4)})`;
-      }
-
-      // Ambient glow drifts horizontally across the stage
-      if (glow) {
-        const gx = (pct - 0.5) * 240;
-        glow.style.transform = `translate3d(${gx.toFixed(1)}px, 0, 0)`;
-      }
-
-      for (let i = 0; i < labels.length; i++) {
-        const l = labels[i];
-        if (!l) continue;
-        l.style.opacity = progress >= i - 0.35 ? "1" : "0.3";
-      }
-
-      if (Math.abs(targetProgress - currentProgress) > 0.0004) {
-        rafId = requestAnimationFrame(tick);
-      } else {
-        running = false;
-      }
-    }
-
-    updateTarget();
-    currentProgress = targetProgress;
-    tick();
-
-    window.addEventListener("scroll", updateTarget, { passive: true });
-    window.addEventListener("resize", updateTarget);
-    return () => {
-      window.removeEventListener("scroll", updateTarget);
-      window.removeEventListener("resize", updateTarget);
-      cancelAnimationFrame(rafId);
-    };
-  }, []);
-
-  return (
-    <div ref={containerRef} style={{ height: "260vh" }}>
-      <div style={{
-        position: "sticky",
-        top: 0,
-        height: "100vh",
-        display: "flex",
-        flexDirection: "column",
-        overflow: "hidden",
-      }}>
-
-        {/* ── Header + progress rail ── */}
-        <div style={{ padding: "56px 64px 0", flexShrink: 0, position: "relative", zIndex: 2 }}>
-          <div style={{ display: "flex", justifyContent: "space-between", alignItems: "flex-end" }}>
-            <div>
-              <div style={{
-                color: C.accent, fontSize: "11px", fontWeight: 700,
-                letterSpacing: "0.16em", textTransform: "uppercase",
-              }}>
-                Process
-              </div>
-              <h2 style={{
-                color: C.warmWhite,
-                fontSize: "clamp(1.75rem, 2.8vw, 2.5rem)",
-                fontWeight: 900,
-                marginTop: "6px",
-                lineHeight: 1.1,
-                letterSpacing: "-0.02em",
-              }}>
-                Up and running in minutes
-              </h2>
-            </div>
-            <div style={{
-              color: C.muted, fontSize: "11px", fontWeight: 600,
-              letterSpacing: "0.08em", textTransform: "uppercase",
-            }}>
-              Scroll to advance
-            </div>
-          </div>
-
-          {/* Progress rail */}
-          <div style={{
-            marginTop: "32px",
-            height: "1px",
-            width: "100%",
-            background: "rgba(184,134,11,0.12)",
-            position: "relative",
-          }}>
-            <div
-              ref={progressBarRef}
-              style={{
-                position: "absolute",
-                top: 0, left: 0, right: 0, bottom: 0,
-                background: `linear-gradient(90deg, ${C.accent}, ${C.accentLight})`,
-                transformOrigin: "left center",
-                transform: "scaleX(0)",
-                boxShadow: `0 0 10px ${C.accent}aa, 0 0 22px ${C.accent}55`,
-                willChange: "transform",
-              }}
-            />
-          </div>
-
-          {/* Step labels */}
-          <div style={{
-            display: "grid",
-            gridTemplateColumns: `repeat(${STEPS.length}, 1fr)`,
-            marginTop: "12px",
-          }}>
-            {STEPS.map((s, i) => (
-              <div
-                key={i}
-                ref={el => { labelRefs.current[i] = el; }}
-                style={{
-                  fontSize: "10px",
-                  fontWeight: 700,
-                  letterSpacing: "0.12em",
-                  textTransform: "uppercase",
-                  color: C.accentLight,
-                  opacity: i === 0 ? 1 : 0.3,
-                  transition: "opacity 0.4s ease",
-                }}
-              >
-                {s.num} · {s.title}
-              </div>
-            ))}
-          </div>
-        </div>
-
-        {/* ── Filmstrip area ── */}
-        <div style={{
-          flex: 1,
-          minHeight: 0,
-          position: "relative",
-          overflow: "hidden",
-        }}>
-          {/* Ambient glow orb */}
-          <div
-            ref={glowRef}
-            style={{
-              position: "absolute",
-              top: "50%",
-              left: "50%",
-              width: "900px",
-              height: "900px",
-              marginLeft: "-450px",
-              marginTop: "-450px",
-              background: `radial-gradient(circle, ${C.accent}24 0%, ${C.accent}08 32%, transparent 60%)`,
-              pointerEvents: "none",
-              willChange: "transform",
-              filter: "blur(4px)",
-              zIndex: 0,
-            }}
-          />
-
-          <div
-            ref={stripRef}
-            style={{
-              display: "flex",
-              height: "100%",
-              width: `${STEPS.length * 100}%`,
-              willChange: "transform",
-              position: "relative",
-              zIndex: 1,
-            }}
-          >
-            {STEPS.map((step, idx) => (
-              <StepPanel key={step.num} step={step} index={idx} />
-            ))}
-          </div>
-        </div>
-      </div>
-    </div>
-  );
+.rift-landing .page-bg{
+  position:fixed; inset:0; z-index:-2; background: var(--bg);
+}
+.rift-landing .page-bg::before{
+  content:""; position:absolute; inset:-20%;
+  background:
+    radial-gradient(60% 40% at 50% 0%, rgba(var(--gold-glow)/0.12), transparent 60%),
+    radial-gradient(40% 30% at 85% 30%, rgba(var(--gold-glow)/0.06), transparent 70%),
+    radial-gradient(50% 40% at 15% 70%, rgba(140,160,200,0.05), transparent 70%);
+}
+.rift-landing .grain{
+  position:fixed; inset:0; z-index:-1; pointer-events:none; opacity:.35; mix-blend-mode:overlay;
+  background-image: url("data:image/svg+xml;utf8,<svg xmlns='http://www.w3.org/2000/svg' width='200' height='200'><filter id='n'><feTurbulence type='fractalNoise' baseFrequency='0.9' numOctaves='2'/><feColorMatrix values='0 0 0 0 0.95  0 0 0 0 0.90  0 0 0 0 0.82  0 0 0 0.12 0'/></filter><rect width='100%' height='100%' filter='url(%23n)'/></svg>");
 }
 
-// ─── One full panel in the filmstrip ──────────────────────────────────────────
+.rift-landing .wrap{ max-width:1280px; margin:0 auto; padding:0 32px; }
 
-function StepPanel({ step, index }: { step: Step; index: number }) {
-  return (
-    <div style={{
-      width: `${100 / STEPS.length}%`,
-      flexShrink: 0,
-      height: "100%",
-      display: "grid",
-      gridTemplateColumns: "1fr 1fr",
-      alignItems: "center",
-      padding: "0 64px",
-      gap: "48px",
-    }}>
-      {/* Left: text block, right-aligned within its column */}
-      <div style={{ display: "flex", justifyContent: "flex-end" }}>
-        <div style={{ maxWidth: "460px", width: "100%" }}>
+.rift-landing nav.top{
+  position:sticky; top:0; z-index:50;
+  backdrop-filter: blur(14px) saturate(140%);
+  -webkit-backdrop-filter: blur(14px) saturate(140%);
+  background: linear-gradient(180deg, rgba(10,11,14,0.85), rgba(10,11,14,0.4));
+  border-bottom: 1px solid var(--line);
+}
+.rift-landing .nav-row{ display:flex; align-items:center; justify-content:space-between; padding:18px 0; }
+.rift-landing .brand{ display:flex; align-items:center; gap:10px; font-weight:500; letter-spacing:-0.01em; font-size:18px; }
+.rift-landing .brand-glyph{
+  width:26px; height:26px; border-radius:7px;
+  background-color: #0e0b08;
+  background-image:
+    linear-gradient(135deg, rgba(249,234,200,0.08) 0%, transparent 45%, rgba(138,100,52,0.14) 100%),
+    url("data:image/svg+xml;charset=UTF-8,<svg xmlns='http://www.w3.org/2000/svg' viewBox='0 0 28 28' fill='none'><defs><linearGradient id='s' x1='0' y1='0' x2='0' y2='1'><stop offset='0' stop-color='%23f9eac8'/><stop offset='0.55' stop-color='%23e9d4a3'/><stop offset='1' stop-color='%23c19a5b'/></linearGradient></defs><path d='M10 4 L14 13 L17 15 L21 24' stroke='%23c19a5b' stroke-opacity='0.32' stroke-width='4.2' stroke-linecap='round' stroke-linejoin='round'/><path d='M10 4 L14 13 L17 15 L21 24' stroke='url(%23s)' stroke-width='2.3' stroke-linecap='round' stroke-linejoin='round'/></svg>");
+  background-size: 100% 100%;
+  background-repeat: no-repeat;
+  box-shadow:
+    inset 0 1px 0 rgba(255,255,255,0.08),
+    inset 0 0 0 1px rgba(234,195,120,0.22),
+    0 0 18px rgba(234,195,120,0.28);
+  position:relative;
+}
+.rift-landing .nav-links{ display:flex; gap:28px; font-size:14px; color:var(--ink-dim); }
+.rift-landing .nav-links a{ color:inherit; text-decoration:none; transition:color .2s; }
+.rift-landing .nav-links a:hover{ color:var(--ink); }
+.rift-landing .btn-ghost{
+  font-size:14px; padding:8px 14px; color:var(--ink-dim);
+  background:transparent; border:1px solid transparent; border-radius:999px;
+  cursor:pointer; font-family:inherit; text-decoration:none;
+  display:inline-flex; align-items:center; gap:8px;
+}
+.rift-landing .btn-ghost:hover{ color:var(--ink); border-color:var(--line-2); }
 
-          {/* Big italic number */}
-          <div style={{
-            fontSize: "clamp(88px, 9vw, 140px)",
-            fontWeight: 900,
-            fontStyle: "italic",
-            lineHeight: 0.85,
-            letterSpacing: "-0.05em",
-            background: `linear-gradient(135deg, ${C.accent} 10%, ${C.accentLight} 50%, ${C.accent} 95%)`,
-            WebkitBackgroundClip: "text",
-            WebkitTextFillColor: "transparent",
-            marginBottom: "16px",
-          }}>
-            {step.num}
-          </div>
-
-          {step.tag && (
-            <div style={{ marginBottom: "14px" }}>
-              <span style={{
-                display: "inline-block",
-                background: "rgba(184,134,11,0.15)",
-                color: C.accentLight,
-                border: `1px solid rgba(184,134,11,0.35)`,
-                fontSize: "10px",
-                fontWeight: 700,
-                letterSpacing: "0.12em",
-                padding: "5px 14px",
-                borderRadius: "999px",
-                textTransform: "uppercase",
-              }}>
-                {step.tag}
-              </span>
-            </div>
-          )}
-
-          <h3 style={{
-            color: C.warmWhite,
-            fontSize: "clamp(1.75rem, 2.6vw, 2.5rem)",
-            fontWeight: 900,
-            lineHeight: 1.08,
-            marginBottom: "18px",
-            letterSpacing: "-0.02em",
-          }}>
-            {step.title}
-          </h3>
-
-          <p style={{
-            color: C.muted,
-            fontSize: "clamp(0.95rem, 1.05vw, 1.05rem)",
-            lineHeight: 1.85,
-          }}>
-            {step.desc}
-          </p>
-        </div>
-      </div>
-
-      {/* Right: rich mock UI, left-aligned within its column */}
-      <div style={{ display: "flex", justifyContent: "flex-start", alignItems: "center" }}>
-        <StepVisual index={index} />
-      </div>
-    </div>
-  );
+.rift-landing .btn-chrome{
+  display:inline-flex; align-items:center; gap:10px;
+  padding:11px 22px; border-radius:999px; border:none;
+  color:#2a1d08; font-weight:500; font-size:14px; letter-spacing:-0.005em;
+  cursor:pointer; font-family:inherit; text-decoration:none;
+  position:relative; isolation:isolate;
+  background: linear-gradient(135deg, var(--gold-4) 0%, var(--gold-1) 20%, var(--gold-2) 55%, var(--gold-1) 82%, var(--gold-4) 100%);
+  background-size: 220% 220%;
+  animation: chromeflow 7s ease-in-out infinite;
+  box-shadow:
+    inset 0 1px 0 rgba(255,255,255,0.65),
+    inset 0 -1px 0 rgba(0,0,0,0.18),
+    0 4px 20px -4px rgba(var(--gold-glow)/0.4),
+    0 0 0 1px rgba(var(--gold-glow)/0.25);
+  transition: transform .2s;
+}
+.rift-landing .btn-chrome:hover{ transform: translateY(-1px); }
+.rift-landing .btn-chrome::before{
+  content:""; position:absolute; inset:0; border-radius:inherit; pointer-events:none;
+  background: linear-gradient(180deg, rgba(255,255,255,0.35), transparent 45%);
+}
+@keyframes chromeflow{
+  0%,100%{ background-position: 0% 50%; }
+  50%    { background-position: 100% 50%; }
 }
 
-function StepVisual({ index }: { index: number }) {
-  if (index === 0) return <NewCaseCard />;
-  if (index === 1) return <PipelineCard />;
-  if (index === 2) return <AlertsCard />;
-  return <AuditCard />;
+.rift-landing .hero{ padding: 90px 0 60px; position:relative; min-height: 100vh; display:flex; align-items:center; }
+.rift-landing .hero-grid{
+  display:grid; grid-template-columns: 1fr 1.15fr; gap: 72px;
+  align-items: center; width: 100%;
+}
+@media (max-width: 960px){ .rift-landing .hero-grid{ grid-template-columns: 1fr; gap: 48px; } }
+
+.rift-landing .mini-demo{
+  position: relative;
+  border-radius: 14px;
+  background: #05060a;
+  border:1px solid var(--glass-border);
+  backdrop-filter: blur(24px) saturate(140%);
+  -webkit-backdrop-filter: blur(24px) saturate(140%);
+  box-shadow:
+    inset 0 1px 0 rgba(255,255,255,0.05),
+    0 40px 80px -30px rgba(0,0,0,0.9),
+    0 0 1px rgba(var(--gold-glow)/0.25);
+  overflow: hidden;
+}
+.rift-landing .mini-demo::before{
+  content:""; position:absolute; inset:-1px; border-radius:inherit; padding:1px;
+  background: linear-gradient(135deg, rgba(var(--gold-glow)/0.3), transparent 40%, transparent 60%, rgba(var(--gold-glow)/0.15));
+  -webkit-mask: linear-gradient(#000,#000) content-box, linear-gradient(#000,#000);
+  -webkit-mask-composite: xor; mask-composite: exclude;
+  pointer-events:none; z-index:2;
 }
 
-// ─── Step 01: New case intake form ────────────────────────────────────────────
+.rift-landing .mini-chrome{
+  display:flex; align-items:center; gap:10px;
+  padding: 9px 12px;
+  background: #0a0b0f;
+  border-bottom: 1px solid var(--line);
+}
+.rift-landing .mini-chrome .dots{ display:flex; gap:5px; }
+.rift-landing .mini-chrome .dots span{ width:9px; height:9px; border-radius:50%; background:#2a2d36;}
+.rift-landing .mini-chrome .dots span:nth-child(1){ background:#3a2d2d;}
+.rift-landing .mini-chrome .dots span:nth-child(2){ background:#3a352a;}
+.rift-landing .mini-chrome .dots span:nth-child(3){ background:#2a3a2d;}
+.rift-landing .mini-chrome .url{
+  flex:1; padding: 4px 10px; border-radius: 6px;
+  background: rgba(255,255,255,0.03); border:1px solid var(--line);
+  font-family: var(--font-jetbrains-mono), 'JetBrains Mono',monospace; font-size:10.5px; color:var(--ink-mute);
+  display:flex; align-items:center; gap:6px;
+  transition: color .3s;
+}
+.rift-landing .mini-chrome .url .lock{ opacity:0.6; }
+.rift-landing .mini-chrome .url .path{ color: var(--ink-dim); }
+.rift-landing .mini-chrome .url .crumb{ color: var(--gold-1); }
 
-function NewCaseCard() {
-  const fields = [
-    { label: "Client Name",     value: "Sarah Mitchell" },
-    { label: "Source Provider", value: "Fidelity 401(k)" },
-    { label: "Destination",     value: "Schwab IRA" },
-  ];
-  return (
-    <div style={{
-      width: "100%",
-      maxWidth: "460px",
-      background: "rgba(22, 16, 11, 0.88)",
-      border: `1px solid rgba(184,134,11,0.28)`,
-      borderRadius: "14px",
-      padding: "28px",
-      boxShadow: "0 24px 70px rgba(0,0,0,0.5), 0 0 0 1px rgba(0,0,0,0.2) inset",
-      backdropFilter: "blur(8px)",
-    }}>
-      <div style={{ display: "flex", alignItems: "center", justifyContent: "space-between", marginBottom: "24px" }}>
-        <div style={{ color: C.accent, fontSize: "10px", fontWeight: 800, letterSpacing: "0.14em" }}>
-          NEW CASE
-        </div>
-        <div style={{
-          fontSize: "9px", fontWeight: 700, color: C.accentLight,
-          background: "rgba(184,134,11,0.15)",
-          border: `1px solid rgba(184,134,11,0.3)`,
-          padding: "3px 10px", borderRadius: "999px",
-          letterSpacing: "0.08em",
-        }}>INTAKE</div>
-      </div>
-
-      {fields.map((f) => (
-        <div key={f.label} style={{ marginBottom: "14px" }}>
-          <div style={{
-            fontSize: "9px", color: C.muted, fontWeight: 700,
-            letterSpacing: "0.1em", textTransform: "uppercase", marginBottom: "5px",
-          }}>
-            {f.label}
-          </div>
-          <div style={{
-            background: "rgba(0,0,0,0.28)",
-            border: "1px solid rgba(255,255,255,0.07)",
-            borderRadius: "8px",
-            padding: "10px 12px",
-            color: C.warmWhite, fontSize: "13px", fontWeight: 500,
-          }}>
-            {f.value}
-          </div>
-        </div>
-      ))}
-
-      <div style={{
-        marginTop: "20px", paddingTop: "16px",
-        borderTop: "1px solid rgba(184,134,11,0.14)",
-      }}>
-        <div style={{
-          fontSize: "9px", color: C.muted, letterSpacing: "0.1em",
-          textTransform: "uppercase", marginBottom: "10px", fontWeight: 700,
-        }}>
-          Auto-generated
-        </div>
-        {["8 checklist items", "3 tasks created"].map((text) => (
-          <div key={text} style={{
-            display: "flex", alignItems: "center", gap: "10px", marginBottom: "8px",
-          }}>
-            <div style={{
-              width: "14px", height: "14px", borderRadius: "3px",
-              background: C.accent,
-              display: "flex", alignItems: "center", justifyContent: "center",
-              flexShrink: 0,
-            }}>
-              <svg width="8" height="8" viewBox="0 0 10 10" fill="none">
-                <path d="M1 5l3 3 5-6" stroke={C.heroBlack} strokeWidth="2" strokeLinecap="round" strokeLinejoin="round"/>
-              </svg>
-            </div>
-            <span style={{ fontSize: "12px", color: C.warmWhite }}>{text}</span>
-          </div>
-        ))}
-      </div>
-    </div>
-  );
+.rift-landing .mini-stage{
+  position: relative;
+  height: 440px;
+  overflow: hidden;
+}
+.rift-landing .mini-screen{
+  position:absolute; inset:0;
+  padding: 16px 18px 18px;
+  background: #05060a;
+  opacity: 0; pointer-events:none;
+  transform: translateX(24px);
+  transition: opacity .45s ease, transform .5s cubic-bezier(.2,.6,.2,1);
+}
+.rift-landing .mini-screen.active{
+  opacity:1; pointer-events:auto; transform:translateX(0);
 }
 
-// ─── Step 02: Pipeline kanban ─────────────────────────────────────────────────
-
-function PipelineCard() {
-  const columns = [
-    { label: "Intake",     count: 3,  active: false },
-    { label: "Processing", count: 5,  active: true  },
-    { label: "Completed",  count: 12, active: false },
-  ];
-  return (
-    <div style={{
-      width: "100%",
-      maxWidth: "500px",
-      background: "rgba(22, 16, 11, 0.88)",
-      border: `1px solid rgba(184,134,11,0.28)`,
-      borderRadius: "14px",
-      padding: "24px",
-      boxShadow: "0 24px 70px rgba(0,0,0,0.5), 0 0 0 1px rgba(0,0,0,0.2) inset",
-      backdropFilter: "blur(8px)",
-    }}>
-      <div style={{
-        display: "flex", justifyContent: "space-between", alignItems: "center",
-        marginBottom: "18px",
-      }}>
-        <div style={{ color: C.accent, fontSize: "10px", fontWeight: 800, letterSpacing: "0.14em" }}>
-          PIPELINE
-        </div>
-        <div style={{ color: C.muted, fontSize: "10px", fontWeight: 600 }}>
-          20 active
-        </div>
-      </div>
-
-      <div style={{ display: "grid", gridTemplateColumns: "repeat(3, 1fr)", gap: "10px" }}>
-        {columns.map((col) => (
-          <div key={col.label}>
-            <div style={{
-              fontSize: "9px",
-              color: col.active ? C.accentLight : C.muted,
-              fontWeight: 700,
-              letterSpacing: "0.08em",
-              textTransform: "uppercase",
-              marginBottom: "10px",
-              display: "flex",
-              alignItems: "center",
-              gap: "6px",
-            }}>
-              <span>{col.label}</span>
-              <span style={{
-                background: col.active ? C.accent : "rgba(255,255,255,0.08)",
-                color:      col.active ? C.heroBlack : C.muted,
-                padding: "1px 6px", borderRadius: "99px",
-                fontSize: "9px", fontWeight: 800,
-              }}>{col.count}</span>
-            </div>
-            <div style={{ display: "flex", flexDirection: "column", gap: "6px" }}>
-              {Array.from({ length: Math.min(3, col.count) }).map((_, j) => {
-                const highlight = col.active && j === 0;
-                return (
-                  <div key={j} style={{
-                    background: highlight ? "rgba(184,134,11,0.14)" : "rgba(0,0,0,0.28)",
-                    border: `1px solid ${highlight ? "rgba(184,134,11,0.4)" : "rgba(255,255,255,0.06)"}`,
-                    borderRadius: "6px",
-                    padding: "8px 9px",
-                  }}>
-                    <div style={{
-                      height: "4px", width: "65%",
-                      background: highlight ? C.accentLight : "rgba(255,255,255,0.18)",
-                      borderRadius: "2px", marginBottom: "5px",
-                    }} />
-                    <div style={{
-                      height: "3px", width: "40%",
-                      background: "rgba(255,255,255,0.08)",
-                      borderRadius: "2px",
-                    }} />
-                  </div>
-                );
-              })}
-            </div>
-          </div>
-        ))}
-      </div>
-    </div>
-  );
+.rift-landing .mini-listhead{
+  display:flex; justify-content:space-between; align-items:baseline;
+  padding-bottom: 12px; border-bottom:1px dashed var(--line);
+  margin-bottom: 10px;
+}
+.rift-landing .mini-listtitle{ font-size:13px; font-weight:500; letter-spacing:-0.01em; }
+.rift-landing .mini-listsub{ font-family: var(--font-jetbrains-mono), 'JetBrains Mono',monospace; font-size:10px; color:var(--ink-mute); letter-spacing: 0.04em;}
+.rift-landing .mini-listfilters{
+  display:flex; gap:6px; margin-bottom: 12px;
+  font-family: var(--font-jetbrains-mono), 'JetBrains Mono',monospace; font-size:10px;
+}
+.rift-landing .mini-listfilters .f{
+  padding: 3px 9px; border-radius: 999px;
+  border:1px solid var(--line); color: var(--ink-mute);
+  background: transparent; letter-spacing:0.04em;
+}
+.rift-landing .mini-listfilters .f.on{
+  border-color: rgba(var(--gold-glow)/0.5);
+  color: var(--gold-1);
+  background: rgba(var(--gold-glow)/0.08);
 }
 
-// ─── Step 03: Alerts feed ─────────────────────────────────────────────────────
+.rift-landing .mini-caselist{ display:flex; flex-direction:column; gap:6px; }
+.rift-landing .mini-caserow{
+  display:grid; grid-template-columns: 1fr auto;
+  gap: 10px; align-items:center;
+  padding: 10px 12px; border-radius: 8px;
+  border:1px solid transparent;
+  background: rgba(255,255,255,0.015);
+  cursor: pointer;
+  transition: all .3s;
+}
+.rift-landing .mini-caserow:hover, .rift-landing .mini-caserow.hover{
+  background: rgba(255,255,255,0.035);
+  border-color: var(--line);
+}
+.rift-landing .mini-caserow.focused{
+  border-color: rgba(var(--gold-glow)/0.45);
+  background: rgba(var(--gold-glow)/0.05);
+  box-shadow: 0 0 0 1px rgba(var(--gold-glow)/0.2), 0 0 18px -4px rgba(var(--gold-glow)/0.4);
+}
+.rift-landing .mini-caserow .cname{ font-size: 12.5px; font-weight: 500; letter-spacing:-0.01em; }
+.rift-landing .mini-caserow .cmeta{ font-family: var(--font-jetbrains-mono), 'JetBrains Mono',monospace; font-size:9.5px; color: var(--ink-mute); margin-top:2px; letter-spacing: 0.03em;}
+.rift-landing .mini-caserow .camt{ text-align:right; font-family: var(--font-jetbrains-mono), 'JetBrains Mono', monospace; font-size: 11px; color: var(--ink-dim); }
+.rift-landing .mini-caserow .cstatus{ font-family: var(--font-jetbrains-mono), 'JetBrains Mono',monospace; font-size:9px; letter-spacing:0.06em; margin-top: 2px; color: var(--ink-mute); text-transform:uppercase; }
 
-function AlertsCard() {
-  const alerts = [
-    { mark: "!", title: "Document overdue",  sub: "Fidelity auth form · Mitchell case", time: "2h ago",  urgent: true  },
-    { mark: "⏱", title: "Task due today",    sub: "Follow up with Johnson",              time: "4h ago",  urgent: false },
-    { mark: "•", title: "Case stale",         sub: "RFT-2891 · no movement in 5 days",   time: "1d ago",  urgent: false },
-  ];
-  return (
-    <div style={{
-      width: "100%",
-      maxWidth: "460px",
-      display: "flex",
-      flexDirection: "column",
-      gap: "10px",
-    }}>
-      <div style={{
-        color: C.accent, fontSize: "10px", fontWeight: 800,
-        letterSpacing: "0.14em", marginBottom: "4px",
-      }}>
-        RECENT ALERTS
-      </div>
-      {alerts.map((a, i) => (
-        <div key={i} style={{
-          background: "rgba(22, 16, 11, 0.88)",
-          border: `1px solid ${a.urgent ? "rgba(184,134,11,0.45)" : "rgba(255,255,255,0.06)"}`,
-          borderLeft: `3px solid ${a.urgent ? C.accent : "rgba(184,134,11,0.3)"}`,
-          borderRadius: "8px",
-          padding: "14px 16px",
-          display: "flex",
-          gap: "12px",
-          boxShadow: "0 12px 30px rgba(0,0,0,0.35)",
-          backdropFilter: "blur(8px)",
-        }}>
-          <div style={{
-            width: "30px", height: "30px",
-            borderRadius: "6px",
-            background: a.urgent ? "rgba(184,134,11,0.2)" : "rgba(184,134,11,0.08)",
-            border: `1px solid ${a.urgent ? "rgba(184,134,11,0.4)" : "rgba(184,134,11,0.18)"}`,
-            display: "flex", alignItems: "center", justifyContent: "center",
-            flexShrink: 0,
-            color: C.accentLight,
-            fontSize: "13px",
-            fontWeight: 800,
-          }}>
-            {a.mark}
-          </div>
-          <div style={{ flex: 1, minWidth: 0 }}>
-            <div style={{
-              display: "flex", justifyContent: "space-between", alignItems: "baseline",
-              gap: "10px", marginBottom: "3px",
-            }}>
-              <div style={{ color: C.warmWhite, fontSize: "12px", fontWeight: 700 }}>{a.title}</div>
-              <div style={{ color: C.muted, fontSize: "10px", flexShrink: 0 }}>{a.time}</div>
-            </div>
-            <div style={{ color: C.muted, fontSize: "11px" }}>{a.sub}</div>
-          </div>
-        </div>
-      ))}
-    </div>
-  );
+.rift-landing .mini-detail-back{
+  display:inline-flex; align-items:center; gap:4px;
+  font-family: var(--font-jetbrains-mono), 'JetBrains Mono',monospace; font-size:10px; color: var(--ink-mute);
+  margin-bottom: 10px; letter-spacing: 0.04em; cursor:pointer;
+  padding: 2px 6px 2px 2px; border-radius: 4px;
+}
+.rift-landing .mini-detail-back:hover, .rift-landing .mini-detail-back.hover{ color: var(--ink-dim); background: rgba(255,255,255,0.03); }
+.rift-landing .mini-card{
+  position: relative;
+  background: transparent;
+  border: none;
+  border-radius: 0;
+  padding: 0;
+}
+.rift-landing .mini-head{
+  display:flex; justify-content:space-between; align-items:center;
+  padding-bottom: 12px; border-bottom:1px dashed var(--line);
+  position: relative;
+}
+.rift-landing .mini-client{ font-size:14px; font-weight:500; letter-spacing:-0.01em; }
+.rift-landing .mini-client .sub{ display:block; font-size:10px; color:var(--ink-mute); font-weight:400; margin-top:2px; font-family: var(--font-jetbrains-mono), 'JetBrains Mono',monospace; letter-spacing:0.03em;}
+.rift-landing .mini-route{
+  margin-top:12px; font-family: var(--font-jetbrains-mono), 'JetBrains Mono',monospace; font-size:10.5px;
+  color:var(--ink-dim); display:flex; align-items:center; gap:8px; flex-wrap:wrap;
+}
+.rift-landing .mini-route .arr{ color: var(--gold-2); }
+
+.rift-landing .mini-pipe{ margin-top:14px; }
+.rift-landing .mini-pipe-bar{ display:flex; gap:3px; height:5px; }
+.rift-landing .mini-pipe-bar .s{ flex:1; border-radius:2px; background: rgba(255,255,255,0.05); transition: background .5s ease, box-shadow .5s;}
+.rift-landing .mini-pipe-bar .s.on{
+  background: linear-gradient(90deg, var(--gold-3), var(--gold-1));
+}
+.rift-landing .mini-pipe-bar .s.cur{
+  box-shadow: 0 0 10px rgba(var(--gold-glow)/0.6);
+}
+.rift-landing .mini-pipe-label{
+  margin-top:9px;
+  display:flex; justify-content:space-between;
+  font-family: var(--font-jetbrains-mono), 'JetBrains Mono',monospace; font-size:9.5px; color:var(--ink-mute);
+  letter-spacing:0.06em; text-transform:uppercase;
+}
+.rift-landing .mini-pipe-label .cur-status{
+  color: var(--gold-1);
+  transition: color .3s;
+}
+.rift-landing .mini-pipe-label .cur-status::before{
+  content:""; display:inline-block; width:5px; height:5px; border-radius:50%;
+  background: var(--gold-1); margin-right:6px;
+  box-shadow: 0 0 6px rgba(var(--gold-glow)/0.7);
+  animation: mini-pulse 1.6s ease-in-out infinite;
+}
+@keyframes mini-pulse{ 0%,100%{opacity:0.6;} 50%{opacity:1;} }
+
+.rift-landing .mini-check{
+  margin-top:14px; padding-top:12px; border-top:1px dashed var(--line);
+  display:flex; flex-direction:column; gap:7px;
 }
 
-// ─── Step 04: Audit trail ─────────────────────────────────────────────────────
+.rift-landing .status-pill{
+  display:inline-flex; align-items:center; gap:6px;
+  padding:3px 9px; border-radius:999px; font-size:10.5px; font-weight:500;
+  font-family: var(--font-jetbrains-mono), 'JetBrains Mono',monospace; letter-spacing:0.02em;
+  background: rgba(255,255,255,0.04);
+  border:1px solid var(--line-2);
+  color:var(--ink-dim);
+  cursor: pointer; transition: background .2s, border-color .2s;
+}
+.rift-landing .status-pill:hover, .rift-landing .status-pill.hover{
+  background: rgba(255,255,255,0.07);
+  border-color: var(--line);
+}
+.rift-landing .status-pill .sdot{ width:6px; height:6px; border-radius:50%; background: var(--status-intake); }
+.rift-landing .status-pill .caret{
+  width: 8px; height: 8px; opacity: 0.6;
+  transition: transform .2s;
+}
+.rift-landing .status-pill.open .caret{ transform: rotate(180deg); }
 
-function AuditCard() {
-  const events = [
-    { label: "Case created",            date: "Mar 15", time: "10:24" },
-    { label: "Documents received",      date: "Mar 18", time: "14:07" },
-    { label: "Submitted to custodian",  date: "Mar 22", time: "09:15" },
-    { label: "Confirmed by receiving",  date: "Mar 24", time: "11:42" },
-    { label: "Case closed",             date: "Mar 25", time: "16:30" },
-  ];
-  return (
-    <div style={{
-      width: "100%",
-      maxWidth: "460px",
-      background: "rgba(22, 16, 11, 0.88)",
-      border: `1px solid rgba(184,134,11,0.28)`,
-      borderRadius: "14px",
-      padding: "26px",
-      boxShadow: "0 24px 70px rgba(0,0,0,0.5), 0 0 0 1px rgba(0,0,0,0.2) inset",
-      backdropFilter: "blur(8px)",
-    }}>
-      <div style={{ display: "flex", alignItems: "center", gap: "12px", marginBottom: "4px" }}>
-        <div style={{
-          width: "26px", height: "26px",
-          borderRadius: "50%",
-          background: C.accent,
-          display: "flex", alignItems: "center", justifyContent: "center",
-          boxShadow: `0 0 16px ${C.accent}66`,
-        }}>
-          <svg width="14" height="14" viewBox="0 0 14 14" fill="none">
-            <path d="M2 7l3 3 7-7" stroke={C.heroBlack} strokeWidth="2.4" strokeLinecap="round" strokeLinejoin="round"/>
-          </svg>
-        </div>
-        <div style={{
-          color: C.warmWhite, fontSize: "13px", fontWeight: 800,
-          letterSpacing: "0.08em",
-        }}>
-          CASE CLOSED
-        </div>
-      </div>
-      <div style={{
-        color: C.muted, fontSize: "11px", marginBottom: "22px", paddingLeft: "38px",
-      }}>
-        RFT-2847 · Sarah Mitchell · $125,400
-      </div>
+.rift-landing .status-menu{
+  position:absolute; top: calc(100% + 6px); right: 0;
+  min-width: 180px;
+  padding: 4px;
+  background: rgba(14,16,22,0.98); backdrop-filter: blur(12px);
+  border:1px solid rgba(var(--gold-glow)/0.25);
+  border-radius: 8px;
+  box-shadow: 0 18px 36px -12px rgba(0,0,0,0.8), 0 0 0 1px rgba(0,0,0,0.4);
+  z-index: 10;
+  opacity: 0; transform: translateY(-6px) scale(0.96);
+  transform-origin: top right;
+  pointer-events:none;
+  transition: opacity .18s ease, transform .18s cubic-bezier(.2,.8,.2,1);
+}
+.rift-landing .status-menu.open{
+  opacity: 1; transform: translateY(0) scale(1); pointer-events:auto;
+}
+.rift-landing .status-menu-item{
+  display:flex; align-items:center; gap:8px;
+  padding: 7px 10px; border-radius: 5px;
+  font-family: var(--font-jetbrains-mono), 'JetBrains Mono',monospace; font-size:10.5px; letter-spacing:0.03em;
+  color: var(--ink-dim); cursor: pointer;
+  transition: background .15s;
+  position: relative;
+}
+.rift-landing .status-menu-item:hover, .rift-landing .status-menu-item.hover{
+  background: rgba(255,255,255,0.05);
+  color: var(--ink);
+}
+.rift-landing .status-menu-item .mdot{ width:7px; height:7px; border-radius:50%; flex-shrink:0; }
+.rift-landing .status-menu-item .mname{ flex:1; }
+.rift-landing .status-menu-item .mcheck{
+  width: 10px; height: 10px; opacity: 0; transition: opacity .2s;
+  color: var(--gold-1);
+}
+.rift-landing .status-menu-item.current{ color: var(--ink); background: rgba(var(--gold-glow)/0.06); }
+.rift-landing .status-menu-item.current .mcheck{ opacity: 1; }
 
-      <div style={{
-        paddingTop: "16px",
-        borderTop: "1px solid rgba(184,134,11,0.14)",
-      }}>
-        <div style={{
-          fontSize: "9px", color: C.muted, letterSpacing: "0.1em",
-          textTransform: "uppercase", marginBottom: "12px", fontWeight: 700,
-        }}>
-          Audit Trail
-        </div>
-        {events.map((ev, i) => {
-          const last = i === events.length - 1;
-          return (
-            <div key={i} style={{
-              display: "flex", alignItems: "center", gap: "12px",
-              padding: "6px 0",
-            }}>
-              <div style={{
-                width: "8px", height: "8px",
-                borderRadius: "50%",
-                background: last ? C.accent : "rgba(184,134,11,0.45)",
-                flexShrink: 0,
-                boxShadow: last ? `0 0 10px ${C.accent}` : "none",
-              }} />
-              <div style={{ flex: 1, color: C.warmWhite, fontSize: "12px", fontWeight: 500 }}>
-                {ev.label}
-              </div>
-              <div style={{
-                color: C.muted, fontSize: "10px",
-                fontFamily: "ui-monospace, SFMono-Regular, Menlo, monospace",
-              }}>
-                {ev.date} · {ev.time}
-              </div>
-            </div>
-          );
-        })}
-      </div>
-    </div>
-  );
+.rift-landing .mini-check-item{
+  display:grid;
+  grid-template-columns: auto 1fr auto;
+  align-items:center; gap:10px;
+  padding: 8px 8px;
+  border-radius: 7px;
+  border: 1px solid transparent;
+  font-size:11.5px; color:var(--ink-dim);
+  transition: background .25s, border-color .25s;
+  cursor: pointer;
+}
+.rift-landing .mini-check-item .mini-file{
+  display:flex; align-items:center; gap:9px;
+  min-width: 0;
+}
+.rift-landing .mini-check-item .mini-file-icon{
+  width: 22px; height: 26px; flex-shrink:0;
+  border-radius: 3px; background: linear-gradient(180deg, #1c1f27, #13151c);
+  border: 1px solid var(--line);
+  display:flex; align-items:flex-end; justify-content:center;
+  padding-bottom: 3px;
+  font-family: var(--font-jetbrains-mono), 'JetBrains Mono',monospace; font-size: 7.5px;
+  color: var(--ink-mute); letter-spacing: 0.04em;
+  position: relative;
+}
+.rift-landing .mini-check-item .mini-file-icon::before{
+  content:""; position:absolute; top:-1px; right:-1px;
+  width: 6px; height: 6px;
+  background: #05060a;
+  border-left: 1px solid var(--line);
+  border-bottom: 1px solid var(--line);
+}
+.rift-landing .mini-check-item.on .mini-file-icon{
+  background: linear-gradient(180deg, #2a2418, #1a1610);
+  border-color: rgba(var(--gold-glow)/0.35);
+  color: var(--gold-1);
+}
+.rift-landing .mini-check-item .mini-file-meta{ display:flex; flex-direction:column; gap:1px; min-width: 0;}
+.rift-landing .mini-check-item .mini-file-name{
+  font-weight: 500; color: var(--ink-dim);
+  font-size: 11.5px; letter-spacing: -0.005em;
+  white-space: nowrap; overflow:hidden; text-overflow:ellipsis;
+  transition: color .3s;
+}
+.rift-landing .mini-check-item.on .mini-file-name{ color: var(--ink); }
+.rift-landing .mini-check-item .mini-file-sub{
+  font-family: var(--font-jetbrains-mono), 'JetBrains Mono',monospace; font-size: 9px;
+  color: var(--ink-mute); letter-spacing: 0.04em;
+}
+.rift-landing .mini-check-item.hover{ background: rgba(255,255,255,0.03); border-color: var(--line); }
+.rift-landing .mini-check-item.flash-in{
+  animation: mini-flash-in .7s ease-out;
+}
+@keyframes mini-flash-in{
+  0%   { background: rgba(var(--gold-glow)/0.15); border-color: rgba(var(--gold-glow)/0.4); }
+  100% { background: transparent; border-color: transparent; }
 }
 
-// ─── Main component ────────────────────────────────────────────────────────────
+.rift-landing .mini-check-box{
+  width:16px; height:16px; border-radius:4px;
+  border:1.5px solid var(--line-2);
+  display:flex; align-items:center; justify-content:center;
+  flex-shrink:0; transition: all .4s;
+}
+.rift-landing .mini-check-box svg{ width:10px; height:10px; stroke:#2a1d08; stroke-width:3; fill:none;
+  opacity:0; transition: opacity .3s;}
+.rift-landing .mini-check-item.on .mini-check-box{
+  background: linear-gradient(135deg, var(--gold-4), var(--gold-2));
+  border-color: var(--gold-2);
+  box-shadow: 0 0 10px rgba(var(--gold-glow)/0.35);
+}
+.rift-landing .mini-check-item.on .mini-check-box svg{ opacity:1; }
+
+.rift-landing .mini-file-state{
+  display:inline-flex; align-items:center; gap:4px;
+  font-family: var(--font-jetbrains-mono), 'JetBrains Mono',monospace; font-size:9px; letter-spacing: 0.06em;
+  padding: 2px 7px; border-radius: 999px;
+  color: var(--ink-mute);
+  border:1px solid var(--line-2);
+  background: transparent;
+  transition: all .3s;
+  white-space:nowrap;
+}
+.rift-landing .mini-file-state.received{
+  color: var(--status-ready); border-color: rgba(78,164,130,0.4); background: rgba(78,164,130,0.08);
+}
+.rift-landing .mini-file-state.approved{
+  color: var(--gold-1); border-color: rgba(var(--gold-glow)/0.45); background: rgba(var(--gold-glow)/0.1);
+}
+.rift-landing .mini-file-state::before{
+  content:""; width:4px; height:4px; border-radius:50%; background: currentColor; opacity:.9;
+}
+
+.rift-landing .mini-notif{
+  position: absolute; top: 12px; left: 12px; right: 12px;
+  padding: 10px 12px;
+  border-radius: 8px;
+  background: rgba(16,18,24,0.98); backdrop-filter: blur(12px);
+  border: 1px solid rgba(var(--gold-glow)/0.4);
+  box-shadow: 0 18px 36px -10px rgba(0,0,0,0.8), 0 0 0 1px rgba(0,0,0,0.3);
+  display:flex; align-items:center; gap: 10px;
+  opacity: 0; transform: translateY(-14px);
+  transition: all .4s cubic-bezier(.2,.8,.2,1);
+  z-index: 12;
+  pointer-events: none;
+}
+.rift-landing .mini-notif.show{ opacity: 1; transform: translateY(0); }
+.rift-landing .mini-notif-avatar{
+  width: 26px; height: 26px; border-radius: 50%;
+  background: linear-gradient(135deg, #3a3527, #1c1a14);
+  border: 1px solid rgba(var(--gold-glow)/0.4);
+  display:flex; align-items:center; justify-content:center;
+  font-size: 10px; font-weight: 600; color: var(--gold-1);
+  letter-spacing: -0.02em;
+  flex-shrink:0;
+}
+.rift-landing .mini-notif-body{ flex:1; min-width:0; line-height:1.35;}
+.rift-landing .mini-notif-title{
+  font-size: 11.5px; color: var(--ink); font-weight: 500;
+  letter-spacing: -0.005em;
+  white-space: nowrap; overflow:hidden; text-overflow:ellipsis;
+}
+.rift-landing .mini-notif-title b{ font-weight: 600; color: var(--gold-1); }
+.rift-landing .mini-notif-sub{
+  font-family: var(--font-jetbrains-mono), 'JetBrains Mono',monospace; font-size: 9.5px;
+  color: var(--ink-mute); letter-spacing: 0.04em;
+  margin-top: 2px;
+}
+.rift-landing .mini-notif-dot{
+  width: 7px; height: 7px; border-radius: 50%; background: var(--gold-1);
+  box-shadow: 0 0 8px var(--gold-1);
+  flex-shrink: 0;
+  animation: mini-pulse 1.8s ease-in-out infinite;
+}
+
+.rift-landing .mini-doc-preview{
+  position: absolute; left: 50%; top: 50%;
+  transform: translate(-50%, -45%) scale(0.92);
+  width: 260px; padding: 14px;
+  background: #0c0e14;
+  border: 1px solid rgba(var(--gold-glow)/0.35);
+  border-radius: 10px;
+  box-shadow: 0 40px 70px -20px rgba(0,0,0,0.9), 0 0 0 1px rgba(0,0,0,0.5);
+  opacity: 0; pointer-events: none;
+  transition: opacity .25s, transform .3s cubic-bezier(.2,.8,.2,1);
+  z-index: 14;
+}
+.rift-landing .mini-doc-preview.show{
+  opacity: 1; transform: translate(-50%, -50%) scale(1);
+}
+.rift-landing .mini-doc-header{
+  display:flex; justify-content:space-between; align-items:center;
+  padding-bottom: 10px; border-bottom: 1px dashed var(--line);
+  margin-bottom: 10px;
+}
+.rift-landing .mini-doc-title{
+  font-size: 11.5px; font-weight: 500; color: var(--ink);
+}
+.rift-landing .mini-doc-close{
+  font-family: var(--font-jetbrains-mono), 'JetBrains Mono', monospace; font-size: 10px;
+  color: var(--ink-mute);
+}
+.rift-landing .mini-doc-page{
+  height: 110px;
+  background: linear-gradient(180deg, #f6f2ea, #ece6d6);
+  border-radius: 4px;
+  padding: 10px 12px;
+  position: relative; overflow: hidden;
+}
+.rift-landing .mini-doc-page::before, .rift-landing .mini-doc-page::after{
+  content:"";
+  position: absolute; left: 10px; right: 10px; height: 4px; border-radius: 2px;
+  background: rgba(30,24,14,0.25);
+}
+.rift-landing .mini-doc-page::before{ top: 14px; right: 40%; }
+.rift-landing .mini-doc-page::after{ top: 26px; }
+.rift-landing .mini-doc-lines{
+  position:absolute; left: 10px; right: 10px; top: 42px; bottom: 28px;
+  background:
+    repeating-linear-gradient(
+      to bottom,
+      rgba(30,24,14,0.18) 0 3px,
+      transparent 3px 11px
+    );
+  border-radius: 2px;
+}
+.rift-landing .mini-doc-sig{
+  position:absolute; left: 10px; bottom: 8px; right: 10px; height: 14px;
+  border-top: 1px solid rgba(30,24,14,0.35);
+  font-family: 'Georgia', serif; font-style: italic; font-size: 11px;
+  color: #3a2d10; padding-top: 1px;
+}
+.rift-landing .mini-doc-meta{
+  margin-top: 10px;
+  display:flex; justify-content:space-between;
+  font-family: var(--font-jetbrains-mono), 'JetBrains Mono',monospace; font-size:9px;
+  color: var(--ink-mute); letter-spacing: 0.05em;
+}
+.rift-landing .mini-doc-approve{
+  margin-top: 10px;
+  width: 100%; padding: 7px 10px; border-radius: 6px;
+  background: linear-gradient(180deg, var(--gold-2), var(--gold-4));
+  color: #1a1206; border: 1px solid var(--gold-2);
+  font-size: 11px; font-weight: 500;
+  letter-spacing: -0.005em; cursor: pointer;
+  box-shadow: 0 8px 18px -6px rgba(var(--gold-glow)/0.4), inset 0 1px 0 rgba(255,255,255,0.2);
+  display:flex; align-items:center; justify-content:center; gap:6px;
+  transition: transform .15s;
+}
+.rift-landing .mini-doc-approve.hover{ transform: scale(1.02); }
+
+.rift-landing .mini-toast{
+  position:absolute; left:50%; bottom:16px;
+  transform: translate(-50%, 14px);
+  padding: 7px 13px; border-radius: 8px;
+  font-family: var(--font-jetbrains-mono), 'JetBrains Mono',monospace; font-size:10.5px;
+  color: var(--ink-dim); letter-spacing: 0.04em;
+  background: rgba(16,18,24,0.96); backdrop-filter: blur(10px);
+  border: 1px solid rgba(var(--gold-glow)/0.35);
+  box-shadow: 0 14px 28px -10px rgba(0,0,0,0.7);
+  display:flex; align-items:center; gap:8px;
+  opacity:0; transition: all .4s;
+  white-space:nowrap; z-index: 15;
+}
+.rift-landing .mini-toast.show{ opacity:1; transform: translate(-50%, 0); }
+.rift-landing .mini-toast .d{ width:5px; height:5px; border-radius:50%; background: var(--status-done); box-shadow: 0 0 6px var(--status-done); }
+
+.rift-landing .mini-cursor{
+  position:absolute; width:20px; height:20px; z-index:20; pointer-events:none;
+  top:0; left:0;
+  transform: translate(28px, 38px);
+  transition: transform 1.1s cubic-bezier(0.45, 0.05, 0.15, 1);
+  will-change: transform;
+  filter: drop-shadow(0 3px 8px rgba(0,0,0,0.8));
+}
+.rift-landing .mini-cursor svg{ width:100%; height:100%; display:block; }
+.rift-landing .mini-cursor::before{
+  content:""; position:absolute; left:2.5px; top:1.7px;
+  width:0; height:0; border-radius:50%;
+  border:1.5px solid rgba(var(--gold-glow)/0.9);
+  transform: translate(-50%, -50%) scale(1);
+  opacity:0;
+  pointer-events:none;
+}
+.rift-landing .mini-cursor.clicking::before{ animation: mini-click-ring .5s ease-out; }
+@keyframes mini-click-ring{
+  0%   { width: 4px;  height: 4px;  opacity:1; }
+  100% { width: 34px; height: 34px; opacity:0; }
+}
+.rift-landing .mini-cursor.clicking svg{ animation: mini-tap .25s ease-out; }
+@keyframes mini-tap{
+  0%   { transform: scale(1); }
+  40%  { transform: scale(0.82); }
+  100% { transform: scale(1); }
+}
+
+.rift-landing .mini-target{ position: relative; }
+.rift-landing .mini-target::after{
+  content:""; position:absolute; inset:-4px; border-radius:8px;
+  border:1.5px solid rgba(var(--gold-glow)/0.7);
+  background: rgba(var(--gold-glow)/0.06);
+  box-shadow: 0 0 14px -2px rgba(var(--gold-glow)/0.5);
+  pointer-events:none;
+  animation: mini-target-pulse .7s ease-out;
+}
+@keyframes mini-target-pulse{
+  0%   { opacity: 0; transform: scale(1.15); }
+  60%  { opacity: 1; transform: scale(1); }
+  100% { opacity: 1; transform: scale(1); }
+}
+.rift-landing .mini-target.mini-clicked::after{
+  animation: mini-target-click .5s ease-out forwards;
+}
+@keyframes mini-target-click{
+  0%   { opacity: 1; transform: scale(1); background: rgba(var(--gold-glow)/0.2); }
+  100% { opacity: 0; transform: scale(1.08); }
+}
+
+.rift-landing .eyebrow{
+  display:inline-flex; align-items:center; gap:10px;
+  padding:6px 12px 6px 8px; border-radius:999px;
+  background: var(--glass); border:1px solid var(--glass-border);
+  font-size:12px; color:var(--ink-dim); letter-spacing:0.02em;
+  backdrop-filter: blur(10px); -webkit-backdrop-filter: blur(10px);
+}
+.rift-landing .eyebrow .pill{
+  padding:2px 8px; border-radius:999px; font-size:11px; font-weight:500;
+  color:#2a1d08;
+  background: linear-gradient(135deg, var(--gold-4), var(--gold-2));
+}
+.rift-landing h1.hero-title{
+  margin:22px 0 0; font-size: clamp(40px, 5.2vw, 72px);
+  font-weight:400; letter-spacing:-0.035em; line-height:0.98;
+  color: var(--ink);
+}
+.rift-landing h1.hero-title .chromed{
+  background: linear-gradient(95deg, var(--gold-4) 0%, var(--gold-1) 30%, var(--gold-2) 55%, var(--gold-1) 75%, var(--gold-4) 100%);
+  background-size: 220% 220%;
+  background-clip: text; -webkit-background-clip: text;
+  -webkit-text-fill-color: transparent; color:transparent;
+  animation: chromeflow 8s ease-in-out infinite;
+  font-family: var(--font-instrument-serif), 'Instrument Serif', serif; font-style:italic; font-weight:400;
+}
+.rift-landing .hero-sub{
+  margin-top:22px; font-size:18px; color:var(--ink-dim); max-width: 580px;
+  line-height:1.55;
+}
+.rift-landing .hero-cta{ display:flex; align-items:center; gap:14px; margin-top:32px; flex-wrap: wrap; }
+.rift-landing .hero-meta{
+  margin-top:28px; display:flex; gap:28px; font-size:13px; color:var(--ink-mute); flex-wrap: wrap;
+}
+.rift-landing .hero-meta .dot{ display:inline-block; width:5px; height:5px; border-radius:50%;
+  background: var(--gold-2); margin-right:8px; vertical-align:middle;
+  box-shadow: 0 0 8px rgba(var(--gold-glow)/0.6); }
+
+.rift-landing section{ padding: 110px 0; position:relative; }
+.rift-landing .sec-label{
+  font-family: var(--font-jetbrains-mono), 'JetBrains Mono',monospace; font-size:11px; color: var(--gold-2);
+  letter-spacing:0.18em; text-transform:uppercase;
+  display:flex; align-items:center; gap:12px;
+}
+.rift-landing .sec-label::before{
+  content:""; width:28px; height:1px; background: var(--gold-2);
+}
+.rift-landing .sec-title{
+  margin:16px 0 0; font-size: clamp(32px, 4.4vw, 56px);
+  font-weight:400; letter-spacing:-0.028em; line-height:1.02;
+  max-width: 720px;
+}
+.rift-landing .sec-title em{ font-family: var(--font-instrument-serif), 'Instrument Serif', serif; font-style:italic; color: var(--gold-1);}
+.rift-landing .sec-sub{ margin-top:18px; color: var(--ink-dim); font-size:17px; max-width:560px; line-height:1.55;}
+
+.rift-landing .feat-grid{
+  margin-top: 56px;
+  display:grid; grid-template-columns: repeat(3, 1fr); gap:18px;
+}
+.rift-landing .glass-card{
+  position:relative;
+  padding: 26px 24px;
+  border-radius: 18px;
+  background: linear-gradient(180deg, rgba(246,242,234,0.045), rgba(246,242,234,0.015));
+  border: 1px solid var(--glass-border);
+  backdrop-filter: blur(18px) saturate(140%);
+  -webkit-backdrop-filter: blur(18px) saturate(140%);
+  overflow:hidden;
+  transition: transform .4s, border-color .4s;
+}
+.rift-landing .glass-card::before{
+  content:""; position:absolute; inset:0; border-radius:inherit; pointer-events:none;
+  background: linear-gradient(180deg, rgba(255,255,255,0.08), transparent 40%);
+}
+.rift-landing .glass-card::after{
+  content:""; position:absolute; top:-1px; left:10%; right:10%; height:1px;
+  background: linear-gradient(90deg, transparent, rgba(var(--gold-glow)/0.4), transparent);
+  opacity: 0; transition: opacity .4s;
+}
+.rift-landing .glass-card:hover{ transform: translateY(-3px); border-color: rgba(var(--gold-glow)/0.2); }
+.rift-landing .glass-card:hover::after{ opacity:1; }
+.rift-landing .feat-num{
+  font-family: var(--font-jetbrains-mono), 'JetBrains Mono',monospace; font-size:11px; color: var(--gold-2);
+  letter-spacing:0.1em;
+}
+.rift-landing .feat-h{ margin-top:14px; font-size:20px; font-weight:500; letter-spacing:-0.015em;}
+.rift-landing .feat-b{ margin-top:8px; color: var(--ink-dim); font-size:14px; line-height:1.55;}
+.rift-landing .feat-visual{
+  margin-top:22px; height:92px; border-radius:10px;
+  background: rgba(0,0,0,0.2); border:1px solid var(--line);
+  display:flex; align-items:center; justify-content:center;
+  position:relative; overflow:hidden;
+}
+
+.rift-landing .pipeline-viz{
+  margin-top: 56px; padding: 32px; border-radius: 18px;
+  background: linear-gradient(180deg, rgba(246,242,234,0.04), rgba(246,242,234,0.01));
+  border:1px solid var(--glass-border);
+  backdrop-filter: blur(16px); -webkit-backdrop-filter: blur(16px);
+}
+.rift-landing .pipe-stages{
+  display:grid; grid-template-columns: repeat(7, 1fr); gap:6px;
+  position:relative;
+}
+.rift-landing .pipe-stage{
+  padding:16px 12px; border-radius:10px;
+  background: rgba(255,255,255,0.02);
+  border:1px solid var(--line);
+  text-align:center;
+  position:relative;
+  transition: all .3s;
+}
+.rift-landing .pipe-stage.active{
+  background: rgba(var(--gold-glow)/0.08);
+  border-color: rgba(var(--gold-glow)/0.35);
+  box-shadow: 0 0 20px -5px rgba(var(--gold-glow)/0.3);
+}
+.rift-landing .pipe-stage .n{ font-family: var(--font-jetbrains-mono), 'JetBrains Mono',monospace; font-size:10px; color: var(--ink-mute);}
+.rift-landing .pipe-stage.active .n{ color: var(--gold-1); }
+.rift-landing .pipe-stage .nm{ font-size:12px; margin-top:6px; color: var(--ink); font-weight:500; }
+.rift-landing .pipe-stage .ct{ font-family: var(--font-jetbrains-mono), 'JetBrains Mono',monospace; font-size:10px; color: var(--ink-mute); margin-top:4px;}
+
+.rift-landing .stats-row{
+  margin-top: 56px; display:grid; grid-template-columns: repeat(4, 1fr); gap:0;
+  border-top:1px solid var(--line); border-bottom:1px solid var(--line);
+}
+.rift-landing .stat{
+  padding: 32px 24px; border-right:1px solid var(--line);
+}
+.rift-landing .stat:last-child{ border-right:none; }
+.rift-landing .stat .val{
+  font-family: var(--font-instrument-serif), 'Instrument Serif', serif;
+  font-size: 56px; letter-spacing:-0.025em; line-height:1;
+  background: linear-gradient(95deg, var(--gold-4), var(--gold-1) 40%, var(--gold-2) 70%, var(--gold-4));
+  background-size: 220% 220%;
+  background-clip: text; -webkit-background-clip: text;
+  -webkit-text-fill-color: transparent;
+  animation: chromeflow 9s ease-in-out infinite;
+}
+.rift-landing .stat .lbl{ margin-top:10px; font-size:13px; color: var(--ink-dim); letter-spacing:0.01em;}
+
+.rift-landing .quote-card{
+  margin-top: 56px; padding: 48px;
+  border-radius: 22px;
+  background: linear-gradient(135deg, rgba(246,242,234,0.055), rgba(246,242,234,0.01));
+  border:1px solid var(--glass-border);
+  backdrop-filter: blur(20px) saturate(150%);
+  position:relative; overflow:hidden;
+}
+.rift-landing .quote-card::before{
+  content:"\\201C";
+  position:absolute; top:-40px; right:20px;
+  font-family: var(--font-instrument-serif), 'Instrument Serif', serif; font-size:260px;
+  color: rgba(var(--gold-glow)/0.1); line-height:1;
+}
+.rift-landing .quote-text{
+  font-family: var(--font-instrument-serif), 'Instrument Serif', serif;
+  font-size: 30px; letter-spacing:-0.015em; line-height:1.3;
+  color: var(--ink); max-width: 760px; font-weight:400; position:relative;
+}
+.rift-landing .quote-meta{ margin-top:24px; display:flex; align-items:center; gap:14px; flex-wrap: wrap; }
+.rift-landing .quote-av{
+  width:42px; height:42px; border-radius:50%;
+  background: linear-gradient(135deg, #3a3f4a, #1e2128);
+  display:flex; align-items:center; justify-content:center;
+  font-weight:600; color: var(--ink-dim); font-size:14px;
+  border:1px solid var(--line-2);
+}
+.rift-landing .quote-name{ font-size:14px; color: var(--ink); font-weight:500;}
+.rift-landing .quote-role{ font-size:12px; color: var(--ink-mute); }
+
+.rift-landing .cta-block{
+  padding: 80px 56px; border-radius: 28px; position:relative; overflow:hidden;
+  background:
+    radial-gradient(60% 70% at 50% 0%, rgba(var(--gold-glow)/0.18), transparent 70%),
+    linear-gradient(180deg, rgba(246,242,234,0.04), rgba(246,242,234,0.01));
+  border:1px solid var(--glass-border);
+  backdrop-filter: blur(20px);
+  text-align:center;
+}
+.rift-landing .cta-block h2{
+  font-size: clamp(36px, 5vw, 64px); font-weight:400;
+  letter-spacing:-0.03em; margin:0; line-height:1;
+}
+.rift-landing .cta-block h2 em{ font-family: var(--font-instrument-serif), 'Instrument Serif', serif; font-style:italic; color: var(--gold-1); }
+.rift-landing .cta-block p{ margin: 18px auto 0; max-width: 460px; color: var(--ink-dim); font-size:16px; }
+.rift-landing .cta-block .btn-chrome{ margin-top:32px; }
+
+.rift-landing footer{
+  padding: 40px 0 60px; border-top:1px solid var(--line); margin-top:110px;
+  color: var(--ink-mute); font-size:13px;
+}
+.rift-landing .foot-row{ display:flex; justify-content:space-between; align-items:center; flex-wrap:wrap; gap:20px;}
+.rift-landing .foot-links{ display:flex; gap:24px; flex-wrap: wrap;}
+.rift-landing .foot-links a{ color: var(--ink-mute); text-decoration:none; transition: color .2s;}
+.rift-landing .foot-links a:hover{ color: var(--ink); }
+
+@media (max-width: 860px){
+  .rift-landing .feat-grid{ grid-template-columns: 1fr; }
+  .rift-landing .stats-row{ grid-template-columns: 1fr 1fr; }
+  .rift-landing .stat{ border-right:none; border-bottom:1px solid var(--line); }
+  .rift-landing .pipe-stages{ grid-template-columns: repeat(3, 1fr); }
+  .rift-landing .nav-links{ display:none; }
+}
+`;
 
 export default function LandingPage() {
-  const [demoOpen, setDemoOpen] = useState(false);
-  const [activeCard, setActiveCard] = useState(0);
-  const [lifting, setLifting]       = useState(false);
-  const liftTimer = useRef<ReturnType<typeof setTimeout> | null>(null);
+  const miniDemoRef = useRef<HTMLDivElement>(null);
 
   useEffect(() => {
-    const interval = setInterval(() => {
-      setLifting(true);
-      liftTimer.current = setTimeout(() => {
-        setLifting(false);
-        setActiveCard((a) => (a + 1) % 3);
-      }, 460);
-    }, 5000);
+    const root = miniDemoRef.current;
+    if (!root) return;
+
+    const stage = root.querySelector<HTMLDivElement>(".mini-stage");
+    const cursor = root.querySelector<HTMLDivElement>(".mini-cursor");
+    const listScreen = root.querySelector<HTMLDivElement>("#mini-list");
+    const detailScreen = root.querySelector<HTMLDivElement>("#mini-detail");
+    const crumb = root.querySelector<HTMLElement>("#mini-crumb");
+    const rowChen = root.querySelector<HTMLDivElement>("#row-chen");
+    const back = root.querySelector<HTMLDivElement>("#mini-back");
+    const bar = root.querySelector<HTMLDivElement>("#mini-bar");
+    const sdot = root.querySelector<HTMLElement>("#mini-sdot");
+    const label = root.querySelector<HTMLElement>("#mini-status-label");
+    const curText = root.querySelector<HTMLElement>("#mini-cur-text");
+    const pill = root.querySelector<HTMLElement>("#mini-status-pill");
+    const menu = root.querySelector<HTMLDivElement>("#mini-status-menu");
+    const toast = root.querySelector<HTMLDivElement>("#mini-toast");
+    const toastMsg = root.querySelector<HTMLElement>("#mini-toast-msg");
+    const notif = root.querySelector<HTMLDivElement>("#mini-notif");
+    const notifTitle = root.querySelector<HTMLElement>("#mini-notif-title");
+    const notifSub = root.querySelector<HTMLElement>("#mini-notif-sub");
+    const docPreview = root.querySelector<HTMLDivElement>("#mini-doc-preview");
+    const docTitle = root.querySelector<HTMLElement>("#mini-doc-title");
+    const docSig = root.querySelector<HTMLElement>("#mini-doc-sig");
+    const docApprove = root.querySelector<HTMLButtonElement>("#mini-doc-approve");
+
+    if (
+      !stage || !cursor || !listScreen || !detailScreen || !crumb || !rowChen ||
+      !back || !bar || !sdot || !label || !curText || !pill || !menu || !toast ||
+      !toastMsg || !notif || !notifTitle || !notifSub || !docPreview || !docTitle ||
+      !docSig || !docApprove
+    ) return;
+
+    const segs = Array.from(bar.querySelectorAll<HTMLDivElement>(".s"));
+    const menuItems = Array.from(menu.querySelectorAll<HTMLDivElement>(".status-menu-item"));
+
+    const mc3 = root.querySelector<HTMLDivElement>("#mc-3");
+    const mc4 = root.querySelector<HTMLDivElement>("#mc-4");
+    const mc3sub = root.querySelector<HTMLElement>("#mc-3-sub");
+    const mc4sub = root.querySelector<HTMLElement>("#mc-4-sub");
+    if (!mc3 || !mc4 || !mc3sub || !mc4sub) return;
+
+    type Stage = { k: string; name: string; lbl: string; color: string; step: number };
+    const stages: Stage[] = [
+      { k: "wait",    name: "AWAITING",   lbl: "Awaiting",   color: "var(--status-wait)",    step: 1 },
+      { k: "ready",   name: "READY",      lbl: "Ready",      color: "var(--status-ready)",   step: 2 },
+      { k: "submit",  name: "SUBMITTED",  lbl: "Submitted",  color: "var(--status-submit)",  step: 3 },
+      { k: "proc",    name: "PROCESSING", lbl: "Processing", color: "var(--status-proc)",    step: 4 },
+      { k: "transit", name: "IN TRANSIT", lbl: "Transit",    color: "var(--status-transit)", step: 5 },
+      { k: "done",    name: "COMPLETED",  lbl: "Complete",   color: "var(--status-done)",    step: 6 },
+    ];
+
+    function setStage(i: number) {
+      const st = stages[i];
+      sdot!.style.background = st.color;
+      label!.textContent = st.name;
+      curText!.textContent = st.lbl;
+      segs.forEach((el, idx) => {
+        el.classList.toggle("on", idx <= st.step);
+        el.classList.toggle("cur", idx === st.step);
+      });
+      menuItems.forEach((mi, idx) => mi.classList.toggle("current", idx === i));
+    }
+
+    function showToast(msg: string) {
+      toastMsg!.textContent = msg;
+      toast!.classList.add("show");
+      setTimeout(() => toast!.classList.remove("show"), 2000);
+    }
+    function showNotif(title: string, sub: string) {
+      notifTitle!.innerHTML = title;
+      notifSub!.textContent = sub;
+      notif!.classList.add("show");
+    }
+    function hideNotif() { notif!.classList.remove("show"); }
+    function showDoc(title: string, sig: string) {
+      docTitle!.textContent = title;
+      docSig!.textContent = sig;
+      docPreview!.classList.add("show");
+    }
+    function hideDoc() { docPreview!.classList.remove("show"); }
+    function openMenu() { menu!.classList.add("open"); pill!.classList.add("open"); }
+    function closeMenu() {
+      menu!.classList.remove("open");
+      pill!.classList.remove("open");
+      menuItems.forEach(mi => mi.classList.remove("hover"));
+    }
+
+    function markReceived(item: HTMLDivElement) {
+      item.classList.add("flash-in");
+      setTimeout(() => item.classList.remove("flash-in"), 800);
+      const stateEl = item.querySelector<HTMLElement>(".mini-file-state");
+      if (stateEl) {
+        stateEl.textContent = "Received";
+        stateEl.className = "mini-file-state received";
+      }
+      if (item === mc3 && mc3sub) mc3sub.textContent = "FROM CLIENT · JUST NOW";
+      if (item === mc4 && mc4sub) mc4sub.textContent = "FROM CLIENT · JUST NOW";
+    }
+    function markApproved(item: HTMLDivElement) {
+      item.classList.add("on");
+      const stateEl = item.querySelector<HTMLElement>(".mini-file-state");
+      if (stateEl) {
+        stateEl.textContent = "Approved";
+        stateEl.className = "mini-file-state approved";
+      }
+    }
+
+    function resetAll() {
+      listScreen!.classList.add("active");
+      detailScreen!.classList.remove("active");
+      crumb!.textContent = "cases";
+      setStage(0);
+      [mc3, mc4].forEach(item => {
+        if (!item) return;
+        item.classList.remove("on", "flash-in");
+        const stateEl = item.querySelector<HTMLElement>(".mini-file-state");
+        if (stateEl) {
+          stateEl.textContent = "Required";
+          stateEl.className = "mini-file-state";
+        }
+      });
+      mc3sub!.textContent = "AWAITING CLIENT UPLOAD";
+      mc4sub!.textContent = "AWAITING CLIENT UPLOAD";
+      rowChen!.classList.remove("focused", "hover");
+      closeMenu();
+      hideNotif();
+      hideDoc();
+      clearTarget();
+      toast!.classList.remove("show");
+    }
+    function goToDetail() {
+      listScreen!.classList.remove("active");
+      detailScreen!.classList.add("active");
+      crumb!.textContent = "cases / chen-margaret";
+    }
+    function goToList() {
+      listScreen!.classList.add("active");
+      detailScreen!.classList.remove("active");
+      crumb!.textContent = "cases";
+    }
+
+    const TIP_X = 2.5;
+    const TIP_Y = 1.66;
+    let lastTarget: Element | null = null;
+
+    function clearTarget() {
+      if (lastTarget) {
+        lastTarget.classList.remove("mini-target", "mini-clicked");
+        lastTarget = null;
+      }
+    }
+    function pointAt(el: Element, opts: { xFrac?: number; yFrac?: number } = {}) {
+      const sRect = stage!.getBoundingClientRect();
+      const tRect = el.getBoundingClientRect();
+      if (tRect.width === 0 || tRect.height === 0) return null;
+      const xFrac = opts.xFrac ?? 0.5;
+      const yFrac = opts.yFrac ?? 0.5;
+      const x = tRect.left - sRect.left + tRect.width * xFrac;
+      const y = tRect.top - sRect.top + tRect.height * yFrac;
+      const cx = Math.max(4, Math.min(sRect.width - 4, x));
+      const cy = Math.max(4, Math.min(sRect.height - 4, y));
+      return { x: cx, y: cy };
+    }
+    function moveTo(el: Element, opts: { xFrac?: number; yFrac?: number; noHighlight?: boolean } = {}) {
+      const p = pointAt(el, opts);
+      if (!p) return;
+      cursor!.style.transform = `translate(${p.x - TIP_X}px, ${p.y - TIP_Y}px)`;
+      clearTarget();
+      if (!opts.noHighlight) {
+        el.classList.add("mini-target");
+        lastTarget = el;
+      }
+    }
+    function moveToPoint(x: number, y: number) {
+      cursor!.style.transform = `translate(${x - TIP_X}px, ${y - TIP_Y}px)`;
+      clearTarget();
+    }
+    function click() {
+      cursor!.classList.add("clicking");
+      if (lastTarget) lastTarget.classList.add("mini-clicked");
+      setTimeout(() => cursor!.classList.remove("clicking"), 500);
+    }
+
+    let running = true;
+    let ts: number[] = [];
+    const after = (ms: number, fn: () => void) => {
+      const t = window.setTimeout(() => running && fn(), ms);
+      ts.push(t);
+    };
+    const clearAll = () => { ts.forEach(id => clearTimeout(id)); ts = []; };
+
+    const MOVE = 1100;
+    const MOVE_MED = 800;
+    const MOVE_SHORT = 550;
+    const DWELL = 450;
+
+    function scheduleStageChange(startT: number, stageIdx: number, toastMsgText: string) {
+      let t = startT;
+      after(t, () => moveTo(pill!, { xFrac: 0.55, yFrac: 0.5 }));
+      t += MOVE;
+      after(t, () => { click(); openMenu(); });
+      t += 500;
+      after(t, () => {
+        const target = menuItems[stageIdx];
+        target.classList.add("hover");
+        moveTo(target, { xFrac: 0.5 });
+      });
+      t += MOVE_MED;
+      after(t, () => {
+        click();
+        menuItems[stageIdx].classList.remove("hover");
+        setStage(stageIdx);
+        closeMenu();
+        if (toastMsgText) showToast(toastMsgText);
+      });
+      t += DWELL + 150;
+      return t;
+    }
+
+    type UploadCfg = {
+      notifTitle: string; notifSub: string; row: HTMLDivElement;
+      docTitle: string; docSig: string; approvedToast: string;
+    };
+    function scheduleClientUpload(startT: number, cfg: UploadCfg) {
+      let t = startT;
+      after(t, () => showNotif(cfg.notifTitle, cfg.notifSub));
+      t += 350;
+      after(t, () => markReceived(cfg.row));
+      t += 900;
+      after(t, () => hideNotif());
+      t += 300;
+      after(t, () => moveTo(cfg.row, { xFrac: 0.45, yFrac: 0.5 }));
+      t += MOVE;
+      after(t, () => { click(); showDoc(cfg.docTitle, cfg.docSig); });
+      t += 550;
+      after(t, () => {
+        docApprove!.classList.add("hover");
+        moveTo(docApprove!, { xFrac: 0.5, yFrac: 0.5 });
+      });
+      t += MOVE_SHORT + 200;
+      after(t, () => {
+        click();
+        docApprove!.classList.remove("hover");
+        markApproved(cfg.row);
+        showToast(cfg.approvedToast);
+      });
+      t += 700;
+      after(t, () => hideDoc());
+      t += 300;
+      return t;
+    }
+
+    function loop() {
+      resetAll();
+      let t = 700;
+      after(50, () => moveToPoint(28, 38));
+
+      after(t, () => {
+        rowChen!.classList.add("hover");
+        moveTo(rowChen!, { xFrac: 0.35, yFrac: 0.55 });
+      });
+      t += MOVE;
+      after(t, () => { click(); rowChen!.classList.add("focused"); });
+      t += DWELL + 50;
+      after(t, () => {
+        goToDetail();
+        rowChen!.classList.remove("hover");
+        clearTarget();
+        moveToPoint(200, 60);
+      });
+      t += 450;
+
+      t = scheduleClientUpload(t, {
+        notifTitle: "Margaret Chen uploaded <b>Medallion LOA.pdf</b>",
+        notifSub: "CLIENT PORTAL · JUST NOW",
+        row: mc3!,
+        docTitle: "Medallion LOA.pdf",
+        docSig: "Margaret Chen",
+        approvedToast: "Medallion LOA approved",
+      });
+
+      t += 200;
+      t = scheduleStageChange(t, 1, "Status → READY_TO_SUBMIT");
+
+      t += 200;
+      t = scheduleClientUpload(t, {
+        notifTitle: "Margaret Chen uploaded <b>Beneficiary Designation.pdf</b>",
+        notifSub: "CLIENT PORTAL · JUST NOW",
+        row: mc4!,
+        docTitle: "Beneficiary Designation.pdf",
+        docSig: "Margaret Chen",
+        approvedToast: "Beneficiary form approved · All docs in",
+      });
+
+      t += 200;
+      t = scheduleStageChange(t, 2, "Submitted to Schwab · ACK received");
+
+      t += 300;
+      t = scheduleStageChange(t, 3, "Custodian processing");
+      t += 200;
+      t = scheduleStageChange(t, 4, "Assets in transit");
+      t += 200;
+      t = scheduleStageChange(t, 5, "Case complete · 6-day cycle");
+
+      t += 900;
+      after(t, () => moveTo(back!, { xFrac: 0.4, yFrac: 0.5 }));
+      t += MOVE;
+      after(t, () => { click(); });
+      t += 450;
+      after(t, () => { goToList(); clearTarget(); moveToPoint(28, 38); });
+      t += 1000;
+
+      after(t, () => loop());
+    }
+
+    const io = new IntersectionObserver((entries) => {
+      entries.forEach(e => {
+        if (e.isIntersecting && !running) { running = true; clearAll(); loop(); }
+        else if (!e.isIntersecting) { running = false; clearAll(); }
+      });
+    }, { threshold: 0.15 });
+    io.observe(root);
+
+    const initial = window.setTimeout(loop, 700);
+
     return () => {
-      clearInterval(interval);
-      if (liftTimer.current) clearTimeout(liftTimer.current);
+      running = false;
+      clearAll();
+      clearTimeout(initial);
+      io.disconnect();
     };
   }, []);
 
   return (
-    <>
-      {/* ── NAV ─────────────────────────────────────────────────────────────── */}
-      <nav
-        className="fixed top-0 left-0 right-0 z-40 flex items-center justify-between px-8 py-4"
-        style={{
-          background: "rgba(7, 11, 20, 0.88)",
-          backdropFilter: "blur(20px)",
-          WebkitBackdropFilter: "blur(20px)",
-          borderBottom: "1px solid rgba(59,130,246,0.12)",
-        }}
-      >
-        {/* Wordmark logo */}
-        <Link href="/" className="flex items-center gap-2.5 select-none">
-          <svg width="32" height="28" viewBox="0 0 32 28" fill="none">
-            <rect x="0" y="0" width="14" height="28" rx="2" fill="#3b82f6"/>
-            <rect x="6" y="0" width="18" height="14" rx="2" fill="#60a5fa" opacity="0.85"/>
-            <rect x="12" y="12" width="16" height="16" rx="2" fill="#3b82f6" opacity="0.6"/>
-          </svg>
-          <span
-            className="text-xl font-black tracking-tight"
-            style={{ color: "#60a5fa", letterSpacing: "-0.02em" }}
-          >
-            Rift
-          </span>
-        </Link>
+    <div className="rift-landing">
+      <style dangerouslySetInnerHTML={{ __html: LANDING_CSS }} />
+      <div className="page-bg" />
+      <div className="grain" />
 
-        <div className="hidden md:flex items-center gap-8">
-          {["Product", "Pricing", "About"].map((label) => (
-            <Link
-              key={label}
-              href="#"
-              className="text-sm transition-all hover:opacity-100"
-              style={{ color: "rgba(226,232,240,0.45)" }}
-            >
-              {label}
+      {/* NAV */}
+      <nav className="top">
+        <div className="wrap nav-row">
+          <div className="brand">
+            <div className="brand-glyph" />
+            <span>Rift</span>
+            <span className="mono" style={{ color: "var(--ink-mute)", fontSize: 11, marginLeft: 6 }}>v1.4</span>
+          </div>
+          <div className="nav-links">
+            <a href="#product">Product</a>
+            <a href="#workflow">Workflow</a>
+            <a href="#intelligence">Intelligence</a>
+            <a href="#pricing">Pricing</a>
+            <a href="#customers">Customers</a>
+          </div>
+          <div style={{ display: "flex", gap: 10, alignItems: "center" }}>
+            <Link className="btn-ghost" href="/login">Sign in</Link>
+            <Link className="btn-chrome" href="/login">
+              Book a demo
+              <svg width="12" height="12" viewBox="0 0 12 12" fill="none"><path d="M3 6h6M6 3l3 3-3 3" stroke="currentColor" strokeWidth="1.6" strokeLinecap="round" strokeLinejoin="round"/></svg>
             </Link>
-          ))}
-          <Link
-            href="/login"
-            className="text-sm font-semibold transition-all hover:opacity-80"
-            style={{ color: "#60a5fa" }}
-          >
-            Sign In
-          </Link>
-          <button
-            onClick={() => setDemoOpen(true)}
-            className="rounded-lg px-4 py-2 text-sm font-bold transition-all hover:opacity-90"
-            style={{
-              background: "#3b82f6",
-              color: "#fff",
-              boxShadow: "0 2px 12px rgba(59,130,246,0.35)",
-            }}
-          >
-            Request Demo
-          </button>
+          </div>
         </div>
       </nav>
 
-      {/* ── HERO ────────────────────────────────────────────────────────────── */}
-      <section
-        className="relative min-h-screen overflow-hidden pt-20"
-        style={{ background: "#070b14" }}
-      >
-        {/* Blue glow — top centre (breathing) */}
-        <div
-          className="absolute inset-0 pointer-events-none hero-glow-pulse"
-          style={{
-            background: "radial-gradient(ellipse 80% 60% at 50% -5%, rgba(59,130,246,0.18) 0%, transparent 65%)",
-          }}
-        />
-        {/* Deep blue — bottom right */}
-        <div
-          className="absolute inset-0 pointer-events-none"
-          style={{
-            background: "radial-gradient(ellipse 55% 45% at 100% 100%, rgba(29,78,216,0.09) 0%, transparent 60%)",
-          }}
-        />
-        {/* Dot grid overlay */}
-        <div
-          className="absolute inset-0 pointer-events-none"
-          style={{
-            backgroundImage: "radial-gradient(rgba(255,255,255,0.035) 1px, transparent 1px)",
-            backgroundSize: "30px 30px",
-          }}
-        />
-        {/* Top edge glow line */}
-        <div
-          className="absolute top-20 left-0 right-0 pointer-events-none"
-          style={{
-            height: "1px",
-            background: "linear-gradient(90deg, transparent, rgba(59,130,246,0.3) 30%, rgba(96,165,250,0.3) 70%, transparent)",
-          }}
-        />
-
-        <div className="relative z-10 w-full max-w-7xl mx-auto px-8 py-24 grid lg:grid-cols-2 gap-16 items-center">
-
-          {/* ─── Left: copy ─── */}
-          <div>
-            {/* Badge */}
-            <div
-              className="hero-fade-1 inline-flex items-center gap-2 px-4 py-1.5 rounded-full mb-8"
-              style={{
-                background: "rgba(59,130,246,0.08)",
-                border: "1px solid rgba(59,130,246,0.22)",
-              }}
-            >
-              <div className="relative flex items-center justify-center" style={{ width: 8, height: 8 }}>
-                <div className="live-ping absolute rounded-full" style={{ width: 8, height: 8, background: "#60a5fa" }} />
-                <div className="relative rounded-full" style={{ width: 5, height: 5, background: "#93c5fd" }} />
-              </div>
-              <span className="text-xs font-semibold" style={{ color: "#93c5fd" }}>
-                Rollover case management for RIAs
+      {/* HERO */}
+      <header className="hero">
+        <div className="wrap">
+          <div className="hero-grid">
+            <div className="hero-copy">
+              <span className="eyebrow">
+                <span className="pill">NEW</span>
+                Custodian intelligence, now with state-based routing
               </span>
-            </div>
 
-            {/* H1 */}
-            <h1
-              className="hero-fade-2 font-black leading-[1.05] mb-6"
-              style={{ fontSize: "clamp(2.75rem, 4.5vw, 4.25rem)" }}
-            >
-              <span style={{ color: "#f1f5f9" }}>The command center</span>
-              <br />
-              <span
-                style={{
-                  background: "linear-gradient(135deg, #3b82f6 0%, #60a5fa 50%, #93c5fd 100%)",
-                  WebkitBackgroundClip: "text",
-                  WebkitTextFillColor: "transparent",
-                }}
-              >
-                for every rollover.
-              </span>
-            </h1>
+              <h1 className="hero-title">
+                Every rollover,<br />
+                <span className="chromed">on the rails.</span>
+              </h1>
 
-            {/* Divider */}
-            <div
-              className="hero-fade-2"
-              style={{
-                height: "1px",
-                background: "linear-gradient(90deg, #3b82f6, transparent)",
-                maxWidth: 280,
-                marginBottom: 20,
-              }}
-            />
-
-            {/* Sub */}
-            <p
-              className="hero-fade-3 text-base leading-relaxed mb-10"
-              style={{ color: "#64748b", maxWidth: "420px" }}
-            >
-              One structured pipeline for all your IRA, 401(k), and pension rollovers. Auto-generated checklists, task tracking, and a full audit trail — from intake to completion.
-            </p>
-
-            {/* CTAs */}
-            <div className="hero-fade-4 flex flex-col sm:flex-row items-start gap-3 mb-8">
-              <Link
-                href="/login"
-                className="inline-flex items-center gap-2 px-6 py-3 rounded-xl text-sm font-bold transition-all hover:opacity-90"
-                style={{
-                  background: "linear-gradient(135deg, #3b82f6 0%, #2563eb 100%)",
-                  color: "#fff",
-                  boxShadow: "0 4px 24px rgba(59,130,246,0.4)",
-                }}
-              >
-                Finance Professional Sign In
-                <svg width="13" height="13" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2.5">
-                  <path d="M5 12h14M12 5l7 7-7 7"/>
-                </svg>
-              </Link>
-              <button
-                onClick={() => setDemoOpen(true)}
-                className="inline-flex items-center gap-2 px-6 py-3 rounded-xl text-sm font-semibold transition-all hover:bg-white/5"
-                style={{
-                  border: "1px solid rgba(255,255,255,0.1)",
-                  color: "#e2e8f0",
-                  background: "rgba(255,255,255,0.03)",
-                  backdropFilter: "blur(8px)",
-                  WebkitBackdropFilter: "blur(8px)",
-                }}
-              >
-                Request a Demo
-              </button>
-            </div>
-
-            <p className="hero-fade-4 text-xs" style={{ color: "#475569" }}>
-              Individual investor portal —{" "}
-              <span
-                className="px-1.5 py-0.5 rounded font-semibold"
-                style={{ background: "rgba(59,130,246,0.1)", color: "#60a5fa", fontSize: "10px" }}
-              >
-                coming soon
-              </span>
-            </p>
-          </div>
-
-          {/* ─── Right: animated card stack ─── */}
-          <div className="hero-card-1 flex flex-col items-center lg:items-end">
-            {/* back(4px) + mid-peek(26px) + front-peek(26px) + card(400px) = 456 → 470 */}
-            <div className="relative" style={{ width: "100%", maxWidth: 420, height: 470 }}>
-
-              {[0, 1, 2].map((i) => {
-                const slot   = (i - activeCard + 3) % 3;
-                const isFront = slot === 0;
-
-                // Single consistent transition — never changes between phases so
-                // the browser bridges lift → settle without snapping.
-                const TR = "transform 0.46s cubic-bezier(0.4,0,0.6,1), opacity 0.4s ease";
-
-                const cardStyle: React.CSSProperties = (lifting && isFront)
-                  ? {
-                      // Phase 1 – lift: stays at z=30 so it visually clears the deck
-                      position: "absolute", left: 0, right: 0, top: 0,
-                      transform: "translateY(-60px) scale(0.86)",
-                      zIndex: 30, opacity: 0.4,
-                      transition: TR,
-                    }
-                  : {
-                      // Phase 2 – slot positions (settle uses the same TR so it's smooth)
-                      position: "absolute", left: 0, right: 0, top: 0,
-                      transition: TR,
-                      ...(slot === 0
-                        ? { transform: "translateY(56px) scale(1)",     zIndex: 30, opacity: 1    }
-                        : slot === 1
-                        ? { transform: "translateY(30px) scale(0.962)", zIndex: 20, opacity: 0.92 }
-                        : { transform: "translateY(4px)  scale(0.924)", zIndex: 10, opacity: 0.85 }),
-                    };
-
-                const glassBase: React.CSSProperties = {
-                  background:  "#0d1526",
-                  border:      "1px solid rgba(255,255,255,0.08)",
-                  boxShadow:   slot === 0
-                    ? "0 24px 64px rgba(0,0,0,0.7), inset 0 1px 0 rgba(255,255,255,0.07)"
-                    : "0 8px 24px rgba(0,0,0,0.5),  inset 0 1px 0 rgba(255,255,255,0.04)",
-                  height:      400,
-                  overflow:    "hidden",
-                };
-
-                // ── Card 0: Auto Checklist ──────────────────────────────────────
-                if (i === 0) return (
-                  <div key="checklist" style={cardStyle}>
-                    <div className="rounded-2xl p-5" style={glassBase}>
-                      <div className="flex items-start justify-between mb-1">
-                        <p className="text-xs font-bold uppercase tracking-widest" style={{ color: "#3b82f6" }}>Auto Checklist</p>
-                        <span className="text-xs px-2 py-0.5 rounded-full font-semibold flex-shrink-0" style={{ background: "rgba(16,185,129,0.1)", color: "#10b981" }}>5 of 8 done</span>
-                      </div>
-                      <p className="text-xs mb-4" style={{ color: "#334155" }}>Johnson IRA · Traditional Rollover</p>
-                      <div className="mb-4">
-                        <div className="flex justify-between items-center mb-1.5">
-                          <span className="text-xs" style={{ color: "#475569" }}>Completion</span>
-                          <span className="text-xs font-semibold" style={{ color: "#60a5fa" }}>62%</span>
-                        </div>
-                        <div style={{ height: 5, borderRadius: 999, background: "rgba(255,255,255,0.06)" }}>
-                          <div style={{ height: "100%", width: "62%", borderRadius: 999, background: "linear-gradient(90deg, #3b82f6, #60a5fa)", boxShadow: "0 0 10px rgba(59,130,246,0.35)" }} />
-                        </div>
-                      </div>
-                      <div className="flex flex-col gap-1.5">
-                        {[
-                          { done: true,  text: "IRA distribution form signed" },
-                          { done: true,  text: "Prior plan statement received" },
-                          { done: true,  text: "Rollover election completed" },
-                          { done: true,  text: "New account application filed" },
-                          { done: true,  text: "Beneficiary designation on file" },
-                          { done: false, text: "Transfer initiation letter sent" },
-                          { done: false, text: "Confirmation of receipt logged" },
-                          { done: false, text: "Client notification delivered" },
-                        ].map((item) => (
-                          <div key={item.text} className="flex items-center gap-2.5 py-1 px-2 rounded-lg" style={{ background: item.done ? "transparent" : "rgba(59,130,246,0.04)", border: item.done ? "1px solid transparent" : "1px solid rgba(59,130,246,0.1)" }}>
-                            {item.done ? (
-                              <div style={{ width: 16, height: 16, borderRadius: "50%", flexShrink: 0, background: "rgba(16,185,129,0.12)", border: "1px solid rgba(16,185,129,0.35)", display: "flex", alignItems: "center", justifyContent: "center" }}>
-                                <svg width="8" height="8" viewBox="0 0 10 10" fill="none">
-                                  <path d="M2 5l2.5 2.5 3.5-4" stroke="#10b981" strokeWidth="1.5" strokeLinecap="round" strokeLinejoin="round"/>
-                                </svg>
-                              </div>
-                            ) : (
-                              <div style={{ width: 16, height: 16, borderRadius: "50%", flexShrink: 0, border: "1.5px solid rgba(59,130,246,0.25)" }} />
-                            )}
-                            <span className="text-xs" style={{ color: item.done ? "#475569" : "#94a3b8" }}>{item.text}</span>
-                          </div>
-                        ))}
-                      </div>
-                    </div>
-                  </div>
-                );
-
-                // ── Card 1: Pipeline Status ─────────────────────────────────────
-                if (i === 1) return (
-                  <div key="pipeline" style={cardStyle}>
-                    <div className="rounded-2xl p-5" style={glassBase}>
-                      <div className="flex items-center justify-between mb-4">
-                        <p className="text-xs font-bold uppercase tracking-widest" style={{ color: "#3b82f6" }}>Pipeline Status</p>
-                        <div className="flex items-center gap-1.5">
-                          <div className="relative flex items-center justify-center" style={{ width: 8, height: 8 }}>
-                            <div className="live-ping absolute rounded-full" style={{ width: 8, height: 8, background: "#10b981" }} />
-                            <div className="relative rounded-full" style={{ width: 5, height: 5, background: "#10b981" }} />
-                          </div>
-                          <span className="text-xs font-medium" style={{ color: "rgba(16,185,129,0.9)" }}>Live</span>
-                        </div>
-                      </div>
-                      <div className="flex flex-col gap-1.5">
-                          {PIPELINE_STAGES.map((stage) => (
-                            <div key={stage.label} className="flex items-center justify-between px-3 py-2 rounded-lg" style={{ background: stage.active ? "rgba(59,130,246,0.1)" : "rgba(255,255,255,0.02)", border: stage.active ? "1px solid rgba(59,130,246,0.28)" : "1px solid transparent" }}>
-                              <div className="flex items-center gap-2">
-                                <div style={{ width: 6, height: 6, borderRadius: "50%", flexShrink: 0, background: stage.active ? "#60a5fa" : "rgba(100,116,139,0.35)", boxShadow: stage.active ? "0 0 5px rgba(96,165,250,0.6)" : "none" }} />
-                                <span className="text-xs" style={{ color: stage.active ? "#e2e8f0" : "#475569", fontWeight: stage.active ? 600 : 400 }}>{stage.label}</span>
-                              </div>
-                              <span className="text-xs tabular-nums px-1.5 py-0.5 rounded font-semibold" style={{ background: stage.active ? "rgba(59,130,246,0.18)" : "rgba(255,255,255,0.04)", color: stage.active ? "#93c5fd" : "#334155" }}>{stage.count}</span>
-                            </div>
-                          ))}
-                        </div>
-                      <div className="mt-4 pt-3" style={{ borderTop: "1px solid rgba(255,255,255,0.05)" }}>
-                        <p className="text-xs" style={{ color: "#334155" }}>
-                          <span style={{ color: "#60a5fa", fontWeight: 600 }}>34</span> total active cases
-                        </p>
-                      </div>
-                    </div>
-                  </div>
-                );
-
-                // ── Card 2: Audit Trail ─────────────────────────────────────────
-                return (
-                  <div key="audit" style={cardStyle}>
-                    <div className="rounded-2xl p-5" style={glassBase}>
-                      <div className="flex items-center justify-between mb-4">
-                        <p className="text-xs font-bold uppercase tracking-widest" style={{ color: "#3b82f6" }}>Audit Trail</p>
-                        <div className="flex items-center gap-1.5 px-2 py-1 rounded-lg" style={{ background: "rgba(59,130,246,0.07)", border: "1px solid rgba(59,130,246,0.14)" }}>
-                          <span className="text-xs font-medium" style={{ color: "#60a5fa" }}>Johnson IRA</span>
-                        </div>
-                      </div>
-                      <div className="flex flex-col">
-                          {[
-                            { type: "STATUS",    typeColor: "#10b981", typeBg: "rgba(16,185,129,0.1)",  initials: "SM", text: "Moved to Completed",        time: "2m ago"  },
-                            { type: "DOCUMENT",  typeColor: "#60a5fa", typeBg: "rgba(59,130,246,0.1)",  initials: "SM", text: "Confirmation.pdf uploaded",  time: "14m ago" },
-                            { type: "EMAIL",     typeColor: "#f59e0b", typeBg: "rgba(245,158,11,0.1)",  initials: "SY", text: "Reminder sent to client",    time: "1h ago"  },
-                            { type: "CHECKLIST", typeColor: "#10b981", typeBg: "rgba(16,185,129,0.1)",  initials: "RT", text: "Item marked complete",       time: "3h ago"  },
-                            { type: "STAGE",     typeColor: "#3b82f6", typeBg: "rgba(59,130,246,0.1)",  initials: "RT", text: "Awaiting Confirmation",      time: "1d ago"  },
-                          ].map((entry, ei, arr) => (
-                            <div key={ei}>
-                              <div className="flex items-start gap-3 py-2.5">
-                                <div style={{ width: 28, height: 28, borderRadius: "50%", flexShrink: 0, background: entry.typeBg, border: `1px solid ${entry.typeColor}33`, display: "flex", alignItems: "center", justifyContent: "center", fontSize: "9px", fontWeight: 700, color: entry.typeColor, letterSpacing: "0.02em" }}>
-                                  {entry.initials}
-                                </div>
-                                <div className="flex-1 min-w-0">
-                                  <div className="flex items-center gap-1.5 mb-0.5">
-                                    <span className="text-xs font-bold" style={{ color: entry.typeColor }}>{entry.type}</span>
-                                    <span style={{ color: "#1e293b", fontSize: "10px" }}>·</span>
-                                    <span className="text-xs" style={{ color: "#334155" }}>{entry.time}</span>
-                                  </div>
-                                  <p className="text-xs leading-snug" style={{ color: "#64748b" }}>{entry.text}</p>
-                                </div>
-                              </div>
-                              {ei < arr.length - 1 && <div style={{ height: "1px", background: "rgba(255,255,255,0.04)" }} />}
-                            </div>
-                          ))}
-                        </div>
-                    </div>
-                  </div>
-                );
-              })}
-
-            </div>
-
-            {/* Cycle indicator — sibling below container so cards never cover it */}
-            <div className="flex gap-2 mt-5" style={{ width: "100%", maxWidth: 420, justifyContent: "center" }}>
-              {[0, 1, 2].map((i) => (
-                <button
-                  key={i}
-                  onClick={() => setActiveCard(i)}
-                  style={{
-                    width: i === activeCard ? 20 : 6,
-                    height: 4,
-                    borderRadius: 999,
-                    background: i === activeCard ? "#3b82f6" : "rgba(255,255,255,0.18)",
-                    transition: "all 0.35s ease",
-                    border: "none",
-                    cursor: "pointer",
-                    padding: 0,
-                  }}
-                />
-              ))}
-            </div>
-
-          </div>
-
-        </div>
-      </section>
-
-      {/* ── MARQUEE BAND ────────────────────────────────────────────────────── */}
-      <section
-        className="py-16 overflow-hidden"
-        style={{
-          background: C.darkGreen,
-          borderTop: `1px solid rgba(184,134,11,0.15)`,
-          borderBottom: `1px solid rgba(184,134,11,0.15)`,
-        }}
-      >
-        <p
-          className="text-center text-sm font-bold uppercase tracking-widest mb-7"
-          style={{ color: "rgba(184,134,11,0.55)" }}
-        >
-          Trusted by firms across the country
-        </p>
-        <div className="overflow-hidden">
-          <div className="marquee-track flex gap-0 whitespace-nowrap">
-            {[...TRUSTED_FIRMS, ...TRUSTED_FIRMS].map((firm, i) => (
-              <span key={i} className="inline-flex items-center gap-8 px-10 text-2xl font-semibold" style={{ color: C.accent }}>
-                {firm}
-                <span style={{ color: "rgba(184,134,11,0.35)", fontSize: "26px", lineHeight: 1 }}>◆</span>
-              </span>
-            ))}
-          </div>
-        </div>
-      </section>
-
-      {/* ── STATS ───────────────────────────────────────────────────────────── */}
-      <section
-        className="py-16 px-8"
-        style={{ background: "#eee9df" }}
-      >
-        <div className="max-w-4xl mx-auto">
-          <div className="grid grid-cols-2 md:grid-cols-4 gap-8 text-center">
-            {STATS.map((s, i) => (
-              <div
-                key={s.label}
-                className="py-4"
-                style={{
-                  borderRight: i < STATS.length - 1 ? "1px solid #d8cfc4" : "none",
-                }}
-              >
-                <div
-                  className="text-4xl lg:text-5xl font-black mb-2"
-                  style={{ color: C.accent, letterSpacing: "-0.03em" }}
-                >
-                  {s.value}
-                </div>
-                <div className="text-sm font-medium" style={{ color: "#7a6f62" }}>
-                  {s.label}
-                </div>
-              </div>
-            ))}
-          </div>
-        </div>
-      </section>
-
-      {/* ── PROBLEM / SOLUTION ──────────────────────────────────────────────── */}
-      <section className="py-24 px-8" style={{ background: C.cream }}>
-        <div className="max-w-5xl mx-auto">
-          <div className="text-center mb-14">
-            <span
-              className="text-xs font-bold uppercase tracking-widest"
-              style={{ color: C.accent }}
-            >
-              The difference
-            </span>
-            <h2 className="text-3xl lg:text-4xl font-black mt-3 mb-3" style={{ color: "#1a1510" }}>
-              Built for teams who know the old way is broken
-            </h2>
-            <p className="text-sm mx-auto" style={{ color: "#7a6f62", maxWidth: "460px" }}>
-              Most firms still manage rollovers with spreadsheets, email threads, and guesswork. Here's what changes.
-            </p>
-          </div>
-
-          <div className="grid md:grid-cols-2 gap-6">
-            {/* Before */}
-            <div
-              className="rounded-2xl p-8"
-              style={{
-                border: "1px solid #d8cfc4",
-                background: "#f5f0e8",
-                boxShadow: "0 2px 12px rgba(0,0,0,0.03)",
-              }}
-            >
-              <div className="flex items-center gap-2.5 mb-6">
-                <div className="w-7 h-7 rounded-lg flex items-center justify-center" style={{ background: "#f3e5e3" }}>
-                  <span className="text-xs font-bold" style={{ color: "#c04a3a" }}>✗</span>
-                </div>
-                <span
-                  className="text-xs font-black uppercase tracking-widest"
-                  style={{ color: "#9c3a2a" }}
-                >
-                  Before Rift
-                </span>
-              </div>
-              {[
-                "Shared spreadsheets edited by multiple people simultaneously",
-                "Forms lost in email threads and personal inboxes",
-                "No visibility into what's pending or overdue",
-                "Compliance gaps with no audit trail of actions",
-                "Advisors and ops duplicating work constantly",
-              ].map((item) => (
-                <div key={item} className="flex items-start gap-3 mb-4">
-                  <span
-                    className="mt-0.5 text-sm font-bold flex-shrink-0"
-                    style={{ color: "#c04a3a" }}
-                  >
-                    ✗
-                  </span>
-                  <span className="text-sm" style={{ color: "#5a4f42" }}>
-                    {item}
-                  </span>
-                </div>
-              ))}
-            </div>
-
-            {/* After */}
-            <div
-              className="rounded-2xl p-8"
-              style={{
-                background: C.darkGreen,
-                border: `1px solid rgba(184,134,11,0.25)`,
-                boxShadow: "0 4px 20px rgba(0,0,0,0.12)",
-              }}
-            >
-              <div className="flex items-center gap-2.5 mb-6">
-                <div className="w-7 h-7 rounded-lg flex items-center justify-center" style={{ background: "rgba(184,134,11,0.15)" }}>
-                  <span className="text-xs font-bold" style={{ color: C.accentLight }}>✓</span>
-                </div>
-                <span
-                  className="text-xs font-black uppercase tracking-widest"
-                  style={{ color: C.accentLight }}
-                >
-                  With Rift
-                </span>
-              </div>
-              {[
-                "Single source of truth for every rollover case",
-                "Checklists and documents tied directly to each case",
-                "Real-time pipeline view for the whole team",
-                "Full timestamped audit log for every action",
-                "Clear role assignments so nothing falls through the cracks",
-              ].map((item) => (
-                <div key={item} className="flex items-start gap-3 mb-4">
-                  <span
-                    className="mt-0.5 text-sm font-bold flex-shrink-0"
-                    style={{ color: C.accent }}
-                  >
-                    ✓
-                  </span>
-                  <span className="text-sm" style={{ color: "rgba(245,240,232,0.8)" }}>
-                    {item}
-                  </span>
-                </div>
-              ))}
-            </div>
-          </div>
-        </div>
-      </section>
-
-      {/* ── FEATURES (BENTO GRID) ───────────────────────────────────────────── */}
-      <section
-        className="py-24 px-8 relative overflow-hidden"
-        style={{
-          background: C.darkGreen,
-          borderTop: `1px solid rgba(184,134,11,0.12)`,
-          borderBottom: `1px solid rgba(184,134,11,0.12)`,
-        }}
-      >
-        {/* Subtle texture */}
-        <div
-          className="absolute inset-0 pointer-events-none"
-          style={{ backgroundImage: C.diagonalHatch, backgroundSize: "20px 20px" }}
-        />
-
-        <div className="max-w-6xl mx-auto relative z-10">
-          <div className="text-center mb-14">
-            <span
-              className="text-xs font-bold uppercase tracking-widest"
-              style={{ color: C.accent }}
-            >
-              Features
-            </span>
-            <h2 className="text-3xl lg:text-4xl font-black mt-3 mb-3" style={{ color: C.warmWhite }}>
-              Everything your ops team needs
-            </h2>
-            <p className="text-sm mx-auto" style={{ color: C.muted, maxWidth: "420px" }}>
-              Purpose-built tools for every stage of the rollover lifecycle.
-            </p>
-          </div>
-
-          <div className="grid md:grid-cols-3 gap-5">
-            {FEATURES.map((feat) => (
-              <div
-                key={feat.title}
-                className="rounded-2xl p-7 flex flex-col transition-all duration-200"
-                style={{
-                  background: "rgba(255,255,255,0.03)",
-                  border: `1px solid rgba(184,134,11,0.15)`,
-                }}
-                onMouseEnter={(e) => {
-                  (e.currentTarget as HTMLElement).style.background = "rgba(184,134,11,0.06)";
-                  (e.currentTarget as HTMLElement).style.borderColor = "rgba(184,134,11,0.3)";
-                }}
-                onMouseLeave={(e) => {
-                  (e.currentTarget as HTMLElement).style.background = "rgba(255,255,255,0.03)";
-                  (e.currentTarget as HTMLElement).style.borderColor = "rgba(184,134,11,0.15)";
-                }}
-              >
-                <div className="mb-5 w-12 h-12 rounded-xl flex items-center justify-center" style={{ background: "rgba(184,134,11,0.08)", border: "1px solid rgba(184,134,11,0.18)" }}>
-                  {feat.icon}
-                </div>
-                <h3
-                  className="font-black text-base mb-2"
-                  style={{ color: C.warmWhite }}
-                >
-                  {feat.title}
-                </h3>
-                <p className="text-sm leading-relaxed" style={{ color: C.muted }}>
-                  {feat.desc}
-                </p>
-              </div>
-            ))}
-          </div>
-        </div>
-      </section>
-
-      {/* ── HOW IT WORKS ────────────────────────────────────────────────────── */}
-      <section className="relative" style={{ background: C.heroBlack, borderTop: `1px solid rgba(184,134,11,0.08)` }}>
-        {/* Hatch texture overlay */}
-        <div
-          className="absolute inset-0 pointer-events-none"
-          style={{
-            backgroundImage: C.diagonalHatch,
-            backgroundSize: "20px 20px",
-          }}
-        />
-        <div className="relative z-10">
-          <ProcessTimeline />
-        </div>
-      </section>
-
-      {/* ── TESTIMONIALS ────────────────────────────────────────────────────── */}
-      <section className="py-24 px-8" style={{ background: C.cream }}>
-        <div className="max-w-6xl mx-auto">
-          <div className="text-center mb-14">
-            <span
-              className="text-xs font-bold uppercase tracking-widest"
-              style={{ color: C.accent }}
-            >
-              What teams say
-            </span>
-            <h2 className="text-3xl lg:text-4xl font-black mt-3 mb-3" style={{ color: "#1a1510" }}>
-              Real results from real operations teams
-            </h2>
-            <p className="text-sm mx-auto" style={{ color: "#7a6f62", maxWidth: "420px" }}>
-              Don't take our word for it — hear from RIA ops teams already using Rift.
-            </p>
-          </div>
-
-          <div className="grid md:grid-cols-3 gap-6">
-            {TESTIMONIALS.map((t) => (
-              <div
-                key={t.name}
-                className="rounded-2xl p-8 flex flex-col justify-between"
-                style={{
-                  background: "#fff",
-                  border: "1px solid #e8e2d8",
-                  boxShadow: "0 2px 12px rgba(0,0,0,0.04)",
-                }}
-              >
-                {/* Quote mark */}
-                <div>
-                  <svg width="28" height="20" viewBox="0 0 28 20" fill="none" className="mb-4" style={{ opacity: 0.15 }}>
-                    <path d="M0 20V12C0 5.4 4.2 1.4 12.6 0l1.4 3C9.8 4.2 7.6 6.8 7.2 10H12v10H0zm16 0V12c0-6.6 4.2-10.6 12.6-12L28 3c-4.2 1.2-6.4 3.8-6.8 7H28v10H16z" fill="#1a1510"/>
-                  </svg>
-                  <p
-                    className="text-sm leading-relaxed mb-8"
-                    style={{ color: "#2e2820" }}
-                  >
-                    {t.quote}
-                  </p>
-                </div>
-
-                <div className="flex items-center gap-3 pt-5" style={{ borderTop: "1px solid #ece7df" }}>
-                  <div
-                    className="w-9 h-9 rounded-full flex items-center justify-center text-xs font-black flex-shrink-0"
-                    style={{ background: C.darkGreen, color: C.accentLight }}
-                  >
-                    {t.initials}
-                  </div>
-                  <div>
-                    <div
-                      className="text-sm font-bold"
-                      style={{ color: "#1a1510" }}
-                    >
-                      {t.name}
-                    </div>
-                    <div className="text-xs" style={{ color: C.muted }}>
-                      {t.title} · {t.firm}
-                    </div>
-                  </div>
-                </div>
-              </div>
-            ))}
-          </div>
-        </div>
-      </section>
-
-      {/* ── CTA SECTION ─────────────────────────────────────────────────────── */}
-      <section
-        className="py-24 px-8 relative overflow-hidden"
-        style={{
-          background: C.darkGreen,
-          backgroundImage: C.diagonalHatch,
-          backgroundSize: "20px 20px",
-        }}
-      >
-        {/* Same faint arc as hero */}
-        <svg
-          className="absolute bottom-0 left-0 pointer-events-none"
-          width="500"
-          height="400"
-          viewBox="0 0 500 400"
-          fill="none"
-          style={{ opacity: 0.07 }}
-        >
-          <circle cx="-40" cy="420" r="320" stroke={C.accent} strokeWidth="1" fill="none"/>
-        </svg>
-
-        <div className="relative z-10 max-w-3xl mx-auto text-center">
-          <h2
-            className="text-4xl lg:text-5xl font-black leading-tight mb-3"
-            style={{ color: C.warmWhite }}
-          >
-            Stop tracking rollovers
-            <br />
-            in spreadsheets.
-          </h2>
-
-          {/* Italic gold underline decoration */}
-          <div className="flex justify-center mb-8">
-            <svg width="200" height="16" viewBox="0 0 200 16" fill="none">
-              <path
-                d="M10 10 Q60 2 100 8 Q140 14 190 6"
-                stroke={C.accent}
-                strokeWidth="2"
-                fill="none"
-                strokeLinecap="round"
-              />
-            </svg>
-          </div>
-
-          <p className="text-base leading-relaxed" style={{ color: C.muted, maxWidth: "480px", margin: "0 auto 40px" }}>
-            Join 30+ RIA firms that replaced their spreadsheet chaos with a purpose-built rollover platform.
-          </p>
-
-          <div className="flex flex-col sm:flex-row items-center justify-center gap-4">
-            <button
-              onClick={() => setDemoOpen(true)}
-              className="rounded-xl px-8 py-3.5 text-sm font-bold transition-opacity hover:opacity-90"
-              style={{ background: C.accent, color: "#0c0a07" }}
-            >
-              Request Demo
-            </button>
-            <Link
-              href="/login"
-              className="rounded-xl px-8 py-3.5 text-sm font-semibold transition-all hover:bg-white/5"
-              style={{
-                border: `1.5px solid rgba(245,240,232,0.35)`,
-                color: C.warmWhite,
-              }}
-            >
-              Sign In
-            </Link>
-          </div>
-        </div>
-      </section>
-
-      {/* ── FOOTER ──────────────────────────────────────────────────────────── */}
-      <footer
-        className="px-8 pt-12 pb-8"
-        style={{ background: C.heroBlack, borderTop: `1px solid rgba(184,134,11,0.12)` }}
-      >
-        <div className="max-w-6xl mx-auto">
-          <div className="flex flex-col md:flex-row md:items-start justify-between gap-10 mb-10">
-            {/* Brand */}
-            <div>
-              <div className="flex items-center gap-2.5 mb-3">
-                <svg width="28" height="24" viewBox="0 0 32 28" fill="none">
-                  <rect x="0" y="0" width="14" height="28" rx="2" fill={C.accent}/>
-                  <rect x="6" y="0" width="18" height="14" rx="2" fill={C.accentLight} opacity="0.85"/>
-                  <rect x="12" y="12" width="16" height="16" rx="2" fill={C.accent} opacity="0.6"/>
-                </svg>
-                <span
-                  className="text-lg font-black"
-                  style={{ color: C.accent, letterSpacing: "-0.02em" }}
-                >
-                  Rift
-                </span>
-              </div>
-              <p className="text-xs max-w-xs leading-relaxed" style={{ color: C.muted }}>
-                Rollover case management for RIA operations teams.
+              <p className="hero-sub">
+                Rift is rollover case management for independent RIAs — a structured pipeline that replaces the spreadsheet, the thread, and the sticky note for every 401(k), 403(b), and IRA in motion.
               </p>
+
+              <div className="hero-cta">
+                <Link className="btn-chrome" href="/login">
+                  Book a demo
+                  <svg width="12" height="12" viewBox="0 0 12 12" fill="none"><path d="M3 6h6M6 3l3 3-3 3" stroke="currentColor" strokeWidth="1.8" strokeLinecap="round" strokeLinejoin="round"/></svg>
+                </Link>
+                <a className="btn-ghost" style={{ border: "1px solid var(--line-2)", padding: "11px 18px" }} href="#workflow">See the workflow ↓</a>
+              </div>
+
+              <div className="hero-meta">
+                <div><span className="dot" />SOC 2 Type II · In progress</div>
+                <div><span className="dot" />25+ custodians mapped</div>
+                <div><span className="dot" />Built for firms of 3–200</div>
+              </div>
             </div>
 
-            {/* Links */}
-            <div className="flex gap-16">
-              <div>
-                <div
-                  className="text-xs font-bold uppercase tracking-widest mb-4"
-                  style={{ color: "rgba(184,134,11,0.6)" }}
-                >
-                  Product
+            {/* Mini hero demo */}
+            <div className="mini-demo" id="mini-demo" ref={miniDemoRef}>
+              <div className="mini-chrome">
+                <div className="dots"><span /><span /><span /></div>
+                <div className="url" id="mini-url">
+                  <svg className="lock" width="10" height="10" viewBox="0 0 12 12" fill="none"><path d="M3.5 5.5V4a2.5 2.5 0 015 0v1.5M2.5 5.5h7v5h-7z" stroke="currentColor" strokeWidth="1.2" strokeLinecap="round"/></svg>
+                  <span><span className="path">app.rift.co/</span><span className="crumb" id="mini-crumb">cases</span></span>
                 </div>
-                {["Features", "Pricing", "Security", "Changelog"].map((l) => (
-                  <Link
-                    key={l}
-                    href="#"
-                    className="block text-sm mb-2.5 transition-opacity hover:opacity-100"
-                    style={{ color: C.muted }}
-                  >
-                    {l}
-                  </Link>
-                ))}
               </div>
-              <div>
-                <div
-                  className="text-xs font-bold uppercase tracking-widest mb-4"
-                  style={{ color: "rgba(184,134,11,0.6)" }}
-                >
-                  Company
+
+              <div className="mini-stage">
+                {/* Screen 1: Case list */}
+                <div className="mini-screen active" id="mini-list">
+                  <div className="mini-listhead">
+                    <div>
+                      <div className="mini-listtitle">Active cases</div>
+                      <div className="mini-listsub">LIVE · 4 OPEN · 2 NEED ATTENTION</div>
+                    </div>
+                    <div className="mini-listsub" id="mini-time">14:22 ET</div>
+                  </div>
+
+                  <div className="mini-listfilters">
+                    <div className="f on">All</div>
+                    <div className="f">Awaiting</div>
+                    <div className="f">Ready</div>
+                    <div className="f">In transit</div>
+                  </div>
+
+                  <div className="mini-caselist">
+                    <div className="mini-caserow" id="row-chen">
+                      <div>
+                        <div className="cname">Margaret Chen</div>
+                        <div className="cmeta">CASE-0184 · FIDELITY → SCHWAB · OPENED MAR 18</div>
+                      </div>
+                      <div>
+                        <div className="camt">$412K</div>
+                        <div className="cstatus" style={{ color: "var(--status-wait)" }}>Awaiting · 2 open items</div>
+                      </div>
+                    </div>
+                    <div className="mini-caserow">
+                      <div>
+                        <div className="cname">David Okafor</div>
+                        <div className="cmeta">CASE-0181 · EMPOWER → FIDELITY · OPENED MAR 17</div>
+                      </div>
+                      <div>
+                        <div className="camt">$287K</div>
+                        <div className="cstatus" style={{ color: "var(--status-transit)" }}>In transit · day 4</div>
+                      </div>
+                    </div>
+                    <div className="mini-caserow">
+                      <div>
+                        <div className="cname">The Reyes Trust</div>
+                        <div className="cmeta">CASE-0179 · VANGUARD → ALTRUIST · OPENED MAR 15</div>
+                      </div>
+                      <div>
+                        <div className="camt">$1.2M</div>
+                        <div className="cstatus" style={{ color: "var(--status-proc)" }}>Processing · custodian review</div>
+                      </div>
+                    </div>
+                    <div className="mini-caserow">
+                      <div>
+                        <div className="cname">Priya Nair</div>
+                        <div className="cmeta">CASE-0176 · PRINCIPAL → SCHWAB · OPENED MAR 12</div>
+                      </div>
+                      <div>
+                        <div className="camt">$94K</div>
+                        <div className="cstatus" style={{ color: "var(--status-ready)" }}>Ready · awaiting signature</div>
+                      </div>
+                    </div>
+                  </div>
                 </div>
-                {["About", "Blog", "Careers", "Contact"].map((l) => (
-                  <Link
-                    key={l}
-                    href="#"
-                    className="block text-sm mb-2.5 transition-opacity hover:opacity-100"
-                    style={{ color: C.muted }}
-                  >
-                    {l}
-                  </Link>
-                ))}
+
+                {/* Screen 2: Case detail */}
+                <div className="mini-screen" id="mini-detail">
+                  <div className="mini-detail-back" id="mini-back">← Cases</div>
+                  <div className="mini-card">
+                    <div className="mini-head">
+                      <div className="mini-client">
+                        Margaret Chen <span style={{ color: "var(--gold-2)", fontSize: 11, marginLeft: 4 }}>★</span>
+                        <span className="sub">CASE-0184 · $412K · OPENED MAR 18</span>
+                      </div>
+                      <div className="mini-status-wrap" style={{ position: "relative" }}>
+                        <span className="status-pill" id="mini-status-pill">
+                          <span className="sdot" id="mini-sdot" style={{ background: "var(--status-wait)" }} />
+                          <span id="mini-status-label">AWAITING</span>
+                          <svg className="caret" viewBox="0 0 10 10" fill="none"><path d="M2.5 4l2.5 2.5L7.5 4" stroke="currentColor" strokeWidth="1.5" strokeLinecap="round" strokeLinejoin="round"/></svg>
+                        </span>
+                        <div className="status-menu" id="mini-status-menu">
+                          <div className="status-menu-item current" data-stage="0"><span className="mdot" style={{ background: "var(--status-wait)" }} /><span className="mname">AWAITING</span><svg className="mcheck" viewBox="0 0 10 10" fill="none"><path d="M2 5l2 2 4-5" stroke="currentColor" strokeWidth="1.8" strokeLinecap="round" strokeLinejoin="round"/></svg></div>
+                          <div className="status-menu-item" data-stage="1"><span className="mdot" style={{ background: "var(--status-ready)" }} /><span className="mname">READY</span><svg className="mcheck" viewBox="0 0 10 10" fill="none"><path d="M2 5l2 2 4-5" stroke="currentColor" strokeWidth="1.8" strokeLinecap="round" strokeLinejoin="round"/></svg></div>
+                          <div className="status-menu-item" data-stage="2"><span className="mdot" style={{ background: "var(--status-submit)" }} /><span className="mname">SUBMITTED</span><svg className="mcheck" viewBox="0 0 10 10" fill="none"><path d="M2 5l2 2 4-5" stroke="currentColor" strokeWidth="1.8" strokeLinecap="round" strokeLinejoin="round"/></svg></div>
+                          <div className="status-menu-item" data-stage="3"><span className="mdot" style={{ background: "var(--status-proc)" }} /><span className="mname">PROCESSING</span><svg className="mcheck" viewBox="0 0 10 10" fill="none"><path d="M2 5l2 2 4-5" stroke="currentColor" strokeWidth="1.8" strokeLinecap="round" strokeLinejoin="round"/></svg></div>
+                          <div className="status-menu-item" data-stage="4"><span className="mdot" style={{ background: "var(--status-transit)" }} /><span className="mname">IN TRANSIT</span><svg className="mcheck" viewBox="0 0 10 10" fill="none"><path d="M2 5l2 2 4-5" stroke="currentColor" strokeWidth="1.8" strokeLinecap="round" strokeLinejoin="round"/></svg></div>
+                          <div className="status-menu-item" data-stage="5"><span className="mdot" style={{ background: "var(--status-done)" }} /><span className="mname">COMPLETED</span><svg className="mcheck" viewBox="0 0 10 10" fill="none"><path d="M2 5l2 2 4-5" stroke="currentColor" strokeWidth="1.8" strokeLinecap="round" strokeLinejoin="round"/></svg></div>
+                        </div>
+                      </div>
+                    </div>
+
+                    <div className="mini-route">
+                      Fidelity 401(k) <span className="arr">→</span> Schwab Traditional IRA
+                    </div>
+
+                    <div className="mini-pipe">
+                      <div className="mini-pipe-bar" id="mini-bar">
+                        <div className="s on" />
+                        <div className="s on" />
+                        <div className="s" />
+                        <div className="s" />
+                        <div className="s" />
+                        <div className="s" />
+                        <div className="s" />
+                      </div>
+                      <div className="mini-pipe-label">
+                        <span>Intake</span>
+                        <span className="cur-status" id="mini-cur-text">Awaiting</span>
+                        <span>Complete</span>
+                      </div>
+                    </div>
+
+                    <div className="mini-check">
+                      <div className="mini-check-item on" id="mc-1">
+                        <div className="mini-check-box"><svg viewBox="0 0 10 10"><path d="M2 5l2 2 4-5" /></svg></div>
+                        <div className="mini-file">
+                          <div className="mini-file-icon">PDF</div>
+                          <div className="mini-file-meta">
+                            <div className="mini-file-name">Client Authorization.pdf</div>
+                            <div className="mini-file-sub">FROM CLIENT · MAR 18</div>
+                          </div>
+                        </div>
+                        <span className="mini-file-state approved">Approved</span>
+                      </div>
+                      <div className="mini-check-item on" id="mc-2">
+                        <div className="mini-check-box"><svg viewBox="0 0 10 10"><path d="M2 5l2 2 4-5" /></svg></div>
+                        <div className="mini-file">
+                          <div className="mini-file-icon">PDF</div>
+                          <div className="mini-file-meta">
+                            <div className="mini-file-name">Fidelity Statement Q1.pdf</div>
+                            <div className="mini-file-sub">FROM CLIENT · MAR 18</div>
+                          </div>
+                        </div>
+                        <span className="mini-file-state approved">Approved</span>
+                      </div>
+                      <div className="mini-check-item" id="mc-3">
+                        <div className="mini-check-box"><svg viewBox="0 0 10 10"><path d="M2 5l2 2 4-5" /></svg></div>
+                        <div className="mini-file">
+                          <div className="mini-file-icon">PDF</div>
+                          <div className="mini-file-meta">
+                            <div className="mini-file-name" id="mc-3-name">Medallion LOA</div>
+                            <div className="mini-file-sub" id="mc-3-sub">AWAITING CLIENT UPLOAD</div>
+                          </div>
+                        </div>
+                        <span className="mini-file-state" id="mc-3-state">Required</span>
+                      </div>
+                      <div className="mini-check-item" id="mc-4">
+                        <div className="mini-check-box"><svg viewBox="0 0 10 10"><path d="M2 5l2 2 4-5" /></svg></div>
+                        <div className="mini-file">
+                          <div className="mini-file-icon">PDF</div>
+                          <div className="mini-file-meta">
+                            <div className="mini-file-name" id="mc-4-name">Beneficiary Designation</div>
+                            <div className="mini-file-sub" id="mc-4-sub">AWAITING CLIENT UPLOAD</div>
+                          </div>
+                        </div>
+                        <span className="mini-file-state" id="mc-4-state">Required</span>
+                      </div>
+                    </div>
+
+                    <div className="mini-notif" id="mini-notif">
+                      <div className="mini-notif-avatar">MC</div>
+                      <div className="mini-notif-body">
+                        <div className="mini-notif-title" id="mini-notif-title">Margaret Chen uploaded <b>Medallion LOA.pdf</b></div>
+                        <div className="mini-notif-sub" id="mini-notif-sub">CLIENT PORTAL · JUST NOW</div>
+                      </div>
+                      <div className="mini-notif-dot" />
+                    </div>
+
+                    <div className="mini-doc-preview" id="mini-doc-preview">
+                      <div className="mini-doc-header">
+                        <div className="mini-doc-title" id="mini-doc-title">Medallion LOA.pdf</div>
+                        <div className="mini-doc-close">esc</div>
+                      </div>
+                      <div className="mini-doc-page">
+                        <div className="mini-doc-lines" />
+                        <div className="mini-doc-sig" id="mini-doc-sig">Margaret Chen</div>
+                      </div>
+                      <div className="mini-doc-meta">
+                        <span>3 pages · 412 KB</span>
+                        <span>NOTARIZED ✓</span>
+                      </div>
+                      <button className="mini-doc-approve" id="mini-doc-approve">
+                        Mark approved
+                        <svg width="10" height="10" viewBox="0 0 12 12" fill="none"><path d="M2 6l3 3 5-6" stroke="currentColor" strokeWidth="1.8" strokeLinecap="round" strokeLinejoin="round"/></svg>
+                      </button>
+                    </div>
+                  </div>
+                </div>
+
+                <div className="mini-toast" id="mini-toast">
+                  <span className="d" />
+                  <span id="mini-toast-msg">Status updated</span>
+                </div>
+
+                <div className="mini-cursor" id="mini-cursor">
+                  <svg viewBox="0 0 24 24" fill="none">
+                    <path d="M3 2l7 18 3-8 8-3L3 2z" fill="#f6f2ea" stroke="#0a0b0e" strokeWidth="1.2" strokeLinejoin="round" />
+                  </svg>
+                </div>
               </div>
             </div>
           </div>
+        </div>
+      </header>
 
-          <div
-            className="flex flex-col sm:flex-row items-center justify-between pt-6 gap-3"
-            style={{ borderTop: "1px solid rgba(184,134,11,0.1)" }}
-          >
-            <p className="text-xs" style={{ color: "rgba(156,143,122,0.55)" }}>
-              © 2026 Rift Technologies, Inc. All rights reserved.
-            </p>
-            <div className="flex gap-6">
-              {["Privacy", "Terms", "Security"].map((l) => (
-                <Link
-                  key={l}
-                  href="#"
-                  className="text-xs transition-opacity hover:opacity-80"
-                  style={{ color: "rgba(156,143,122,0.55)" }}
-                >
-                  {l}
-                </Link>
-              ))}
+      {/* WHY RIFT / FEATURES */}
+      <section id="product">
+        <div className="wrap">
+          <div className="sec-label">Why Rift</div>
+          <h2 className="sec-title">A structured pipeline <em>where a thread used to be.</em></h2>
+          <p className="sec-sub">Spreadsheets track; Rift drives. Every case moves through seven disciplined stages, with checklists, tasks, and an audit log that nobody has to maintain by hand.</p>
+
+          <div className="feat-grid">
+            <div className="glass-card">
+              <div className="feat-num">01 / PIPELINE</div>
+              <div className="feat-h">Seven stages. Zero ambiguity.</div>
+              <div className="feat-b">Intake → Awaiting Client → Ready → Submitted → Processing → In Transit → Complete. Advance a status, the checklist and activity log follow.</div>
+              <div className="feat-visual">
+                <svg width="100%" height="100%" viewBox="0 0 300 92" preserveAspectRatio="none">
+                  <g transform="translate(20,46)">
+                    <line x1="0" y1="0" x2="260" y2="0" stroke="rgba(246,242,234,0.08)" strokeWidth="2" strokeDasharray="3 5" />
+                    <line x1="0" y1="0" x2="140" y2="0" stroke="url(#g1)" strokeWidth="2" />
+                    <defs>
+                      <linearGradient id="g1" x1="0" y1="0" x2="1" y2="0">
+                        <stop offset="0" stopColor="#8a6434" />
+                        <stop offset="1" stopColor="#e9d4a3" />
+                      </linearGradient>
+                    </defs>
+                  </g>
+                  <g fontFamily="JetBrains Mono, monospace" fontSize="7" fill="#b8b3a8">
+                    <circle cx="20" cy="46" r="4" fill="#c19a5b" />
+                    <circle cx="60" cy="46" r="4" fill="#c19a5b" />
+                    <circle cx="100" cy="46" r="4" fill="#c19a5b" />
+                    <circle cx="140" cy="46" r="4" fill="#c19a5b" />
+                    <circle cx="180" cy="46" r="3.5" fill="none" stroke="rgba(246,242,234,0.2)" />
+                    <circle cx="220" cy="46" r="3.5" fill="none" stroke="rgba(246,242,234,0.2)" />
+                    <circle cx="260" cy="46" r="3.5" fill="none" stroke="rgba(246,242,234,0.2)" />
+                  </g>
+                </svg>
+              </div>
             </div>
+
+            <div className="glass-card" id="intelligence">
+              <div className="feat-num">02 / INTELLIGENCE</div>
+              <div className="feat-h">Custodian intel that remembers.</div>
+              <div className="feat-b">25+ custodians mapped. Ask Claude how Schwab routes a Texas 401(k) — it cites your firm&apos;s own tribal knowledge and mailing rules.</div>
+              <div className="feat-visual" style={{ flexDirection: "column", gap: 6, padding: "10px 16px", alignItems: "stretch" }}>
+                <div style={{ fontSize: 9, color: "var(--gold-1)", fontFamily: "var(--font-jetbrains-mono), 'JetBrains Mono', monospace" }}>🔧 search_custodians(&quot;Schwab&quot;)</div>
+                <div style={{ fontSize: 10, color: "var(--ink-dim)" }}>Medallion required over $250k. Mail to El Paso for TX clients.</div>
+                <div style={{ fontSize: 9, color: "var(--ink-mute)", fontFamily: "var(--font-jetbrains-mono), 'JetBrains Mono', monospace" }}>3 firm notes · 12 citations</div>
+              </div>
+            </div>
+
+            <div className="glass-card">
+              <div className="feat-num">03 / AUDIT</div>
+              <div className="feat-h">Immutable, not imaginary.</div>
+              <div className="feat-b">Every status change, upload, and task completion is logged with actor and timestamp. Answer &quot;who did what and when&quot; in one click.</div>
+              <div className="feat-visual" style={{ flexDirection: "column", gap: 4, padding: "10px 14px", alignItems: "stretch", fontSize: 10 }}>
+                <div style={{ display: "flex", gap: 6, alignItems: "center", color: "var(--ink-dim)" }}>
+                  <span style={{ width: 4, height: 4, borderRadius: "50%", background: "var(--gold-2)" }} />
+                  <b style={{ color: "var(--ink)" }}>R. Medina</b> · CASE_CREATED <span style={{ color: "var(--ink-mute)", marginLeft: "auto", fontFamily: "var(--font-jetbrains-mono), 'JetBrains Mono', monospace" }}>10:24</span>
+                </div>
+                <div style={{ display: "flex", gap: 6, alignItems: "center", color: "var(--ink-dim)" }}>
+                  <span style={{ width: 4, height: 4, borderRadius: "50%", background: "var(--gold-2)" }} />
+                  <b style={{ color: "var(--ink)" }}>O. Park</b> · FILE_UPLOADED <span style={{ color: "var(--ink-mute)", marginLeft: "auto", fontFamily: "var(--font-jetbrains-mono), 'JetBrains Mono', monospace" }}>09:02</span>
+                </div>
+                <div style={{ display: "flex", gap: 6, alignItems: "center", color: "var(--ink-dim)" }}>
+                  <span style={{ width: 4, height: 4, borderRadius: "50%", background: "var(--gold-2)" }} />
+                  <b style={{ color: "var(--ink)" }}>System</b> · STATUS_CHANGED <span style={{ color: "var(--ink-mute)", marginLeft: "auto", fontFamily: "var(--font-jetbrains-mono), 'JetBrains Mono', monospace" }}>11:47</span>
+                </div>
+              </div>
+            </div>
+
+            <div className="glass-card">
+              <div className="feat-num">04 / CHECKLISTS</div>
+              <div className="feat-h">Paperwork, pre-packed.</div>
+              <div className="feat-b">Per-case checklists with status buckets (Requested → Received → Reviewed). Attach documents in place; never hunt for an LOA again.</div>
+              <div className="feat-visual" style={{ flexDirection: "column", padding: "10px 16px", alignItems: "stretch", gap: 5 }}>
+                <div style={{ display: "flex", gap: 8, alignItems: "center", fontSize: 10 }}>
+                  <div style={{ width: 12, height: 12, borderRadius: 3, background: "linear-gradient(135deg,var(--gold-4),var(--gold-2))" }} />
+                  <span style={{ color: "var(--ink-mute)", textDecoration: "line-through" }}>Signed authorization</span>
+                </div>
+                <div style={{ display: "flex", gap: 8, alignItems: "center", fontSize: 10 }}>
+                  <div style={{ width: 12, height: 12, borderRadius: 3, background: "linear-gradient(135deg,var(--gold-4),var(--gold-2))" }} />
+                  <span style={{ color: "var(--ink-mute)", textDecoration: "line-through" }}>Statement (60d)</span>
+                </div>
+                <div style={{ display: "flex", gap: 8, alignItems: "center", fontSize: 10 }}>
+                  <div style={{ width: 12, height: 12, borderRadius: 3, border: "1.5px solid var(--line-2)" }} />
+                  <span style={{ color: "var(--ink-dim)" }}>Medallion LOA</span>
+                </div>
+              </div>
+            </div>
+
+            <div className="glass-card">
+              <div className="feat-num">05 / ROLES</div>
+              <div className="feat-h">Advisor &amp; Ops, not one person.</div>
+              <div className="feat-b">Admins see it all. Advisors see their cases. Ops see theirs. Workload charts keep anyone from drowning quietly.</div>
+              <div className="feat-visual" style={{ padding: "10px 16px", alignItems: "stretch" }}>
+                <div style={{ width: "100%", display: "flex", flexDirection: "column", gap: 6 }}>
+                  <div style={{ fontSize: 9, color: "var(--ink-mute)", display: "flex", justifyContent: "space-between" }}><span>R. Medina</span><span className="mono">12</span></div>
+                  <div style={{ height: 5, background: "rgba(255,255,255,0.04)", borderRadius: 3, overflow: "hidden" }}><div style={{ width: "70%", height: "100%", background: "linear-gradient(90deg,var(--gold-3),var(--gold-1))" }} /></div>
+                  <div style={{ fontSize: 9, color: "var(--ink-mute)", display: "flex", justifyContent: "space-between" }}><span>J. Liu</span><span className="mono">9</span></div>
+                  <div style={{ height: 5, background: "rgba(255,255,255,0.04)", borderRadius: 3, overflow: "hidden" }}><div style={{ width: "52%", height: "100%", background: "linear-gradient(90deg,var(--gold-3),var(--gold-1))" }} /></div>
+                  <div style={{ fontSize: 9, color: "var(--ink-mute)", display: "flex", justifyContent: "space-between" }}><span>O. Park · ops</span><span className="mono">18</span></div>
+                  <div style={{ height: 5, background: "rgba(255,255,255,0.04)", borderRadius: 3, overflow: "hidden" }}><div style={{ width: "92%", height: "100%", background: "linear-gradient(90deg,var(--gold-3),var(--gold-1))" }} /></div>
+                </div>
+              </div>
+            </div>
+
+            <div className="glass-card">
+              <div className="feat-num">06 / REMINDERS</div>
+              <div className="feat-h">Nudges that don&apos;t nag.</div>
+              <div className="feat-b">Automated reminder engine with 20-hour dedup. Configurable thresholds for stalled cases, missing docs, and overdue tasks. Dry-run before every send.</div>
+              <div className="feat-visual" style={{ padding: "10px 16px", alignItems: "stretch", fontSize: 10, color: "var(--ink-dim)" }}>
+                <div style={{ display: "flex", flexDirection: "column", gap: 4, width: "100%" }}>
+                  <div style={{ display: "flex", justifyContent: "space-between" }}><span>Stalled · 7d</span><span className="mono" style={{ color: "var(--gold-1)" }}>ON</span></div>
+                  <div style={{ display: "flex", justifyContent: "space-between" }}><span>Missing docs · 48h</span><span className="mono" style={{ color: "var(--gold-1)" }}>ON</span></div>
+                  <div style={{ display: "flex", justifyContent: "space-between" }}><span>Overdue tasks · daily</span><span className="mono" style={{ color: "var(--gold-1)" }}>ON</span></div>
+                </div>
+              </div>
+            </div>
+          </div>
+        </div>
+      </section>
+
+      {/* PIPELINE VIZ */}
+      <section id="workflow">
+        <div className="wrap">
+          <div className="sec-label">The rollover pipeline</div>
+          <h2 className="sec-title">From intake to complete <em>— one lane.</em></h2>
+          <p className="sec-sub">Every stage has owners, exit criteria, and a dwell-time SLA. Watch a case move.</p>
+
+          <div className="pipeline-viz">
+            <div className="pipe-stages">
+              <div className="pipe-stage" data-idx="0"><div className="n">01</div><div className="nm">Intake</div><div className="ct">4 cases</div></div>
+              <div className="pipe-stage" data-idx="1"><div className="n">02</div><div className="nm">Awaiting</div><div className="ct">8 cases</div></div>
+              <div className="pipe-stage" data-idx="2"><div className="n">03</div><div className="nm">Ready</div><div className="ct">3 cases</div></div>
+              <div className="pipe-stage" data-idx="3"><div className="n">04</div><div className="nm">Submitted</div><div className="ct">5 cases</div></div>
+              <div className="pipe-stage active" data-idx="4"><div className="n">05</div><div className="nm">Processing</div><div className="ct">6 cases</div></div>
+              <div className="pipe-stage" data-idx="5"><div className="n">06</div><div className="nm">In Transit</div><div className="ct">4 cases</div></div>
+              <div className="pipe-stage" data-idx="6"><div className="n">07</div><div className="nm">Complete</div><div className="ct">112 cases</div></div>
+            </div>
+
+            <div style={{ marginTop: 22, display: "grid", gridTemplateColumns: "repeat(7, 1fr)", gap: 6, fontSize: 10, color: "var(--ink-mute)", fontFamily: "var(--font-jetbrains-mono), 'JetBrains Mono', monospace" }}>
+              <div>avg 2d</div><div>avg 4d</div><div>avg 1d</div><div>avg 1d</div><div>avg 5d</div><div>avg 3d</div><div>—</div>
+            </div>
+          </div>
+
+          <div className="stats-row">
+            <div className="stat"><div className="val">41%</div><div className="lbl">Reduction in rollover cycle time</div></div>
+            <div className="stat"><div className="val">25+</div><div className="lbl">Custodians mapped, routed, and annotated</div></div>
+            <div className="stat"><div className="val">0</div><div className="lbl">Cases lost to a dropped email thread</div></div>
+            <div className="stat"><div className="val">3mo</div><div className="lbl">Typical time to firm-wide adoption</div></div>
+          </div>
+        </div>
+      </section>
+
+      {/* TESTIMONIAL */}
+      <section id="customers" style={{ paddingTop: 40 }}>
+        <div className="wrap">
+          <div className="quote-card">
+            <p className="quote-text">Before Rift, we ran every rollover out of a shared inbox and a Google Sheet someone had to babysit. Now our ops lead actually has Fridays.</p>
+            <div className="quote-meta">
+              <div className="quote-av">RM</div>
+              <div>
+                <div className="quote-name">Rachel Medina</div>
+                <div className="quote-role">Partner · Stoneridge Wealth · 14 advisors</div>
+              </div>
+              <div style={{ marginLeft: "auto", display: "flex", gap: 6, alignItems: "center" }}>
+                <span className="mono" style={{ fontSize: 11, color: "var(--ink-mute)" }}>AUM</span>
+                <span className="mono" style={{ fontSize: 14, color: "var(--gold-1)" }}>$1.8B</span>
+              </div>
+            </div>
+          </div>
+        </div>
+      </section>
+
+      {/* CTA */}
+      <section id="pricing" style={{ paddingBottom: 0 }}>
+        <div className="wrap">
+          <div className="cta-block">
+            <h2>Put your rollovers <em>on the rails.</em></h2>
+            <p>30-minute walkthrough. We&apos;ll load one of your live cases into a sandbox and move it through the pipeline with you.</p>
+            <Link className="btn-chrome" href="/login" style={{ padding: "14px 28px", fontSize: 15 }}>
+              Book a demo
+              <svg width="14" height="14" viewBox="0 0 12 12" fill="none"><path d="M3 6h6M6 3l3 3-3 3" stroke="currentColor" strokeWidth="1.8" strokeLinecap="round" strokeLinejoin="round"/></svg>
+            </Link>
+            <div style={{ marginTop: 18, fontSize: 12, color: "var(--ink-mute)" }} className="mono">NO CARD · NO SALES LOOPS · 30 MIN</div>
+          </div>
+        </div>
+      </section>
+
+      {/* FOOTER */}
+      <footer>
+        <div className="wrap foot-row">
+          <div style={{ display: "flex", alignItems: "center", gap: 10 }}>
+            <div className="brand-glyph" style={{ width: 20, height: 20 }} />
+            <span>Rift · 2026</span>
+            <span className="mono" style={{ color: "var(--ink-mute)", marginLeft: 10 }}>Made for independent RIAs</span>
+          </div>
+          <div className="foot-links">
+            <a href="#product">Security</a>
+            <a href="#product">Privacy</a>
+            <a href="#workflow">Status</a>
+            <a href="#product">Changelog</a>
+            <Link href="/login">Contact</Link>
           </div>
         </div>
       </footer>
-
-      {demoOpen && <DemoModal onClose={() => setDemoOpen(false)} />}
-    </>
+    </div>
   );
 }

@@ -1,0 +1,1630 @@
+<!doctype html>
+<html lang="en">
+<head>
+<meta charset="utf-8" />
+<title>Rift — Rollover case management for RIAs</title>
+<meta name="viewport" content="width=device-width, initial-scale=1" />
+<link rel="preconnect" href="https://fonts.googleapis.com" />
+<link rel="preconnect" href="https://fonts.gstatic.com" crossorigin />
+<link href="https://fonts.googleapis.com/css2?family=Inter+Tight:wght@300;400;500;600;700&family=JetBrains+Mono:wght@400;500;600&family=Instrument+Serif:ital@0;1&display=swap" rel="stylesheet" />
+
+<style>
+  :root{
+    --bg:        #0a0b0e;
+    --bg-2:      #101117;
+    --ink:       #f6f2ea;
+    --ink-dim:   #b8b3a8;
+    --ink-mute:  #6f6a60;
+    --line:      rgba(246,242,234,0.08);
+    --line-2:    rgba(246,242,234,0.14);
+
+    /* Liquid chrome / bronze */
+    --gold-1: #e9d4a3;
+    --gold-2: #c19a5b;
+    --gold-3: #8a6434;
+    --gold-4: #f9eac8;
+    --gold-glow: 234 195 120;  /* rgb triplet */
+
+    --glass: rgba(246,242,234,0.04);
+    --glass-strong: rgba(246,242,234,0.07);
+    --glass-border: rgba(246,242,234,0.10);
+
+    --status-intake: #7a93b8;
+    --status-wait:   #c89a5b;
+    --status-ready:  #b8a668;
+    --status-submit: #8a9e7c;
+    --status-proc:   #7ea39a;
+    --status-transit:#6e8fb3;
+    --status-done:   #6da57f;
+  }
+
+  *{box-sizing:border-box}
+  html,body{margin:0;padding:0}
+  body{
+    background: var(--bg);
+    color: var(--ink);
+    font-family: 'Inter Tight', -apple-system, sans-serif;
+    font-feature-settings: "ss01","cv11";
+    -webkit-font-smoothing: antialiased;
+    overflow-x:hidden;
+    line-height:1.5;
+  }
+  .mono{font-family:'JetBrains Mono', monospace; font-feature-settings: "ss02";}
+  .serif{font-family:'Instrument Serif', serif; font-weight:400;}
+
+  /* ── Background field ────────────────────────────────────── */
+  .page-bg{
+    position:fixed; inset:0; z-index:-2; background: var(--bg);
+  }
+  .page-bg::before{
+    content:""; position:absolute; inset:-20%;
+    background:
+      radial-gradient(60% 40% at 50% 0%, rgba(var(--gold-glow)/0.12), transparent 60%),
+      radial-gradient(40% 30% at 85% 30%, rgba(var(--gold-glow)/0.06), transparent 70%),
+      radial-gradient(50% 40% at 15% 70%, rgba(140,160,200,0.05), transparent 70%);
+  }
+  .grain{
+    position:fixed; inset:0; z-index:-1; pointer-events:none; opacity:.35; mix-blend-mode:overlay;
+    background-image: url("data:image/svg+xml;utf8,<svg xmlns='http://www.w3.org/2000/svg' width='200' height='200'><filter id='n'><feTurbulence type='fractalNoise' baseFrequency='0.9' numOctaves='2'/><feColorMatrix values='0 0 0 0 0.95  0 0 0 0 0.90  0 0 0 0 0.82  0 0 0 0.12 0'/></filter><rect width='100%' height='100%' filter='url(%23n)'/></svg>");
+  }
+
+  /* ── Container ─────────────────────────────────────────── */
+  .wrap{ max-width:1280px; margin:0 auto; padding:0 32px; }
+
+  /* ── Nav ───────────────────────────────────────────────── */
+  nav.top{
+    position:sticky; top:0; z-index:50;
+    backdrop-filter: blur(14px) saturate(140%);
+    -webkit-backdrop-filter: blur(14px) saturate(140%);
+    background: linear-gradient(180deg, rgba(10,11,14,0.85), rgba(10,11,14,0.4));
+    border-bottom: 1px solid var(--line);
+  }
+  .nav-row{ display:flex; align-items:center; justify-content:space-between; padding:18px 0; }
+  .brand{ display:flex; align-items:center; gap:10px; font-weight:500; letter-spacing:-0.01em; font-size:18px; }
+  .brand-glyph{
+    width:26px; height:26px; border-radius:7px;
+    background: linear-gradient(135deg, var(--gold-4) 0%, var(--gold-2) 45%, var(--gold-3) 100%);
+    box-shadow: inset 0 1px 0 rgba(255,255,255,0.5), 0 0 20px rgba(var(--gold-glow)/0.3);
+    position:relative;
+  }
+  .brand-glyph::after{
+    content:""; position:absolute; inset:5px; border-radius:3px;
+    background: linear-gradient(135deg, #1a1712 0%, #0e0b08 100%);
+  }
+  .nav-links{ display:flex; gap:28px; font-size:14px; color:var(--ink-dim); }
+  .nav-links a{ color:inherit; text-decoration:none; transition:color .2s; }
+  .nav-links a:hover{ color:var(--ink); }
+  .btn-ghost{
+    font-size:14px; padding:8px 14px; color:var(--ink-dim);
+    background:transparent; border:1px solid transparent; border-radius:999px;
+    cursor:pointer; font-family:inherit;
+  }
+  .btn-ghost:hover{ color:var(--ink); border-color:var(--line-2); }
+
+  /* ── Chrome (liquid bronze) button ─────────────────────── */
+  .btn-chrome{
+    display:inline-flex; align-items:center; gap:10px;
+    padding:11px 22px; border-radius:999px; border:none;
+    color:#2a1d08; font-weight:500; font-size:14px; letter-spacing:-0.005em;
+    cursor:pointer; font-family:inherit;
+    position:relative; isolation:isolate;
+    background: linear-gradient(135deg, var(--gold-4) 0%, var(--gold-1) 20%, var(--gold-2) 55%, var(--gold-1) 82%, var(--gold-4) 100%);
+    background-size: 220% 220%;
+    animation: chromeflow 7s ease-in-out infinite;
+    box-shadow:
+      inset 0 1px 0 rgba(255,255,255,0.65),
+      inset 0 -1px 0 rgba(0,0,0,0.18),
+      0 4px 20px -4px rgba(var(--gold-glow)/0.4),
+      0 0 0 1px rgba(var(--gold-glow)/0.25);
+    transition: transform .2s;
+  }
+  .btn-chrome:hover{ transform: translateY(-1px); }
+  .btn-chrome::before{
+    content:""; position:absolute; inset:0; border-radius:inherit; pointer-events:none;
+    background: linear-gradient(180deg, rgba(255,255,255,0.35), transparent 45%);
+  }
+  @keyframes chromeflow{
+    0%,100%{ background-position: 0% 50%; }
+    50%    { background-position: 100% 50%; }
+  }
+
+  /* ── Hero ──────────────────────────────────────────────── */
+  .hero{ padding: 90px 0 40px; position:relative; }
+  .eyebrow{
+    display:inline-flex; align-items:center; gap:10px;
+    padding:6px 12px 6px 8px; border-radius:999px;
+    background: var(--glass); border:1px solid var(--glass-border);
+    font-size:12px; color:var(--ink-dim); letter-spacing:0.02em;
+    backdrop-filter: blur(10px); -webkit-backdrop-filter: blur(10px);
+  }
+  .eyebrow .pill{
+    padding:2px 8px; border-radius:999px; font-size:11px; font-weight:500;
+    color:#2a1d08;
+    background: linear-gradient(135deg, var(--gold-4), var(--gold-2));
+  }
+  h1.hero-title{
+    margin:22px 0 0; font-size: clamp(44px, 6.4vw, 88px);
+    font-weight:400; letter-spacing:-0.035em; line-height:0.98;
+    color: var(--ink);
+  }
+  h1.hero-title .chromed{
+    background: linear-gradient(95deg, var(--gold-4) 0%, var(--gold-1) 30%, var(--gold-2) 55%, var(--gold-1) 75%, var(--gold-4) 100%);
+    background-size: 220% 220%;
+    background-clip: text; -webkit-background-clip: text;
+    -webkit-text-fill-color: transparent; color:transparent;
+    animation: chromeflow 8s ease-in-out infinite;
+    font-family:'Instrument Serif', serif; font-style:italic; font-weight:400;
+  }
+  .hero-sub{
+    margin-top:22px; font-size:18px; color:var(--ink-dim); max-width: 580px;
+    line-height:1.55;
+  }
+  .hero-cta{ display:flex; align-items:center; gap:14px; margin-top:32px; }
+  .hero-meta{
+    margin-top:28px; display:flex; gap:28px; font-size:13px; color:var(--ink-mute);
+  }
+  .hero-meta .dot{ display:inline-block; width:5px; height:5px; border-radius:50%;
+    background: var(--gold-2); margin-right:8px; vertical-align:middle;
+    box-shadow: 0 0 8px rgba(var(--gold-glow)/0.6); }
+
+  /* ── Demo stage ─────────────────────────────────────────── */
+  .stage-wrap{
+    position:relative; margin-top:64px; padding: 22px;
+    border-radius:22px;
+    background: var(--glass);
+    border:1px solid var(--glass-border);
+    backdrop-filter: blur(24px) saturate(140%);
+    -webkit-backdrop-filter: blur(24px) saturate(140%);
+    box-shadow:
+      inset 0 1px 0 rgba(255,255,255,0.05),
+      0 40px 80px -40px rgba(0,0,0,0.8),
+      0 0 1px rgba(var(--gold-glow)/0.2);
+  }
+  .stage-wrap::before{
+    content:""; position:absolute; inset:-1px; border-radius:inherit; padding:1px;
+    background: linear-gradient(135deg, rgba(var(--gold-glow)/0.3), transparent 40%, transparent 60%, rgba(var(--gold-glow)/0.15));
+    -webkit-mask: linear-gradient(#000,#000) content-box, linear-gradient(#000,#000);
+    -webkit-mask-composite: xor; mask-composite: exclude;
+    pointer-events:none;
+  }
+  .stage-inner{
+    position:relative; border-radius:14px; overflow:hidden;
+    background: #0b0d12; border:1px solid var(--line);
+    aspect-ratio: 16/10;
+  }
+
+  .app-chrome{
+    height:34px; background: linear-gradient(180deg, #14161c, #0e1015);
+    border-bottom:1px solid var(--line); display:flex; align-items:center; padding:0 12px; gap:10px;
+  }
+  .app-chrome .dots{ display:flex; gap:6px; }
+  .app-chrome .dots span{ width:10px; height:10px; border-radius:50%; background:#2a2c33; }
+  .app-chrome .url{
+    flex:1; text-align:center; font-size:11px; color:var(--ink-mute); font-family:'JetBrains Mono',monospace;
+  }
+
+  /* App layout */
+  .app-body{ position:relative; height:calc(100% - 34px); display:grid; grid-template-columns: 180px 1fr; }
+  .app-sidebar{
+    border-right:1px solid var(--line);
+    padding:14px 10px; font-size:12px;
+    background: linear-gradient(180deg, rgba(255,255,255,0.015), transparent);
+  }
+  .sb-label{ color:var(--ink-mute); font-size:10px; text-transform:uppercase;
+    letter-spacing:0.12em; padding:4px 8px; margin-top:10px; }
+  .sb-item{
+    display:flex; align-items:center; gap:10px;
+    padding:7px 9px; border-radius:6px; color:var(--ink-dim); font-size:13px;
+    transition: background .2s, color .2s;
+  }
+  .sb-item.active{ background: rgba(var(--gold-glow)/0.08); color: var(--ink);
+    box-shadow: inset 0 0 0 1px rgba(var(--gold-glow)/0.15); }
+  .sb-item .ico{ width:14px; height:14px; opacity:0.7; }
+
+  .app-main{ position:relative; overflow:hidden; }
+
+  /* ── Screens (swapped by animation) ─────────────────────── */
+  .screen{
+    position:absolute; inset:0; padding:18px 22px;
+    opacity:0; transition: opacity .5s ease;
+    pointer-events:none;
+  }
+  .screen.visible{ opacity:1; }
+
+  .screen-head{ display:flex; align-items:center; justify-content:space-between; margin-bottom:12px; }
+  .screen-title{ font-size:16px; font-weight:500; letter-spacing:-0.01em; }
+  .crumbs{ font-size:11px; color:var(--ink-mute); font-family:'JetBrains Mono',monospace; }
+
+  /* Case list */
+  .case-row{
+    display:grid; grid-template-columns: 22px 1.6fr 1.2fr 100px 80px 72px;
+    gap:12px; align-items:center;
+    padding:10px 12px; border-radius:8px; font-size:12.5px;
+    border:1px solid transparent;
+    transition: background .25s, border-color .25s;
+  }
+  .case-row + .case-row{ margin-top:2px; }
+  .case-row:hover{ background: rgba(255,255,255,0.02); }
+  .case-row.highlight{
+    background: rgba(var(--gold-glow)/0.06);
+    border-color: rgba(var(--gold-glow)/0.25);
+  }
+  .case-client{ font-weight:500; color:var(--ink); }
+  .case-client .sub{ font-weight:400; color:var(--ink-mute); font-size:11px; display:block; margin-top:1px;}
+  .case-route{ color:var(--ink-dim); font-size:12px; }
+  .case-route .arrow{ color:var(--gold-2); margin:0 6px;}
+
+  .status-pill{
+    display:inline-flex; align-items:center; gap:6px;
+    padding:3px 9px; border-radius:999px; font-size:10.5px; font-weight:500;
+    font-family:'JetBrains Mono',monospace; letter-spacing:0.02em;
+    background: rgba(255,255,255,0.04);
+    border:1px solid var(--line-2);
+    color:var(--ink-dim);
+  }
+  .status-pill .sdot{ width:6px; height:6px; border-radius:50%; background: var(--status-intake); }
+  .status-pill.intake .sdot{ background: var(--status-intake); }
+  .status-pill.wait .sdot{ background: var(--status-wait); }
+  .status-pill.ready .sdot{ background: var(--status-ready); }
+  .status-pill.submit .sdot{ background: var(--status-submit); }
+  .status-pill.proc .sdot{ background: var(--status-proc); }
+  .status-pill.transit .sdot{ background: var(--status-transit); }
+  .status-pill.done .sdot{ background: var(--status-done); box-shadow: 0 0 8px rgba(109,165,127,0.6); }
+
+  .avatars{ display:flex; }
+  .avatars .av{
+    width:22px; height:22px; border-radius:50%;
+    border:2px solid #0b0d12;
+    background: linear-gradient(135deg, #2a2e38, #1a1d24);
+    margin-left:-6px;
+    display:flex; align-items:center; justify-content:center;
+    font-size:9px; color:var(--ink-dim); font-weight:600;
+  }
+  .avatars .av:first-child{ margin-left:0;}
+  .avatars .av.gold{ background: linear-gradient(135deg, var(--gold-4), var(--gold-2)); color:#2a1d08;}
+
+  .age{ font-size:11px; color:var(--ink-mute); font-family:'JetBrains Mono',monospace; text-align:right;}
+
+  /* Case detail */
+  .detail-grid{ display:grid; grid-template-columns: 1.4fr 1fr; gap:14px; }
+  .panel{
+    border:1px solid var(--line); border-radius:10px; padding:14px;
+    background: rgba(255,255,255,0.015);
+  }
+  .panel-title{ font-size:11px; color:var(--ink-mute); text-transform:uppercase;
+    letter-spacing:0.14em; margin-bottom:10px; }
+  .kv{ display:flex; justify-content:space-between; padding:6px 0; font-size:12px; border-bottom:1px dashed var(--line); }
+  .kv:last-child{ border-bottom:none; }
+  .kv .k{ color:var(--ink-mute); }
+  .kv .v{ color:var(--ink); font-family:'JetBrains Mono',monospace; font-size:11.5px;}
+
+  /* Pipeline bar */
+  .pipeline-bar{ display:flex; gap:3px; margin:6px 0 14px; height:8px; }
+  .pipeline-bar .seg{ flex:1; border-radius:3px; background: rgba(255,255,255,0.05);
+    transition: background .4s; }
+  .pipeline-bar .seg.on{ background: linear-gradient(90deg, var(--gold-3), var(--gold-2)); }
+  .pipeline-labels{
+    display:grid; grid-template-columns: repeat(7,1fr); gap:3px;
+    font-size:9px; color:var(--ink-mute); font-family:'JetBrains Mono',monospace;
+    text-transform:uppercase; letter-spacing:0.06em;
+  }
+  .pipeline-labels div{ text-align:center; transition: color .3s; }
+  .pipeline-labels div.current{ color: var(--gold-1); }
+
+  /* Checklist */
+  .cl-item{
+    display:flex; align-items:center; gap:10px;
+    padding:8px 10px; border-radius:7px; font-size:12px;
+    border:1px solid transparent;
+    transition: background .25s, border-color .25s;
+  }
+  .cl-item + .cl-item{ margin-top:2px; }
+  .cl-check{
+    width:16px; height:16px; border-radius:4px; border:1.5px solid var(--line-2);
+    display:flex; align-items:center; justify-content:center;
+    flex-shrink:0; transition: all .3s;
+  }
+  .cl-check svg{ width:10px; height:10px; opacity:0; transition: opacity .25s; stroke: #2a1d08; stroke-width:3; fill:none; }
+  .cl-item.done .cl-check{
+    background: linear-gradient(135deg, var(--gold-4), var(--gold-2));
+    border-color: var(--gold-2);
+    box-shadow: 0 0 10px rgba(var(--gold-glow)/0.35);
+  }
+  .cl-item.done .cl-check svg{ opacity:1; }
+  .cl-item.done .cl-name{ color: var(--ink-mute); text-decoration: line-through; text-decoration-color: rgba(var(--gold-glow)/0.4); }
+  .cl-name{ flex:1; color:var(--ink-dim); }
+  .cl-tag{ font-size:9.5px; font-family:'JetBrains Mono',monospace;
+    color:var(--ink-mute); padding:2px 6px; border-radius:4px;
+    background: rgba(255,255,255,0.03); border:1px solid var(--line); }
+
+  /* Status dropdown */
+  .status-select{
+    position:relative; display:inline-flex; align-items:center; gap:8px;
+    padding:6px 10px; border-radius:7px;
+    background: rgba(255,255,255,0.03); border:1px solid var(--line-2);
+    font-family:'JetBrains Mono',monospace; font-size:11px; letter-spacing:0.02em;
+    cursor:pointer; transition: all .3s;
+  }
+  .status-select.open{ border-color: rgba(var(--gold-glow)/0.4); background: rgba(var(--gold-glow)/0.05);}
+  .status-dropdown{
+    position:absolute; top: calc(100% + 4px); right:0;
+    min-width: 190px; padding:4px;
+    background: rgba(20,22,28,0.95); backdrop-filter: blur(14px);
+    border:1px solid var(--line-2); border-radius:8px;
+    box-shadow: 0 20px 40px -10px rgba(0,0,0,0.7);
+    opacity:0; transform: translateY(-4px); pointer-events:none;
+    transition: all .25s;
+    z-index:5;
+  }
+  .status-select.open .status-dropdown{ opacity:1; transform:translateY(0); pointer-events:auto; }
+  .status-dropdown .opt{
+    padding:7px 10px; border-radius:5px; font-size:11px;
+    display:flex; align-items:center; gap:8px; color:var(--ink-dim);
+    transition: background .15s;
+  }
+  .status-dropdown .opt.selecting{ background: rgba(var(--gold-glow)/0.12); color: var(--ink); }
+  .status-dropdown .opt.current{ color: var(--gold-1);}
+
+  /* Activity */
+  .activity-item{
+    display:flex; gap:10px; padding:8px 0;
+    font-size:11.5px; border-bottom:1px dashed var(--line);
+    opacity:0; transform: translateY(6px);
+    transition: opacity .4s, transform .4s;
+  }
+  .activity-item.shown{ opacity:1; transform: translateY(0); }
+  .activity-item:last-child{ border-bottom:none; }
+  .activity-dot{ width:6px; height:6px; border-radius:50%; background: var(--gold-2);
+    margin-top:6px; flex-shrink:0;
+    box-shadow: 0 0 8px rgba(var(--gold-glow)/0.5);
+  }
+  .activity-text{ color: var(--ink-dim); }
+  .activity-text b{ color: var(--ink); font-weight:500; }
+  .activity-time{ color: var(--ink-mute); font-family:'JetBrains Mono',monospace; font-size:10px; margin-top:2px; display:block;}
+
+  /* Task card mini */
+  .task{
+    padding:8px 10px; border-radius:6px; font-size:11.5px;
+    background: rgba(255,255,255,0.02); border:1px solid var(--line);
+    display:flex; align-items:center; gap:8px;
+  }
+  .task + .task{ margin-top:4px; }
+  .task-check{ width:13px; height:13px; border:1.5px solid var(--line-2); border-radius:3px; flex-shrink:0; }
+  .task-check.done{ background: var(--gold-2); border-color: var(--gold-2); }
+  .task-due{ margin-left:auto; font-family:'JetBrains Mono',monospace; font-size:10px; color:var(--ink-mute);}
+
+  /* Animated cursor */
+  .cursor{
+    position:absolute; width:20px; height:20px; z-index:30; pointer-events:none;
+    top:0; left:0;
+    transform: translate(40px, 40px);
+    transition: transform 1.7s cubic-bezier(0.45, 0.05, 0.25, 1);
+    will-change: transform;
+  }
+  .cursor svg{ width:100%; height:100%; filter: drop-shadow(0 3px 8px rgba(0,0,0,0.75)); }
+  .cursor::before{
+    content:""; position:absolute; top:-3px; left:-3px; width:26px; height:26px; border-radius:50%;
+    border:1.5px solid rgba(var(--gold-glow)/0.8);
+    opacity:0; transform: scale(.4);
+    pointer-events:none;
+  }
+  .cursor.clicking::before{
+    animation: click-ring .6s ease-out;
+  }
+  @keyframes click-ring{
+    0%   { transform: scale(.4); opacity:1; }
+    100% { transform: scale(2); opacity:0; }
+  }
+
+  /* Cursor-target halo — highlights the element the cursor just landed on */
+  .cursor-target{
+    position: relative;
+    z-index: 2;
+  }
+  .cursor-target::after{
+    content:""; position:absolute; inset:-4px; border-radius:inherit;
+    border-radius: 10px;
+    border: 1.5px solid rgba(var(--gold-glow)/0.65);
+    background: rgba(var(--gold-glow)/0.06);
+    pointer-events:none;
+    animation: target-pulse 0.9s ease-out;
+    box-shadow: 0 0 18px -4px rgba(var(--gold-glow)/0.5);
+  }
+  @keyframes target-pulse{
+    0%   { opacity: 0; transform: scale(1.12); }
+    35%  { opacity: 1; transform: scale(1); }
+    100% { opacity: 1; transform: scale(1); }
+  }
+  .cursor-target.cursor-clicked::after{
+    animation: target-click 0.55s ease-out forwards;
+  }
+  @keyframes target-click{
+    0%   { opacity: 1; transform: scale(1); }
+    50%  { opacity: 1; transform: scale(0.96); background: rgba(var(--gold-glow)/0.18); }
+    100% { opacity: 0; transform: scale(1.08); }
+  }
+
+  /* Toast */
+  .toast{
+    position:absolute; bottom:14px; left:50%; transform: translateX(-50%) translateY(12px);
+    padding:8px 14px; border-radius:999px;
+    background: rgba(20,22,28,0.92); backdrop-filter: blur(12px);
+    border:1px solid rgba(var(--gold-glow)/0.3);
+    font-size:11px; color:var(--ink-dim);
+    display:flex; align-items:center; gap:8px;
+    opacity:0; transition: all .4s; pointer-events:none;
+    box-shadow: 0 10px 30px -10px rgba(0,0,0,0.7);
+    z-index:15;
+  }
+  .toast.show{ opacity:1; transform: translateX(-50%) translateY(0); }
+  .toast .tdot{ width:6px; height:6px; border-radius:50%;
+    background: var(--status-done); box-shadow: 0 0 8px rgba(109,165,127,0.6); }
+
+  /* Progress dots under stage */
+  .demo-progress{
+    display:flex; justify-content:center; gap:24px; margin-top:22px;
+    font-family:'JetBrains Mono',monospace; font-size:11px; color:var(--ink-mute);
+    text-transform:uppercase; letter-spacing:0.08em;
+  }
+  .demo-progress .dp{ display:flex; align-items:center; gap:8px; cursor:pointer; transition: color .3s;}
+  .demo-progress .dp .num{ font-size:10px; opacity:0.5; }
+  .demo-progress .dp.active{ color: var(--gold-1); }
+  .demo-progress .dp.active .num{ opacity:1; }
+  .demo-progress .dp .bar{ width:30px; height:1px; background: var(--line-2); position:relative; overflow:hidden;}
+  .demo-progress .dp.active .bar::after{
+    content:""; position:absolute; inset:0;
+    background: linear-gradient(90deg, var(--gold-3), var(--gold-1));
+    animation: barfill var(--dur, 5s) linear forwards;
+  }
+  @keyframes barfill{ from{ transform:translateX(-100%);} to{transform:translateX(0);} }
+
+  /* ── Section pattern ────────────────────────────────────── */
+  section{ padding: 110px 0; position:relative; }
+  .sec-label{
+    font-family:'JetBrains Mono',monospace; font-size:11px; color: var(--gold-2);
+    letter-spacing:0.18em; text-transform:uppercase;
+    display:flex; align-items:center; gap:12px;
+  }
+  .sec-label::before{
+    content:""; width:28px; height:1px; background: var(--gold-2);
+  }
+  .sec-title{
+    margin:16px 0 0; font-size: clamp(32px, 4.4vw, 56px);
+    font-weight:400; letter-spacing:-0.028em; line-height:1.02;
+    max-width: 720px;
+  }
+  .sec-title em{ font-family:'Instrument Serif', serif; font-style:italic; color: var(--gold-1);}
+  .sec-sub{ margin-top:18px; color: var(--ink-dim); font-size:17px; max-width:560px; line-height:1.55;}
+
+  /* Features grid */
+  .feat-grid{
+    margin-top: 56px;
+    display:grid; grid-template-columns: repeat(3, 1fr); gap:18px;
+  }
+  .glass-card{
+    position:relative;
+    padding: 26px 24px;
+    border-radius: 18px;
+    background: linear-gradient(180deg, rgba(246,242,234,0.045), rgba(246,242,234,0.015));
+    border: 1px solid var(--glass-border);
+    backdrop-filter: blur(18px) saturate(140%);
+    -webkit-backdrop-filter: blur(18px) saturate(140%);
+    overflow:hidden;
+    transition: transform .4s, border-color .4s;
+  }
+  .glass-card::before{
+    content:""; position:absolute; inset:0; border-radius:inherit; pointer-events:none;
+    background: linear-gradient(180deg, rgba(255,255,255,0.08), transparent 40%);
+  }
+  .glass-card::after{
+    content:""; position:absolute; top:-1px; left:10%; right:10%; height:1px;
+    background: linear-gradient(90deg, transparent, rgba(var(--gold-glow)/0.4), transparent);
+    opacity: 0; transition: opacity .4s;
+  }
+  .glass-card:hover{ transform: translateY(-3px); border-color: rgba(var(--gold-glow)/0.2); }
+  .glass-card:hover::after{ opacity:1; }
+  .feat-num{
+    font-family:'JetBrains Mono',monospace; font-size:11px; color: var(--gold-2);
+    letter-spacing:0.1em;
+  }
+  .feat-h{ margin-top:14px; font-size:20px; font-weight:500; letter-spacing:-0.015em;}
+  .feat-b{ margin-top:8px; color: var(--ink-dim); font-size:14px; line-height:1.55;}
+  .feat-visual{
+    margin-top:22px; height:92px; border-radius:10px;
+    background: rgba(0,0,0,0.2); border:1px solid var(--line);
+    display:flex; align-items:center; justify-content:center;
+    position:relative; overflow:hidden;
+  }
+
+  /* Pipeline section */
+  .pipeline-viz{
+    margin-top: 56px; padding: 32px; border-radius: 18px;
+    background: linear-gradient(180deg, rgba(246,242,234,0.04), rgba(246,242,234,0.01));
+    border:1px solid var(--glass-border);
+    backdrop-filter: blur(16px); -webkit-backdrop-filter: blur(16px);
+  }
+  .pipe-stages{
+    display:grid; grid-template-columns: repeat(7, 1fr); gap:6px;
+    position:relative;
+  }
+  .pipe-stage{
+    padding:16px 12px; border-radius:10px;
+    background: rgba(255,255,255,0.02);
+    border:1px solid var(--line);
+    text-align:center;
+    position:relative;
+    transition: all .3s;
+  }
+  .pipe-stage.active{
+    background: rgba(var(--gold-glow)/0.08);
+    border-color: rgba(var(--gold-glow)/0.35);
+    box-shadow: 0 0 20px -5px rgba(var(--gold-glow)/0.3);
+  }
+  .pipe-stage .n{ font-family:'JetBrains Mono',monospace; font-size:10px; color: var(--ink-mute);}
+  .pipe-stage.active .n{ color: var(--gold-1); }
+  .pipe-stage .nm{ font-size:12px; margin-top:6px; color: var(--ink); font-weight:500; }
+  .pipe-stage .ct{ font-family:'JetBrains Mono',monospace; font-size:10px; color: var(--ink-mute); margin-top:4px;}
+
+  /* Stats row */
+  .stats-row{
+    margin-top: 56px; display:grid; grid-template-columns: repeat(4, 1fr); gap:0;
+    border-top:1px solid var(--line); border-bottom:1px solid var(--line);
+  }
+  .stat{
+    padding: 32px 24px; border-right:1px solid var(--line);
+  }
+  .stat:last-child{ border-right:none; }
+  .stat .val{
+    font-family: 'Instrument Serif', serif;
+    font-size: 56px; letter-spacing:-0.025em; line-height:1;
+    background: linear-gradient(95deg, var(--gold-4), var(--gold-1) 40%, var(--gold-2) 70%, var(--gold-4));
+    background-size: 220% 220%;
+    background-clip: text; -webkit-background-clip: text;
+    -webkit-text-fill-color: transparent;
+    animation: chromeflow 9s ease-in-out infinite;
+  }
+  .stat .lbl{ margin-top:10px; font-size:13px; color: var(--ink-dim); letter-spacing:0.01em;}
+
+  /* Testimonial */
+  .quote-card{
+    margin-top: 56px; padding: 48px;
+    border-radius: 22px;
+    background: linear-gradient(135deg, rgba(246,242,234,0.055), rgba(246,242,234,0.01));
+    border:1px solid var(--glass-border);
+    backdrop-filter: blur(20px) saturate(150%);
+    position:relative; overflow:hidden;
+  }
+  .quote-card::before{
+    content:"“";
+    position:absolute; top:-40px; right:20px;
+    font-family:'Instrument Serif', serif; font-size:260px;
+    color: rgba(var(--gold-glow)/0.1); line-height:1;
+  }
+  .quote-text{
+    font-family:'Instrument Serif', serif;
+    font-size: 30px; letter-spacing:-0.015em; line-height:1.3;
+    color: var(--ink); max-width: 760px; font-weight:400; position:relative;
+  }
+  .quote-meta{ margin-top:24px; display:flex; align-items:center; gap:14px; }
+  .quote-av{
+    width:42px; height:42px; border-radius:50%;
+    background: linear-gradient(135deg, #3a3f4a, #1e2128);
+    display:flex; align-items:center; justify-content:center;
+    font-weight:600; color: var(--ink-dim); font-size:14px;
+    border:1px solid var(--line-2);
+  }
+  .quote-name{ font-size:14px; color: var(--ink); font-weight:500;}
+  .quote-role{ font-size:12px; color: var(--ink-mute); }
+
+  /* CTA */
+  .cta-block{
+    padding: 80px 56px; border-radius: 28px; position:relative; overflow:hidden;
+    background:
+      radial-gradient(60% 70% at 50% 0%, rgba(var(--gold-glow)/0.18), transparent 70%),
+      linear-gradient(180deg, rgba(246,242,234,0.04), rgba(246,242,234,0.01));
+    border:1px solid var(--glass-border);
+    backdrop-filter: blur(20px);
+    text-align:center;
+  }
+  .cta-block h2{
+    font-size: clamp(36px, 5vw, 64px); font-weight:400;
+    letter-spacing:-0.03em; margin:0; line-height:1;
+  }
+  .cta-block h2 em{ font-family:'Instrument Serif', serif; font-style:italic; color: var(--gold-1); }
+  .cta-block p{ margin: 18px auto 0; max-width: 460px; color: var(--ink-dim); font-size:16px; }
+  .cta-block .btn-chrome{ margin-top:32px; }
+
+  /* Footer */
+  footer{
+    padding: 40px 0 60px; border-top:1px solid var(--line); margin-top:110px;
+    color: var(--ink-mute); font-size:13px;
+  }
+  .foot-row{ display:flex; justify-content:space-between; align-items:center; flex-wrap:wrap; gap:20px;}
+  .foot-links{ display:flex; gap:24px; }
+  .foot-links a{ color: var(--ink-mute); text-decoration:none; transition: color .2s;}
+  .foot-links a:hover{ color: var(--ink); }
+
+  @media (max-width: 860px){
+    .feat-grid{ grid-template-columns: 1fr; }
+    .stats-row{ grid-template-columns: 1fr 1fr; }
+    .stat{ border-right:none; border-bottom:1px solid var(--line); }
+    .pipe-stages{ grid-template-columns: repeat(3, 1fr); }
+    .nav-links{ display:none; }
+  }
+</style>
+</head>
+<body>
+<div class="page-bg"></div>
+<div class="grain"></div>
+
+<!-- NAV -->
+<nav class="top">
+  <div class="wrap nav-row">
+    <div class="brand">
+      <div class="brand-glyph"></div>
+      <span>Rift</span>
+      <span class="mono" style="color:var(--ink-mute); font-size:11px; margin-left:6px;">v1.4</span>
+    </div>
+    <div class="nav-links">
+      <a href="#product">Product</a>
+      <a href="#workflow">Workflow</a>
+      <a href="#intelligence">Intelligence</a>
+      <a href="#pricing">Pricing</a>
+      <a href="#customers">Customers</a>
+    </div>
+    <div style="display:flex; gap:10px; align-items:center;">
+      <button class="btn-ghost">Sign in</button>
+      <button class="btn-chrome">
+        Book a demo
+        <svg width="12" height="12" viewBox="0 0 12 12" fill="none"><path d="M3 6h6M6 3l3 3-3 3" stroke="currentColor" stroke-width="1.6" stroke-linecap="round" stroke-linejoin="round"/></svg>
+      </button>
+    </div>
+  </div>
+</nav>
+
+<!-- HERO -->
+<header class="hero">
+  <div class="wrap">
+    <span class="eyebrow">
+      <span class="pill">NEW</span>
+      Custodian intelligence, now with state-based routing
+    </span>
+
+    <h1 class="hero-title">
+      Every rollover,<br>
+      <span class="chromed">on the rails.</span>
+    </h1>
+
+    <p class="hero-sub">
+      Rift is rollover case management for independent RIAs — a structured pipeline that replaces the spreadsheet, the thread, and the sticky note for every 401(k), 403(b), and IRA in motion.
+    </p>
+
+    <div class="hero-cta">
+      <button class="btn-chrome">
+        Book a demo
+        <svg width="12" height="12" viewBox="0 0 12 12" fill="none"><path d="M3 6h6M6 3l3 3-3 3" stroke="currentColor" stroke-width="1.8" stroke-linecap="round" stroke-linejoin="round"/></svg>
+      </button>
+      <button class="btn-ghost" style="border:1px solid var(--line-2); padding:11px 18px;">See the workflow ↓</button>
+    </div>
+
+    <div class="hero-meta">
+      <div><span class="dot"></span>SOC 2 Type II · In progress</div>
+      <div><span class="dot"></span>25+ custodians mapped</div>
+      <div><span class="dot"></span>Built for firms of 3–200</div>
+    </div>
+  </div>
+
+  <!-- ── Animated demo stage ──────────────────────────────── -->
+  <div class="wrap" style="margin-top:64px;">
+    <div class="stage-wrap">
+      <div class="stage-inner" id="stage">
+
+        <!-- browser chrome -->
+        <div class="app-chrome">
+          <div class="dots"><span></span><span></span><span></span></div>
+          <div class="url">app.rift.fund / dashboard / cases</div>
+          <div style="font-size:10px; color:var(--ink-mute); font-family:'JetBrains Mono',monospace;">
+            <span class="dot" style="display:inline-block;width:5px;height:5px;border-radius:50%;background:#6da57f;margin-right:6px;box-shadow:0 0 8px #6da57f;"></span>
+            Synced · just now
+          </div>
+        </div>
+
+        <div class="app-body">
+          <!-- sidebar -->
+          <aside class="app-sidebar">
+            <div class="sb-label">Workspace</div>
+            <div class="sb-item" id="sb-dash">
+              <svg class="ico" viewBox="0 0 16 16" fill="none"><rect x="1" y="1" width="6" height="6" rx="1.5" stroke="currentColor"/><rect x="9" y="1" width="6" height="6" rx="1.5" stroke="currentColor"/><rect x="1" y="9" width="6" height="6" rx="1.5" stroke="currentColor"/><rect x="9" y="9" width="6" height="6" rx="1.5" stroke="currentColor"/></svg>
+              Dashboard
+            </div>
+            <div class="sb-item active" id="sb-cases">
+              <svg class="ico" viewBox="0 0 16 16" fill="none"><path d="M2 4h12v9a1 1 0 0 1-1 1H3a1 1 0 0 1-1-1V4Z" stroke="currentColor"/><path d="M6 4V2.5A.5.5 0 0 1 6.5 2h3a.5.5 0 0 1 .5.5V4" stroke="currentColor"/></svg>
+              Cases
+              <span class="mono" style="margin-left:auto; font-size:10px; color:var(--gold-1);">34</span>
+            </div>
+            <div class="sb-item" id="sb-intel">
+              <svg class="ico" viewBox="0 0 16 16" fill="none"><circle cx="8" cy="8" r="6" stroke="currentColor"/><path d="M8 4v4l2.5 1.5" stroke="currentColor" stroke-linecap="round"/></svg>
+              Intelligence
+            </div>
+            <div class="sb-item" id="sb-settings">
+              <svg class="ico" viewBox="0 0 16 16" fill="none"><circle cx="8" cy="8" r="2.5" stroke="currentColor"/><path d="M8 1v2M8 13v2M15 8h-2M3 8H1M13 3l-1.4 1.4M4.4 11.6 3 13M13 13l-1.4-1.4M4.4 4.4 3 3" stroke="currentColor"/></svg>
+              Settings
+            </div>
+            <div class="sb-label" style="margin-top:18px;">Quick filter</div>
+            <div class="sb-item" style="font-size:11.5px;">
+              <span style="width:8px;height:8px;border-radius:50%;background:var(--status-wait);"></span>
+              Awaiting client · 8
+            </div>
+            <div class="sb-item" style="font-size:11.5px;">
+              <span style="width:8px;height:8px;border-radius:50%;background:var(--status-proc);"></span>
+              Processing · 6
+            </div>
+            <div class="sb-item" style="font-size:11.5px;">
+              <span style="width:8px;height:8px;border-radius:50%;background:var(--status-done);"></span>
+              Completed · 112
+            </div>
+          </aside>
+
+          <!-- main area: holds all screens -->
+          <div class="app-main" id="app-main">
+
+            <!-- SCREEN 1: Case list -->
+            <div class="screen visible" data-screen="list">
+              <div class="screen-head">
+                <div>
+                  <div class="screen-title">Cases</div>
+                  <div class="crumbs">34 open · 8 awaiting client · 6 processing</div>
+                </div>
+                <button class="btn-chrome" style="padding:7px 14px; font-size:12px;">
+                  + New case
+                </button>
+              </div>
+
+              <div style="margin-top:10px;">
+                <div class="case-row" style="padding:6px 12px;">
+                  <div></div>
+                  <div class="mono" style="font-size:10px; color:var(--ink-mute); text-transform:uppercase; letter-spacing:0.1em;">Client</div>
+                  <div class="mono" style="font-size:10px; color:var(--ink-mute); text-transform:uppercase; letter-spacing:0.1em;">Route</div>
+                  <div class="mono" style="font-size:10px; color:var(--ink-mute); text-transform:uppercase; letter-spacing:0.1em;">Status</div>
+                  <div class="mono" style="font-size:10px; color:var(--ink-mute); text-transform:uppercase; letter-spacing:0.1em;">Team</div>
+                  <div class="mono" style="font-size:10px; color:var(--ink-mute); text-transform:uppercase; letter-spacing:0.1em; text-align:right;">Updated</div>
+                </div>
+
+                <div class="case-row" id="case-row-1">
+                  <div><span style="color:var(--gold-2); font-size:10px;">★</span></div>
+                  <div class="case-client">Margaret Chen<span class="sub">m.chen@stoneridge.com</span></div>
+                  <div class="case-route">Fidelity 401(k) <span class="arrow">→</span> Schwab IRA</div>
+                  <div><span class="status-pill wait"><span class="sdot"></span>AWAIT</span></div>
+                  <div class="avatars"><div class="av">RM</div><div class="av gold">OP</div></div>
+                  <div class="age">2h</div>
+                </div>
+                <div class="case-row">
+                  <div></div>
+                  <div class="case-client">David Okonkwo<span class="sub">d.oko@pinemtl.com</span></div>
+                  <div class="case-route">Vanguard 403(b) <span class="arrow">→</span> Fidelity IRA</div>
+                  <div><span class="status-pill proc"><span class="sdot"></span>PROC</span></div>
+                  <div class="avatars"><div class="av">JL</div><div class="av">OP</div></div>
+                  <div class="age">5h</div>
+                </div>
+                <div class="case-row">
+                  <div></div>
+                  <div class="case-client">Priya Raghavan<span class="sub">p.ragh@harbor.co</span></div>
+                  <div class="case-route">Empower 401(k) <span class="arrow">→</span> Altruist Roth</div>
+                  <div><span class="status-pill ready"><span class="sdot"></span>READY</span></div>
+                  <div class="avatars"><div class="av">RM</div></div>
+                  <div class="age">1d</div>
+                </div>
+                <div class="case-row">
+                  <div></div>
+                  <div class="case-client">Tom Hargrove<span class="sub">t.harg@elmwealth.com</span></div>
+                  <div class="case-route">Principal 401(k) <span class="arrow">→</span> Schwab IRA</div>
+                  <div><span class="status-pill transit"><span class="sdot"></span>TRANSIT</span></div>
+                  <div class="avatars"><div class="av">JL</div><div class="av gold">OP</div></div>
+                  <div class="age">2d</div>
+                </div>
+                <div class="case-row">
+                  <div></div>
+                  <div class="case-client">Sofia Delacroix<span class="sub">s.dela@ridgefield.com</span></div>
+                  <div class="case-route">T. Rowe 401(k) <span class="arrow">→</span> Fidelity IRA</div>
+                  <div><span class="status-pill done"><span class="sdot"></span>DONE</span></div>
+                  <div class="avatars"><div class="av">RM</div><div class="av">OP</div></div>
+                  <div class="age">3d</div>
+                </div>
+              </div>
+            </div>
+
+            <!-- SCREEN 2: Case detail -->
+            <div class="screen" data-screen="detail" style="padding:14px 18px;">
+              <div class="screen-head">
+                <div>
+                  <div class="crumbs">Cases / Margaret Chen</div>
+                  <div class="screen-title" style="margin-top:4px;">
+                    Margaret Chen
+                    <span style="color:var(--gold-2); font-size:13px; margin-left:8px;">★ Priority</span>
+                  </div>
+                </div>
+                <div id="status-select" class="status-select">
+                  <span class="sdot" id="cur-sdot" style="width:6px;height:6px;border-radius:50%;background:var(--status-wait);"></span>
+                  <span id="cur-label">AWAITING_CLIENT_ACTION</span>
+                  <svg width="10" height="10" viewBox="0 0 10 10" fill="none" style="opacity:.6;"><path d="M2 4l3 3 3-3" stroke="currentColor" stroke-width="1.4"/></svg>
+
+                  <div class="status-dropdown">
+                    <div class="opt" data-s="intake"><span class="sdot" style="width:6px;height:6px;border-radius:50%;background:var(--status-intake);"></span>INTAKE</div>
+                    <div class="opt current" data-s="wait"><span class="sdot" style="width:6px;height:6px;border-radius:50%;background:var(--status-wait);"></span>AWAITING_CLIENT_ACTION</div>
+                    <div class="opt" data-s="ready"><span class="sdot" style="width:6px;height:6px;border-radius:50%;background:var(--status-ready);"></span>READY_TO_SUBMIT</div>
+                    <div class="opt" data-s="submit"><span class="sdot" style="width:6px;height:6px;border-radius:50%;background:var(--status-submit);"></span>SUBMITTED</div>
+                    <div class="opt" data-s="proc"><span class="sdot" style="width:6px;height:6px;border-radius:50%;background:var(--status-proc);"></span>PROCESSING</div>
+                    <div class="opt" data-s="transit"><span class="sdot" style="width:6px;height:6px;border-radius:50%;background:var(--status-transit);"></span>IN_TRANSIT</div>
+                    <div class="opt" data-s="done"><span class="sdot" style="width:6px;height:6px;border-radius:50%;background:var(--status-done);"></span>COMPLETED</div>
+                  </div>
+                </div>
+              </div>
+
+              <div class="pipeline-bar">
+                <div class="seg on"></div>
+                <div class="seg on" id="pb-2"></div>
+                <div class="seg" id="pb-3"></div>
+                <div class="seg" id="pb-4"></div>
+                <div class="seg" id="pb-5"></div>
+                <div class="seg" id="pb-6"></div>
+                <div class="seg" id="pb-7"></div>
+              </div>
+              <div class="pipeline-labels">
+                <div>Intake</div>
+                <div class="current" id="pl-2">Awaiting</div>
+                <div id="pl-3">Ready</div>
+                <div id="pl-4">Submit</div>
+                <div id="pl-5">Proc</div>
+                <div id="pl-6">Transit</div>
+                <div id="pl-7">Done</div>
+              </div>
+
+              <div class="detail-grid" style="margin-top:14px;">
+                <!-- LEFT: details + checklist -->
+                <div style="display:flex; flex-direction:column; gap:10px;">
+                  <div class="panel">
+                    <div class="panel-title">Case details</div>
+                    <div class="kv"><span class="k">Source</span><span class="v">Fidelity · 401(k)</span></div>
+                    <div class="kv"><span class="k">Destination</span><span class="v">Schwab · Traditional IRA</span></div>
+                    <div class="kv"><span class="k">Advisor</span><span class="v">R. Medina</span></div>
+                    <div class="kv"><span class="k">Ops</span><span class="v">O. Park</span></div>
+                    <div class="kv"><span class="k">Opened</span><span class="v">Mar 18, 2026</span></div>
+                  </div>
+
+                  <div class="panel">
+                    <div class="panel-title" style="display:flex; justify-content:space-between;">
+                      <span>Checklist · <span id="cl-counter" class="mono" style="color:var(--gold-1); text-transform:none; letter-spacing:0;">2 / 5</span></span>
+                      <span class="mono" style="color:var(--ink-mute);">40%</span>
+                    </div>
+                    <div class="cl-item done" id="cl-1">
+                      <div class="cl-check"><svg viewBox="0 0 10 10"><path d="M2 5l2 2 4-5"/></svg></div>
+                      <span class="cl-name">Signed client authorization</span>
+                      <span class="cl-tag">REQUIRED</span>
+                    </div>
+                    <div class="cl-item done" id="cl-2">
+                      <div class="cl-check"><svg viewBox="0 0 10 10"><path d="M2 5l2 2 4-5"/></svg></div>
+                      <span class="cl-name">Recent statement (60d)</span>
+                      <span class="cl-tag">REQUIRED</span>
+                    </div>
+                    <div class="cl-item" id="cl-3">
+                      <div class="cl-check"><svg viewBox="0 0 10 10"><path d="M2 5l2 2 4-5"/></svg></div>
+                      <span class="cl-name">LOA — medallion notarized</span>
+                      <span class="cl-tag">REQUIRED</span>
+                    </div>
+                    <div class="cl-item" id="cl-4">
+                      <div class="cl-check"><svg viewBox="0 0 10 10"><path d="M2 5l2 2 4-5"/></svg></div>
+                      <span class="cl-name">Beneficiary designation</span>
+                      <span class="cl-tag">REQUIRED</span>
+                    </div>
+                    <div class="cl-item" id="cl-5">
+                      <div class="cl-check"><svg viewBox="0 0 10 10"><path d="M2 5l2 2 4-5"/></svg></div>
+                      <span class="cl-name">W-8 / W-9 on file</span>
+                      <span class="cl-tag">OPTIONAL</span>
+                    </div>
+                  </div>
+                </div>
+
+                <!-- RIGHT: tasks + activity -->
+                <div style="display:flex; flex-direction:column; gap:10px;">
+                  <div class="panel">
+                    <div class="panel-title">Open tasks</div>
+                    <div class="task" id="t-1">
+                      <div class="task-check"></div>
+                      <span>Call Margaret re: medallion</span>
+                      <span class="task-due">Today</span>
+                    </div>
+                    <div class="task" id="t-2">
+                      <div class="task-check"></div>
+                      <span>Confirm Schwab routing (TX)</span>
+                      <span class="task-due">Tue</span>
+                    </div>
+                    <div class="task" id="t-3">
+                      <div class="task-check"></div>
+                      <span>Follow up w/ Fidelity</span>
+                      <span class="task-due">Wed</span>
+                    </div>
+                  </div>
+
+                  <div class="panel">
+                    <div class="panel-title">Activity</div>
+                    <div class="activity-item shown" id="ac-0">
+                      <div class="activity-dot"></div>
+                      <div>
+                        <span class="activity-text"><b>R. Medina</b> created case</span>
+                        <span class="activity-time">Mar 18 · 10:24</span>
+                      </div>
+                    </div>
+                    <div class="activity-item shown" id="ac-1">
+                      <div class="activity-dot"></div>
+                      <div>
+                        <span class="activity-text"><b>O. Park</b> uploaded authorization</span>
+                        <span class="activity-time">Mar 19 · 09:02</span>
+                      </div>
+                    </div>
+                    <div class="activity-item" id="ac-2">
+                      <div class="activity-dot"></div>
+                      <div>
+                        <span class="activity-text"><b>Status</b> → READY_TO_SUBMIT</span>
+                        <span class="activity-time">just now</span>
+                      </div>
+                    </div>
+                    <div class="activity-item" id="ac-3">
+                      <div class="activity-dot"></div>
+                      <div>
+                        <span class="activity-text"><b>O. Park</b> submitted to Schwab</span>
+                        <span class="activity-time">just now</span>
+                      </div>
+                    </div>
+                  </div>
+                </div>
+              </div>
+            </div>
+
+            <!-- SCREEN 3: Intelligence chat -->
+            <div class="screen" data-screen="intel" style="padding:18px 22px;">
+              <div class="screen-head">
+                <div>
+                  <div class="screen-title">Intelligence</div>
+                  <div class="crumbs">Custodian intel · firm notes · mailing routes</div>
+                </div>
+                <span class="status-pill"><span class="sdot" style="background:var(--gold-2); box-shadow:0 0 6px var(--gold-2);"></span>CLAUDE</span>
+              </div>
+
+              <div style="display:grid; grid-template-columns: 1fr 0.9fr; gap:14px; margin-top:8px;">
+                <div class="panel" style="padding:16px; display:flex; flex-direction:column; gap:10px; min-height:260px;">
+                  <div style="display:flex; gap:10px;">
+                    <div class="av" style="width:26px; height:26px; background:linear-gradient(135deg,#2a2e38,#1a1d24); border-radius:50%; display:flex; align-items:center; justify-content:center; font-size:10px; font-weight:600; color:var(--ink-dim);">RM</div>
+                    <div style="background:rgba(255,255,255,0.03); padding:10px 12px; border-radius:10px; border:1px solid var(--line); font-size:12px;">
+                      What's Schwab's process for a TX-based client doing a 401k → IRA rollover?
+                    </div>
+                  </div>
+
+                  <div style="display:flex; gap:10px;">
+                    <div class="av" style="width:26px; height:26px; background:linear-gradient(135deg,var(--gold-4),var(--gold-2)); border-radius:50%; display:flex; align-items:center; justify-content:center; font-size:10px; font-weight:700; color:#2a1d08;">R</div>
+                    <div style="flex:1; background:rgba(var(--gold-glow)/0.04); padding:10px 12px; border-radius:10px; border:1px solid rgba(var(--gold-glow)/0.2); font-size:12px; color:var(--ink-dim);">
+                      <div id="ai-text" style="min-height:18px;"></div>
+                      <div style="margin-top:10px; display:flex; gap:6px; flex-wrap:wrap;" id="ai-tools">
+                        <span class="cl-tag" style="color:var(--gold-1); border-color:rgba(var(--gold-glow)/0.3); opacity:0;" id="ai-tool-1">🔧 search_custodians("Schwab")</span>
+                        <span class="cl-tag" style="color:var(--gold-1); border-color:rgba(var(--gold-glow)/0.3); opacity:0;" id="ai-tool-2">🔧 mailing_route("TX")</span>
+                      </div>
+                    </div>
+                  </div>
+                </div>
+
+                <div class="panel" style="padding:14px;">
+                  <div class="panel-title">Directory · Schwab</div>
+                  <div class="kv"><span class="k">Processing</span><span class="v">5–7 business days</span></div>
+                  <div class="kv"><span class="k">Medallion</span><span class="v">Required &gt; $250k</span></div>
+                  <div class="kv"><span class="k">ACATS</span><span class="v">Yes</span></div>
+                  <div class="kv"><span class="k">Mailing · TX</span><span class="v" id="route-val" style="color:var(--gold-1);">El Paso, TX</span></div>
+                  <div style="margin-top:10px; padding:8px 10px; background:rgba(var(--gold-glow)/0.06); border:1px solid rgba(var(--gold-glow)/0.2); border-radius:6px; font-size:11px; color:var(--ink-dim);">
+                    <span class="mono" style="color:var(--gold-1); font-size:10px;">FIRM NOTE</span><br>
+                    Last TX rollover took 4 days when sent to El Paso vs 8 to Omaha. Always use state-match.
+                  </div>
+                </div>
+              </div>
+            </div>
+
+          </div>
+        </div>
+
+        <!-- Cursor -->
+        <div class="cursor" id="cursor">
+          <svg viewBox="0 0 24 24" fill="none">
+            <path d="M3 2l7 18 3-8 8-3L3 2z" fill="#f6f2ea" stroke="#0a0b0e" stroke-width="1.2" stroke-linejoin="round"/>
+          </svg>
+        </div>
+
+        <!-- Toast -->
+        <div class="toast" id="toast">
+          <span class="tdot"></span>
+          <span id="toast-msg">Status → READY_TO_SUBMIT</span>
+        </div>
+
+      </div>
+    </div>
+
+    <!-- Demo progress -->
+    <div class="demo-progress" id="demo-progress">
+      <div class="dp active" data-scene="0" style="--dur:5s;"><span class="num">01</span> Open case<span class="bar"></span></div>
+      <div class="dp" data-scene="1" style="--dur:7s;"><span class="num">02</span> Advance pipeline<span class="bar"></span></div>
+      <div class="dp" data-scene="2" style="--dur:5s;"><span class="num">03</span> Ask intelligence<span class="bar"></span></div>
+    </div>
+  </div>
+</header>
+
+
+<!-- ─── WORKFLOW / FEATURES ───────────────────────────────── -->
+<section id="product">
+  <div class="wrap">
+    <div class="sec-label">Why Rift</div>
+    <h2 class="sec-title">A structured pipeline <em>where a thread used to be.</em></h2>
+    <p class="sec-sub">Spreadsheets track; Rift drives. Every case moves through seven disciplined stages, with checklists, tasks, and an audit log that nobody has to maintain by hand.</p>
+
+    <div class="feat-grid">
+      <div class="glass-card">
+        <div class="feat-num">01 / PIPELINE</div>
+        <div class="feat-h">Seven stages. Zero ambiguity.</div>
+        <div class="feat-b">Intake → Awaiting Client → Ready → Submitted → Processing → In Transit → Complete. Advance a status, the checklist and activity log follow.</div>
+        <div class="feat-visual">
+          <svg width="100%" height="100%" viewBox="0 0 300 92" preserveAspectRatio="none">
+            <g transform="translate(20,46)">
+              <line x1="0" y1="0" x2="260" y2="0" stroke="rgba(246,242,234,0.08)" stroke-width="2" stroke-dasharray="3 5"/>
+              <line x1="0" y1="0" x2="140" y2="0" stroke="url(#g1)" stroke-width="2"/>
+              <defs>
+                <linearGradient id="g1" x1="0" y1="0" x2="1" y2="0">
+                  <stop offset="0" stop-color="#8a6434"/>
+                  <stop offset="1" stop-color="#e9d4a3"/>
+                </linearGradient>
+              </defs>
+            </g>
+            <g font-family="JetBrains Mono, monospace" font-size="7" fill="#b8b3a8">
+              <circle cx="20" cy="46" r="4" fill="#c19a5b"/>
+              <circle cx="60" cy="46" r="4" fill="#c19a5b"/>
+              <circle cx="100" cy="46" r="4" fill="#c19a5b"/>
+              <circle cx="140" cy="46" r="4" fill="#c19a5b"/>
+              <circle cx="180" cy="46" r="3.5" fill="none" stroke="rgba(246,242,234,0.2)"/>
+              <circle cx="220" cy="46" r="3.5" fill="none" stroke="rgba(246,242,234,0.2)"/>
+              <circle cx="260" cy="46" r="3.5" fill="none" stroke="rgba(246,242,234,0.2)"/>
+            </g>
+          </svg>
+        </div>
+      </div>
+
+      <div class="glass-card">
+        <div class="feat-num">02 / INTELLIGENCE</div>
+        <div class="feat-h">Custodian intel that remembers.</div>
+        <div class="feat-b">25+ custodians mapped. Ask Claude how Schwab routes a Texas 401(k) — it cites your firm's own tribal knowledge and mailing rules.</div>
+        <div class="feat-visual" style="flex-direction:column; gap:6px; padding:10px 16px; align-items:stretch;">
+          <div style="font-size:9px; color:var(--gold-1); font-family:'JetBrains Mono',monospace;">🔧 search_custodians("Schwab")</div>
+          <div style="font-size:10px; color:var(--ink-dim);">Medallion required over $250k. Mail to El Paso for TX clients.</div>
+          <div style="font-size:9px; color:var(--ink-mute); font-family:'JetBrains Mono',monospace;">3 firm notes · 12 citations</div>
+        </div>
+      </div>
+
+      <div class="glass-card">
+        <div class="feat-num">03 / AUDIT</div>
+        <div class="feat-h">Immutable, not imaginary.</div>
+        <div class="feat-b">Every status change, upload, and task completion is logged with actor and timestamp. Answer "who did what and when" in one click.</div>
+        <div class="feat-visual" style="flex-direction:column; gap:4px; padding:10px 14px; align-items:stretch; font-size:10px;">
+          <div style="display:flex; gap:6px; align-items:center; color:var(--ink-dim);">
+            <span style="width:4px; height:4px; border-radius:50%; background:var(--gold-2);"></span>
+            <b style="color:var(--ink);">R. Medina</b> · CASE_CREATED <span style="color:var(--ink-mute); margin-left:auto; font-family:'JetBrains Mono',monospace;">10:24</span>
+          </div>
+          <div style="display:flex; gap:6px; align-items:center; color:var(--ink-dim);">
+            <span style="width:4px; height:4px; border-radius:50%; background:var(--gold-2);"></span>
+            <b style="color:var(--ink);">O. Park</b> · FILE_UPLOADED <span style="color:var(--ink-mute); margin-left:auto; font-family:'JetBrains Mono',monospace;">09:02</span>
+          </div>
+          <div style="display:flex; gap:6px; align-items:center; color:var(--ink-dim);">
+            <span style="width:4px; height:4px; border-radius:50%; background:var(--gold-2);"></span>
+            <b style="color:var(--ink);">System</b> · STATUS_CHANGED <span style="color:var(--ink-mute); margin-left:auto; font-family:'JetBrains Mono',monospace;">11:47</span>
+          </div>
+        </div>
+      </div>
+
+      <div class="glass-card">
+        <div class="feat-num">04 / CHECKLISTS</div>
+        <div class="feat-h">Paperwork, pre-packed.</div>
+        <div class="feat-b">Per-case checklists with status buckets (Requested → Received → Reviewed). Attach documents in place; never hunt for an LOA again.</div>
+        <div class="feat-visual" style="flex-direction:column; padding:10px 16px; align-items:stretch; gap:5px;">
+          <div style="display:flex; gap:8px; align-items:center; font-size:10px;">
+            <div style="width:12px; height:12px; border-radius:3px; background:linear-gradient(135deg,var(--gold-4),var(--gold-2));"></div>
+            <span style="color:var(--ink-mute); text-decoration:line-through;">Signed authorization</span>
+          </div>
+          <div style="display:flex; gap:8px; align-items:center; font-size:10px;">
+            <div style="width:12px; height:12px; border-radius:3px; background:linear-gradient(135deg,var(--gold-4),var(--gold-2));"></div>
+            <span style="color:var(--ink-mute); text-decoration:line-through;">Statement (60d)</span>
+          </div>
+          <div style="display:flex; gap:8px; align-items:center; font-size:10px;">
+            <div style="width:12px; height:12px; border-radius:3px; border:1.5px solid var(--line-2);"></div>
+            <span style="color:var(--ink-dim);">Medallion LOA</span>
+          </div>
+        </div>
+      </div>
+
+      <div class="glass-card">
+        <div class="feat-num">05 / ROLES</div>
+        <div class="feat-h">Advisor & Ops, not one person.</div>
+        <div class="feat-b">Admins see it all. Advisors see their cases. Ops see theirs. Workload charts keep anyone from drowning quietly.</div>
+        <div class="feat-visual" style="padding:10px 16px; align-items:stretch;">
+          <div style="width:100%; display:flex; flex-direction:column; gap:6px;">
+            <div style="font-size:9px; color:var(--ink-mute); display:flex; justify-content:space-between;"><span>R. Medina</span><span class="mono">12</span></div>
+            <div style="height:5px; background:rgba(255,255,255,0.04); border-radius:3px; overflow:hidden;"><div style="width:70%; height:100%; background:linear-gradient(90deg,var(--gold-3),var(--gold-1));"></div></div>
+            <div style="font-size:9px; color:var(--ink-mute); display:flex; justify-content:space-between;"><span>J. Liu</span><span class="mono">9</span></div>
+            <div style="height:5px; background:rgba(255,255,255,0.04); border-radius:3px; overflow:hidden;"><div style="width:52%; height:100%; background:linear-gradient(90deg,var(--gold-3),var(--gold-1));"></div></div>
+            <div style="font-size:9px; color:var(--ink-mute); display:flex; justify-content:space-between;"><span>O. Park · ops</span><span class="mono">18</span></div>
+            <div style="height:5px; background:rgba(255,255,255,0.04); border-radius:3px; overflow:hidden;"><div style="width:92%; height:100%; background:linear-gradient(90deg,var(--gold-3),var(--gold-1));"></div></div>
+          </div>
+        </div>
+      </div>
+
+      <div class="glass-card">
+        <div class="feat-num">06 / REMINDERS</div>
+        <div class="feat-h">Nudges that don't nag.</div>
+        <div class="feat-b">Automated reminder engine with 20-hour dedup. Configurable thresholds for stalled cases, missing docs, and overdue tasks. Dry-run before every send.</div>
+        <div class="feat-visual" style="padding:10px 16px; align-items:stretch; font-size:10px; color:var(--ink-dim);">
+          <div style="display:flex; flex-direction:column; gap:4px; width:100%;">
+            <div style="display:flex; justify-content:space-between;"><span>Stalled · 7d</span><span class="mono" style="color:var(--gold-1);">ON</span></div>
+            <div style="display:flex; justify-content:space-between;"><span>Missing docs · 48h</span><span class="mono" style="color:var(--gold-1);">ON</span></div>
+            <div style="display:flex; justify-content:space-between;"><span>Overdue tasks · daily</span><span class="mono" style="color:var(--gold-1);">ON</span></div>
+          </div>
+        </div>
+      </div>
+    </div>
+  </div>
+</section>
+
+
+<!-- ─── PIPELINE VIZ ───────────────────────────────────────── -->
+<section id="workflow">
+  <div class="wrap">
+    <div class="sec-label">The rollover pipeline</div>
+    <h2 class="sec-title">From intake to complete <em>— one lane.</em></h2>
+    <p class="sec-sub">Every stage has owners, exit criteria, and a dwell-time SLA. Watch a case move.</p>
+
+    <div class="pipeline-viz">
+      <div class="pipe-stages" id="pipe-stages">
+        <div class="pipe-stage" data-idx="0"><div class="n">01</div><div class="nm">Intake</div><div class="ct">4 cases</div></div>
+        <div class="pipe-stage" data-idx="1"><div class="n">02</div><div class="nm">Awaiting</div><div class="ct">8 cases</div></div>
+        <div class="pipe-stage" data-idx="2"><div class="n">03</div><div class="nm">Ready</div><div class="ct">3 cases</div></div>
+        <div class="pipe-stage" data-idx="3"><div class="n">04</div><div class="nm">Submitted</div><div class="ct">5 cases</div></div>
+        <div class="pipe-stage" data-idx="4"><div class="n">05</div><div class="nm">Processing</div><div class="ct">6 cases</div></div>
+        <div class="pipe-stage" data-idx="5"><div class="n">06</div><div class="nm">In Transit</div><div class="ct">4 cases</div></div>
+        <div class="pipe-stage" data-idx="6"><div class="n">07</div><div class="nm">Complete</div><div class="ct">112 cases</div></div>
+      </div>
+
+      <div style="margin-top:22px; display:grid; grid-template-columns: repeat(7, 1fr); gap:6px; font-size:10px; color:var(--ink-mute); font-family:'JetBrains Mono',monospace;">
+        <div>avg 2d</div><div>avg 4d</div><div>avg 1d</div><div>avg 1d</div><div>avg 5d</div><div>avg 3d</div><div>—</div>
+      </div>
+    </div>
+
+    <!-- stats -->
+    <div class="stats-row">
+      <div class="stat"><div class="val">41%</div><div class="lbl">Reduction in rollover cycle time</div></div>
+      <div class="stat"><div class="val">25+</div><div class="lbl">Custodians mapped, routed, and annotated</div></div>
+      <div class="stat"><div class="val">0</div><div class="lbl">Cases lost to a dropped email thread</div></div>
+      <div class="stat"><div class="val">3mo</div><div class="lbl">Typical time to firm-wide adoption</div></div>
+    </div>
+  </div>
+</section>
+
+
+<!-- ─── TESTIMONIAL ────────────────────────────────────────── -->
+<section id="customers" style="padding-top:40px;">
+  <div class="wrap">
+    <div class="quote-card">
+      <p class="quote-text">Before Rift, we ran every rollover out of a shared inbox and a Google Sheet someone had to babysit. Now our ops lead actually has Fridays.</p>
+      <div class="quote-meta">
+        <div class="quote-av">RM</div>
+        <div>
+          <div class="quote-name">Rachel Medina</div>
+          <div class="quote-role">Partner · Stoneridge Wealth · 14 advisors</div>
+        </div>
+        <div style="margin-left:auto; display:flex; gap:6px; align-items:center;">
+          <span class="mono" style="font-size:11px; color:var(--ink-mute);">AUM</span>
+          <span class="mono" style="font-size:14px; color:var(--gold-1);">$1.8B</span>
+        </div>
+      </div>
+    </div>
+  </div>
+</section>
+
+
+<!-- ─── CTA ────────────────────────────────────────────────── -->
+<section id="pricing" style="padding-bottom:0;">
+  <div class="wrap">
+    <div class="cta-block">
+      <h2>Put your rollovers <em>on the rails.</em></h2>
+      <p>30-minute walkthrough. We'll load one of your live cases into a sandbox and move it through the pipeline with you.</p>
+      <button class="btn-chrome" style="padding:14px 28px; font-size:15px;">
+        Book a demo
+        <svg width="14" height="14" viewBox="0 0 12 12" fill="none"><path d="M3 6h6M6 3l3 3-3 3" stroke="currentColor" stroke-width="1.8" stroke-linecap="round" stroke-linejoin="round"/></svg>
+      </button>
+      <div style="margin-top:18px; font-size:12px; color:var(--ink-mute);" class="mono">NO CARD · NO SALES LOOPS · 30 MIN</div>
+    </div>
+  </div>
+</section>
+
+
+<!-- ─── FOOTER ─────────────────────────────────────────────── -->
+<footer>
+  <div class="wrap foot-row">
+    <div style="display:flex; align-items:center; gap:10px;">
+      <div class="brand-glyph" style="width:20px; height:20px;"></div>
+      <span>Rift · 2026</span>
+      <span class="mono" style="color:var(--ink-mute); margin-left:10px;">Made for independent RIAs</span>
+    </div>
+    <div class="foot-links">
+      <a href="#">Security</a>
+      <a href="#">Privacy</a>
+      <a href="#">Status</a>
+      <a href="#">Changelog</a>
+      <a href="#">Contact</a>
+    </div>
+  </div>
+</footer>
+
+
+<!-- ═══════════════════════════════════════════════════════════════
+     ANIMATION ENGINE
+     Orchestrates cursor movement + UI updates across 3 scenes.
+   ═══════════════════════════════════════════════════════════════ -->
+<script>
+(() => {
+  const stage = document.getElementById('stage');          // outer .stage-inner, bounded
+  const appMain = document.getElementById('app-main');
+  const cursor = document.getElementById('cursor');
+  const toast = document.getElementById('toast');
+  const toastMsg = document.getElementById('toast-msg');
+  const progressEls = [...document.querySelectorAll('.demo-progress .dp')];
+  const screens = {
+    list:   stage.querySelector('[data-screen="list"]'),
+    detail: stage.querySelector('[data-screen="detail"]'),
+    intel:  stage.querySelector('[data-screen="intel"]'),
+  };
+  const sbDash = document.getElementById('sb-dash');
+  const sbCases = document.getElementById('sb-cases');
+  const sbIntel = document.getElementById('sb-intel');
+
+  let running = true;
+  let timers = [];
+  let lastTarget = null; // element currently wearing .cursor-target
+  const after = (ms, fn) => { const t = setTimeout(() => { if (running) fn(); }, ms); timers.push(t); return t; };
+  const clearAll = () => { timers.forEach(clearTimeout); timers = []; };
+
+  function clearTarget() {
+    if (lastTarget) {
+      lastTarget.classList.remove('cursor-target', 'cursor-clicked');
+      lastTarget = null;
+    }
+  }
+
+  // Move cursor to an element, clamped to stage bounds. Halos the element.
+  function moveTo(el, { halo = true } = {}) {
+    if (!el) return;
+    const sRect = stage.getBoundingClientRect();
+    const tRect = el.getBoundingClientRect();
+    // If element is hidden (zero-size), skip silently
+    if (tRect.width === 0 || tRect.height === 0) return;
+    let x = tRect.left - sRect.left + tRect.width/2;
+    let y = tRect.top - sRect.top + tRect.height/2;
+    // clamp within stage (10px margin)
+    x = Math.max(14, Math.min(sRect.width - 14, x));
+    y = Math.max(14, Math.min(sRect.height - 14, y));
+    cursor.style.transform = `translate(${x - 4}px, ${y - 4}px)`;
+
+    // swap target halo
+    clearTarget();
+    if (halo) {
+      el.classList.add('cursor-target');
+      lastTarget = el;
+    }
+  }
+
+  function moveToXY(x, y) {
+    const sRect = stage.getBoundingClientRect();
+    x = Math.max(14, Math.min(sRect.width - 14, x));
+    y = Math.max(14, Math.min(sRect.height - 14, y));
+    cursor.style.transform = `translate(${x - 4}px, ${y - 4}px)`;
+    clearTarget();
+  }
+
+  function click() {
+    cursor.classList.add('clicking');
+    if (lastTarget) lastTarget.classList.add('cursor-clicked');
+    after(600, () => cursor.classList.remove('clicking'));
+  }
+
+  function showToast(msg) {
+    toastMsg.textContent = msg;
+    toast.classList.add('show');
+    after(2200, () => toast.classList.remove('show'));
+  }
+
+  function showScreen(name) {
+    Object.entries(screens).forEach(([k, el]) => {
+      el.classList.toggle('visible', k === name);
+    });
+  }
+
+  function setActiveSidebar(which) {
+    [sbDash, sbCases, sbIntel].forEach(el => el.classList.remove('active'));
+    if (which === 'cases') sbCases.classList.add('active');
+    if (which === 'intel') sbIntel.classList.add('active');
+  }
+
+  function setSceneIndicator(i) {
+    progressEls.forEach((el, idx) => {
+      el.classList.toggle('active', idx === i);
+      const bar = el.querySelector('.bar');
+      if (bar) {
+        const clone = bar.cloneNode(true);
+        bar.parentNode.replaceChild(clone, bar);
+      }
+    });
+  }
+
+  const curSdot = document.getElementById('cur-sdot');
+  const curLabel = document.getElementById('cur-label');
+
+  const statuses = [
+    {key:'intake',  name:'INTAKE',                   color:'var(--status-intake)'},
+    {key:'wait',    name:'AWAITING_CLIENT_ACTION',   color:'var(--status-wait)'},
+    {key:'ready',   name:'READY_TO_SUBMIT',          color:'var(--status-ready)'},
+    {key:'submit',  name:'SUBMITTED',                color:'var(--status-submit)'},
+    {key:'proc',    name:'PROCESSING',               color:'var(--status-proc)'},
+    {key:'transit', name:'IN_TRANSIT',               color:'var(--status-transit)'},
+    {key:'done',    name:'COMPLETED',                color:'var(--status-done)'},
+  ];
+
+  function setStatusTo(i) {
+    const s = statuses[i];
+    curSdot.style.background = s.color;
+    curLabel.textContent = s.name;
+    for (let j = 0; j < 7; j++) {
+      const seg = document.querySelector(`.pipeline-bar .seg:nth-child(${j+1})`);
+      if (seg) seg.classList.toggle('on', j <= i);
+      const lbl = document.querySelector(`.pipeline-labels > div:nth-child(${j+1})`);
+      if (lbl) lbl.classList.toggle('current', j === i);
+    }
+    document.querySelectorAll('.status-dropdown .opt').forEach(o => o.classList.remove('current','selecting'));
+    const cur = document.querySelector(`.status-dropdown .opt[data-s="${s.key}"]`);
+    if (cur) cur.classList.add('current');
+  }
+
+  function resetCase() {
+    setStatusTo(1);
+    ['cl-3','cl-4','cl-5'].forEach(id => document.getElementById(id).classList.remove('done'));
+    document.getElementById('cl-1').classList.add('done');
+    document.getElementById('cl-2').classList.add('done');
+    document.getElementById('cl-counter').textContent = '2 / 5';
+    ['t-1','t-2','t-3'].forEach(id => document.getElementById(id).querySelector('.task-check').classList.remove('done'));
+    ['ac-2','ac-3'].forEach(id => document.getElementById(id).classList.remove('shown'));
+    document.getElementById('status-select').classList.remove('open');
+    document.querySelectorAll('.case-row').forEach(r => r.classList.remove('highlight'));
+  }
+
+  function updateChecklistCounter() {
+    const total = 5;
+    const done = document.querySelectorAll('.cl-item.done').length;
+    document.getElementById('cl-counter').textContent = `${done} / ${total}`;
+    const pct = Math.round(done/total*100);
+    const pctEl = document.querySelector('#cl-counter').parentElement.querySelector('.mono');
+    if (pctEl) pctEl.textContent = pct + '%';
+  }
+
+  // TIMING (ms). move = transition duration (1.7s CSS), so we wait 1800 before click.
+  const MOVE = 1800;   // time for cursor to reach target
+  const DWELL = 700;   // time after click before moving away
+  const SCREEN_FADE = 600;
+
+  // ─────────── Scene 1: List → click case row
+  function scene1() {
+    setSceneIndicator(0);
+    showScreen('list');
+    setActiveSidebar('cases');
+    resetCase();
+    clearTarget();
+
+    // Start cursor at top-left of stage inner (inside sidebar area)
+    moveToXY(60, 80);
+
+    after(400, () => {
+      moveTo(document.getElementById('case-row-1'));
+    });
+    after(400 + MOVE, () => {
+      click();
+      document.getElementById('case-row-1').classList.add('highlight');
+      showToast('Opening Margaret Chen');
+    });
+    after(400 + MOVE + DWELL + 400, () => scene2());
+  }
+
+  // ─────────── Scene 2: Detail → tick checklist, change status, complete task
+  function scene2() {
+    setSceneIndicator(1);
+    showScreen('detail');
+    clearTarget();
+
+    let t = SCREEN_FADE;
+
+    // 1. Tick checklist item 3
+    after(t, () => moveTo(document.getElementById('cl-3')));
+    t += MOVE;
+    after(t, () => {
+      click();
+      document.getElementById('cl-3').classList.add('done');
+      updateChecklistCounter();
+    });
+    t += DWELL;
+
+    // 2. Tick checklist item 4
+    after(t, () => moveTo(document.getElementById('cl-4')));
+    t += MOVE;
+    after(t, () => {
+      click();
+      document.getElementById('cl-4').classList.add('done');
+      updateChecklistCounter();
+      showToast('Medallion LOA · uploaded');
+    });
+    t += DWELL + 300;
+
+    // 3. Open status dropdown
+    after(t, () => moveTo(document.getElementById('status-select')));
+    t += MOVE;
+    after(t, () => {
+      click();
+      document.getElementById('status-select').classList.add('open');
+    });
+    t += DWELL;
+
+    // 4. Click READY option
+    after(t, () => {
+      const opt = document.querySelector('.status-dropdown .opt[data-s="ready"]');
+      moveTo(opt);
+      opt.classList.add('selecting');
+    });
+    t += MOVE;
+    after(t, () => {
+      click();
+      setStatusTo(2);
+      document.getElementById('status-select').classList.remove('open');
+      document.getElementById('ac-2').classList.add('shown');
+      showToast('Status → READY_TO_SUBMIT');
+    });
+    t += DWELL + 200;
+
+    // 5. Complete a task
+    after(t, () => moveTo(document.getElementById('t-1')));
+    t += MOVE;
+    after(t, () => {
+      click();
+      document.getElementById('t-1').querySelector('.task-check').classList.add('done');
+    });
+    t += DWELL;
+
+    // 6. Advance to submitted
+    after(t, () => {
+      setStatusTo(3);
+      document.getElementById('ac-3').classList.add('shown');
+      showToast('Submitted to Schwab');
+    });
+    t += 1200;
+
+    after(t, () => scene3());
+  }
+
+  // ─────────── Scene 3: Intelligence
+  function scene3() {
+    setSceneIndicator(2);
+    showScreen('intel');
+    setActiveSidebar('intel');
+    clearTarget();
+
+    const aiText = document.getElementById('ai-text');
+    const aiTool1 = document.getElementById('ai-tool-1');
+    const aiTool2 = document.getElementById('ai-tool-2');
+    aiText.textContent = '';
+    aiTool1.style.opacity = 0;
+    aiTool2.style.opacity = 0;
+    const routeVal = document.getElementById('route-val');
+    routeVal.style.background = '';
+    routeVal.style.padding = '';
+
+    let t = SCREEN_FADE;
+
+    // 1. Click the Intelligence nav item
+    after(t, () => moveTo(sbIntel));
+    t += MOVE;
+    after(t, () => click());
+    t += DWELL;
+
+    // 2. Tool calls appear
+    after(t, () => { aiTool1.style.opacity = 1; });
+    t += 500;
+    after(t, () => { aiTool2.style.opacity = 1; });
+    t += 500;
+
+    // 3. Typewriter response
+    const msg = "For a TX-based client, Schwab routes to their El Paso P.O. Box (not Omaha). Medallion signature required above $250k. Typical processing is 5–7 business days.";
+    after(t, () => {
+      let i = 0;
+      const tick = () => {
+        if (!running) return;
+        if (i <= msg.length) {
+          aiText.textContent = msg.slice(0, i);
+          i += 2;
+          setTimeout(tick, 22);
+        }
+      };
+      tick();
+    });
+    t += 2600;
+
+    // 4. Cursor moves to highlight route value
+    after(t, () => moveTo(routeVal));
+    t += MOVE;
+    after(t, () => {
+      routeVal.style.transition = 'all .4s';
+      routeVal.style.background = 'rgba(234,195,120,0.18)';
+      routeVal.style.padding = '2px 6px';
+      routeVal.style.borderRadius = '4px';
+      showToast('Route matched · TX → El Paso');
+    });
+    t += DWELL + 1400;
+
+    after(t, () => scene1());
+  }
+
+  // Start
+  setTimeout(() => { if (running) scene1(); }, 900);
+
+  // Pause when out of view
+  const io = new IntersectionObserver((entries) => {
+    entries.forEach(e => {
+      if (!e.isIntersecting) {
+        running = false;
+        clearAll();
+      } else if (!running) {
+        running = true;
+        clearAll();
+        scene1();
+      }
+    });
+  }, { threshold: 0.15 });
+  io.observe(stage);
+
+  // Progress dot click-to-scene
+  progressEls.forEach((el, i) => {
+    el.addEventListener('click', () => {
+      clearAll();
+      running = true;
+      if (i === 0) scene1();
+      if (i === 1) scene2();
+      if (i === 2) scene3();
+    });
+  });
+
+  // Pipeline viz active stage cycling
+  const pipeStages = [...document.querySelectorAll('#pipe-stages .pipe-stage')];
+  let pi = 0;
+  setInterval(() => {
+    pipeStages.forEach(s => s.classList.remove('active'));
+    pipeStages[pi].classList.add('active');
+    pi = (pi + 1) % pipeStages.length;
+  }, 1400);
+  pipeStages[0].classList.add('active');
+
+  // Smooth scroll for nav links
+  document.querySelectorAll('.nav-links a').forEach(a => {
+    a.addEventListener('click', (e) => {
+      const id = a.getAttribute('href').slice(1);
+      const tgt = document.getElementById(id);
+      if (tgt) { e.preventDefault(); const y = tgt.getBoundingClientRect().top + window.scrollY - 40; window.scrollTo({top:y, behavior:'smooth'}); }
+    });
+  });
+})();
+</script>
+
+</body>
+</html>

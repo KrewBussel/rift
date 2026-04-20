@@ -1,0 +1,126 @@
+<!doctype html>
+<html lang="en">
+<head>
+<meta charset="utf-8"/>
+<title>Rift — Landing Page Directions</title>
+<meta name="viewport" content="width=device-width, initial-scale=1"/>
+<link rel="preconnect" href="https://fonts.googleapis.com"/>
+<link rel="preconnect" href="https://fonts.gstatic.com" crossorigin/>
+<link href="https://fonts.googleapis.com/css2?family=Inter:wght@400;500;600;700&family=Instrument+Serif:ital@0;1&family=Source+Serif+4:ital,opsz,wght@0,8..60,400;0,8..60,500;0,8..60,600;1,8..60,400&family=JetBrains+Mono:wght@400;500;600&display=swap" rel="stylesheet"/>
+<style>
+  html, body { margin: 0; padding: 0; background: #f0eee9; overscroll-behavior: none; }
+  body { font-family: -apple-system, BlinkMacSystemFont, "Segoe UI", system-ui, sans-serif; }
+  * { box-sizing: border-box; }
+</style>
+<script src="https://unpkg.com/react@18.3.1/umd/react.development.js" integrity="sha384-hD6/rw4ppMLGNu3tX5cjIb+uRZ7UkRJ6BPkLpg4hAu/6onKUg4lLsHAs9EBPT82L" crossorigin="anonymous"></script>
+<script src="https://unpkg.com/react-dom@18.3.1/umd/react-dom.development.js" integrity="sha384-u6aeetuaXnQ38mYT8rp6sbXaQe3NL9t+IBXmnYxwkUI2Hw4bsp2Wvmx4yRQF1uAm" crossorigin="anonymous"></script>
+<script src="https://unpkg.com/@babel/standalone@7.29.0/babel.min.js" integrity="sha384-m08KidiNqLdpJqLq95G/LEi8Qvjl/xUYll3QILypMoQ65QorJ9Lvtp2RXYGBFj1y" crossorigin="anonymous"></script>
+</head>
+<body>
+<div id="root"></div>
+
+<script type="text/babel" src="design-canvas.jsx"></script>
+<script type="text/babel" src="browser-window.jsx"></script>
+<script type="text/babel" src="design-1-control-room.jsx"></script>
+<script type="text/babel" src="design-2-editorial.jsx"></script>
+<script type="text/babel" src="design-3-motion.jsx"></script>
+
+<script type="text/babel" data-presets="react">
+const W = 1320;
+const H = 2400;
+
+function Frame({ title, url, children }) {
+  return (
+    <DCArtboard label={title} width={W} height={H}>
+      <ChromeWindow
+        tabs={[{ title }]}
+        activeIndex={0}
+        url={url}
+        width={W}
+        height={H}
+      >
+        {children}
+      </ChromeWindow>
+    </DCArtboard>
+  );
+}
+
+function App() {
+  return (
+    <DesignCanvas>
+      <div style={{ padding: '0 60px 40px', maxWidth: 1200 }}>
+        <div style={{
+          fontSize: 32, fontWeight: 600, letterSpacing: '-0.02em',
+          color: 'rgba(40,30,20,0.9)',
+        }}>Rift — landing page, three directions</div>
+        <div style={{
+          fontSize: 15, color: 'rgba(60,50,40,0.65)', marginTop: 6,
+          maxWidth: 820, lineHeight: 1.55,
+        }}>
+          Each artboard is a full landing page at 1320px, framed in a browser window.
+          Pinch/scroll to zoom, drag background to pan. The three directions explore
+          different emotional registers for the same audience (ops-first RIAs).
+        </div>
+      </div>
+
+      <DCSection
+        title="Direction 1 — Operational Control Room"
+        subtitle="Dark, dense, terminal-adjacent. Opens with a live pipeline. Voice: 'your ops desk as an instrument panel.'"
+      >
+        <Frame title="Rift · control room" url="rift.ops/control"><D1Landing /></Frame>
+        <div style={{ width: 340, paddingLeft: 8, position: 'relative' }}>
+          <DCPostIt top={20} left={0} rotate={-3} width={300}>
+            Product-first hero. A case table with real flags (STALE, NIGO) shows what Rift replaces.
+          </DCPostIt>
+          <DCPostIt top={220} left={20} rotate={2} width={300}>
+            Mono accents + lime signal colour = ops/engineering feel. Good for a founder-led RIA who wants to look modern.
+          </DCPostIt>
+          <DCPostIt top={440} left={0} rotate={-2} width={300}>
+            Risk: reads more like dev tool than fintech. Tone down lime if compliance buyers push back.
+          </DCPostIt>
+        </div>
+      </DCSection>
+
+      <DCSection
+        title="Direction 2 — Editorial Trust"
+        subtitle="Light, serif-led, financial-publication feel. Voice: 'a rollover journal for independent advisors.'"
+      >
+        <Frame title="Rift · journal" url="rift.systems"><D2Landing /></Frame>
+        <div style={{ width: 340, paddingLeft: 8, position: 'relative' }}>
+          <DCPostIt top={20} left={0} rotate={-2} width={300}>
+            Newspaper masthead + drop-cap columns + pull-quotes. Feels trustworthy to compliance-minded buyers.
+          </DCPostIt>
+          <DCPostIt top={220} left={20} rotate={3} width={300}>
+            Case study reads like an article. The "figures" block (6→3 weeks, 94%, 0 integrations) makes the ROI concrete.
+          </DCPostIt>
+          <DCPostIt top={440} left={0} rotate={-1} width={300}>
+            Quietest of the three. Leans on typography and rhythm instead of interactive chrome.
+          </DCPostIt>
+        </div>
+      </DCSection>
+
+      <DCSection
+        title="Direction 3 — Motion Pipeline"
+        subtitle="Modern SaaS with a living pipeline diagram as the hero metaphor. Voice: 'rollovers on rails.'"
+      >
+        <Frame title="Rift · on rails" url="rift.app"><D3Landing /></Frame>
+        <div style={{ width: 340, paddingLeft: 8, position: 'relative' }}>
+          <DCPostIt top={20} left={0} rotate={-3} width={300}>
+            Hero = a 7-station pipeline diagram. Big Instrument Serif display type + orange signal. Feels category-defining.
+          </DCPostIt>
+          <DCPostIt top={220} left={20} rotate={2} width={300}>
+            Before/After panel makes the replace-the-spreadsheet promise unmissable. Good for demo-day style pitches.
+          </DCPostIt>
+          <DCPostIt top={440} left={0} rotate={-2} width={300}>
+            Most approachable of the three. If in doubt, start here and borrow the audit timeline from D2.
+          </DCPostIt>
+        </div>
+      </DCSection>
+    </DesignCanvas>
+  );
+}
+
+ReactDOM.createRoot(document.getElementById('root')).render(<App />);
+</script>
+</body>
+</html>
