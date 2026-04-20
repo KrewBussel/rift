@@ -1,0 +1,354 @@
+generator client {
+  provider = "prisma-client-js"
+}
+
+datasource db {
+  provider = "postgresql"
+}
+
+model Firm {
+  id        String   @id @default(cuid())
+  name      String
+  createdAt DateTime @default(now())
+  updatedAt DateTime @updatedAt
+
+  // Organization profile
+  legalName       String?
+  taxId           String?
+  businessAddress String?
+  supportEmail    String?
+  supportPhone    String?
+  websiteUrl      String?
+  logoUrl         String?
+
+  // Billing & plan
+  planTier       PlanTier  @default(STARTER)
+  seatsLimit     Int       @default(5)
+  billingEmail   String?
+  renewalDate    DateTime?
+  stripeCustomerId String?
+
+  // AI quota
+  aiMonthlyTokenLimit Int    @default(500000)
+  aiPlanName          String @default("Starter")
+
+  users          User[]
+  cases          RolloverCase[]
+  settings       FirmSettings?
+  reminderLogs   ReminderLog[]
+  custodianNotes CustodianNote[]
+  auditLogs      AuditLog[]
+  aiUsageLogs    AIUsageLog[]
+}
+
+enum PlanTier {
+  STARTER
+  PRO
+  ENTERPRISE
+}
+
+model FirmSettings {
+  id                   String   @id @default(cuid())
+  firmId               String   @unique
+  remindersEnabled     Boolean  @default(true)
+  stalledCaseDays      Int      @default(7)
+  overdueTaskReminders Boolean  @default(true)
+  stalledCaseReminders Boolean  @default(true)
+  missingDocsReminders Boolean  @default(false)
+
+  // Firm-level security (firm may opt stricter than Rift baseline)
+  require2FA Boolean @default(false)
+
+  // Firm-level compliance
+  complianceContactEmail String?
+  allowDataExport        Boolean @default(true)
+
+  createdAt DateTime @default(now())
+  updatedAt DateTime @updatedAt
+
+  firm Firm @relation(fields: [firmId], references: [id], onDelete: Cascade)
+}
+
+model ReminderLog {
+  id          String   @id @default(cuid())
+  firmId      String
+  type        String
+  referenceId String
+  sentTo      String
+  sentAt      DateTime @default(now())
+
+  firm Firm @relation(fields: [firmId], references: [id], onDelete: Cascade)
+
+  @@index([type, referenceId, sentAt])
+}
+
+model User {
+  id          String   @id @default(cuid())
+  firstName   String
+  lastName    String
+  email       String   @unique
+  password    String
+  role        Role     @default(OPS)
+  firmId      String
+  preferences Json?
+  createdAt   DateTime @default(now())
+  updatedAt   DateTime @updatedAt
+
+  twoFactorEnabled  Boolean   @default(false)
+  twoFactorSecret   String?
+  passwordUpdatedAt DateTime?
+  lastLoginAt       DateTime?
+  deactivatedAt     DateTime?
+
+  firm             Firm           @relation(fields: [firmId], references: [id])
+  assignedCases    RolloverCase[] @relation("AssignedAdvisor")
+  ownedCases       RolloverCase[] @relation("AssignedOps")
+  activityEvents   ActivityEvent[]
+  notes            Note[]
+  assignedTasks    Task[]         @relation("AssignedTasks")
+  createdTasks     Task[]         @relation("CreatedTasks")
+  uploadedDocuments Document[]
+  custodianNotes   CustodianNote[]
+  auditLogs        AuditLog[]
+  aiUsageLogs      AIUsageLog[]
+}
+
+enum Role {
+  ADMIN
+  OPS
+  ADVISOR
+}
+
+model RolloverCase {
+  id                   String        @id @default(cuid())
+  clientFirstName      String
+  clientLastName       String
+  clientEmail          String
+  sourceProvider       String
+  destinationCustodian String
+  accountType          AccountType
+  status               CaseStatus    @default(INTAKE)
+  highPriority         Boolean       @default(false)
+  internalNotes        String?
+  assignedAdvisorId    String?
+  assignedOpsId        String?
+  firmId               String
+  statusUpdatedAt      DateTime      @default(now())
+  createdAt            DateTime      @default(now())
+  updatedAt            DateTime      @updatedAt
+
+  firm             Firm            @relation(fields: [firmId], references: [id])
+  assignedAdvisor  User?           @relation("AssignedAdvisor", fields: [assignedAdvisorId], references: [id])
+  assignedOps      User?           @relation("AssignedOps", fields: [assignedOpsId], references: [id])
+  activityEvents   ActivityEvent[]
+  notes            Note[]
+  tasks            Task[]
+  checklistItems   ChecklistItem[]
+  documents        Document[]
+}
+
+enum CaseStatus {
+  INTAKE
+  AWAITING_CLIENT_ACTION
+  READY_TO_SUBMIT
+  SUBMITTED
+  PROCESSING
+  IN_TRANSIT
+  COMPLETED
+}
+
+enum AccountType {
+  TRADITIONAL_IRA_401K
+  ROTH_IRA_401K
+  IRA_403B
+  OTHER
+}
+
+model ActivityEvent {
+  id           String    @id @default(cuid())
+  caseId       String
+  actorUserId  String
+  eventType    EventType
+  eventDetails String?
+  createdAt    DateTime  @default(now())
+
+  case  RolloverCase @relation(fields: [caseId], references: [id], onDelete: Cascade)
+  actor User         @relation(fields: [actorUserId], references: [id])
+}
+
+enum EventType {
+  CASE_CREATED
+  CASE_UPDATED
+  STATUS_CHANGED
+  NOTE_ADDED
+  OWNER_CHANGED
+  TASK_CREATED
+  TASK_COMPLETED
+  TASK_REOPENED
+  FILE_UPLOADED
+  FILE_DELETED
+  CHECKLIST_ITEM_UPDATED
+}
+
+model Task {
+  id           String     @id @default(cuid())
+  caseId       String
+  title        String
+  description  String?
+  assigneeId   String?
+  dueDate      DateTime?
+  status       TaskStatus @default(OPEN)
+  createdById  String
+  createdAt    DateTime   @default(now())
+  updatedAt    DateTime   @updatedAt
+
+  case      RolloverCase @relation(fields: [caseId], references: [id], onDelete: Cascade)
+  assignee  User?        @relation("AssignedTasks", fields: [assigneeId], references: [id])
+  createdBy User         @relation("CreatedTasks", fields: [createdById], references: [id])
+}
+
+enum TaskStatus {
+  OPEN
+  COMPLETED
+  BLOCKED
+}
+
+model Note {
+  id           String   @id @default(cuid())
+  caseId       String
+  authorUserId String
+  body         String
+  createdAt    DateTime @default(now())
+
+  case   RolloverCase @relation(fields: [caseId], references: [id], onDelete: Cascade)
+  author User         @relation(fields: [authorUserId], references: [id])
+}
+
+model ChecklistItem {
+  id        String          @id @default(cuid())
+  caseId    String
+  name      String
+  required  Boolean         @default(true)
+  status    ChecklistStatus @default(NOT_STARTED)
+  notes     String?
+  sortOrder Int             @default(0)
+  createdAt DateTime        @default(now())
+  updatedAt DateTime        @updatedAt
+
+  case      RolloverCase @relation(fields: [caseId], references: [id], onDelete: Cascade)
+  documents Document[]
+}
+
+enum ChecklistStatus {
+  NOT_STARTED
+  REQUESTED
+  RECEIVED
+  REVIEWED
+  COMPLETE
+}
+
+model Document {
+  id              String   @id @default(cuid())
+  caseId          String
+  checklistItemId String?
+  name            String
+  storagePath     String
+  fileType        String
+  fileSize        Int
+  uploadedById    String
+  createdAt       DateTime @default(now())
+
+  case          RolloverCase   @relation(fields: [caseId], references: [id], onDelete: Cascade)
+  checklistItem ChecklistItem? @relation(fields: [checklistItemId], references: [id])
+  uploadedBy    User           @relation(fields: [uploadedById], references: [id])
+}
+
+model Custodian {
+  id                      String   @id @default(cuid())
+  name                    String   @unique
+  legalName               String?
+  aliases                 String[] @default([])
+  phone                   String?
+  fax                     String?
+  email                   String?
+  website                 String?
+  mailingAddress          String?
+  overnightAddress        String?
+  wireInstructions        String?
+  typicalProcessingDays   Int?
+  minProcessingDays       Int?
+  maxProcessingDays       Int?
+  signatureRequirements   String?
+  medallionRequired       Boolean  @default(false)
+  medallionThreshold      Int?
+  notarizationRequired    Boolean  @default(false)
+  acceptsElectronic       Boolean  @default(false)
+  acceptsDigitalSignature Boolean  @default(false)
+  supportsACATS           Boolean  @default(true)
+  overview                String?
+  quirks                  String[] @default([])
+  commonForms             String[] @default([])
+  tags                    String[] @default([])
+  lastVerifiedAt          DateTime?
+  createdAt               DateTime @default(now())
+  updatedAt               DateTime @updatedAt
+
+  notes CustodianNote[]
+
+  @@index([name])
+}
+
+model CustodianNote {
+  id          String   @id @default(cuid())
+  custodianId String
+  firmId      String
+  authorId    String
+  title       String
+  body        String
+  category    String?
+  pinned      Boolean  @default(false)
+  createdAt   DateTime @default(now())
+  updatedAt   DateTime @updatedAt
+
+  custodian Custodian @relation(fields: [custodianId], references: [id], onDelete: Cascade)
+  firm      Firm      @relation(fields: [firmId], references: [id], onDelete: Cascade)
+  author    User      @relation(fields: [authorId], references: [id])
+
+  @@index([custodianId, firmId])
+}
+
+model AuditLog {
+  id           String   @id @default(cuid())
+  firmId       String
+  actorUserId  String?
+  action       String
+  resource     String
+  resourceId   String?
+  metadata     Json?
+  ipAddress    String?
+  userAgent    String?
+  createdAt    DateTime @default(now())
+
+  firm  Firm  @relation(fields: [firmId], references: [id], onDelete: Cascade)
+  actor User? @relation(fields: [actorUserId], references: [id])
+
+  @@index([firmId, createdAt])
+  @@index([action])
+}
+
+model AIUsageLog {
+  id            String   @id @default(cuid())
+  firmId        String
+  userId        String
+  model         String
+  inputTokens   Int
+  outputTokens  Int
+  cacheReadTokens  Int @default(0)
+  cacheWriteTokens Int @default(0)
+  createdAt     DateTime @default(now())
+
+  firm Firm @relation(fields: [firmId], references: [id], onDelete: Cascade)
+  user User @relation(fields: [userId], references: [id])
+
+  @@index([firmId, createdAt])
+}

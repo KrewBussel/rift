@@ -3,6 +3,14 @@ import { createPresignedPost } from "@aws-sdk/s3-presigned-post";
 import { auth } from "@/lib/auth";
 import { prisma } from "@/lib/prisma";
 import { s3, S3_BUCKET } from "@/lib/s3";
+import { parseQuery } from "@/lib/validation";
+import { z } from "zod";
+
+const PresignQuerySchema = z.object({
+  filename: z.string().min(1).max(500),
+  fileType: z.string().min(1).max(200),
+  fileSize: z.coerce.number().int().positive(),
+});
 
 const ALLOWED_TYPES: Record<string, string> = {
   "application/pdf": "pdf",
@@ -24,20 +32,16 @@ export async function GET(
   const session = await auth();
   if (!session?.user) return NextResponse.json({ error: "Unauthorized" }, { status: 401 });
 
+  const parsed = parseQuery(request, PresignQuerySchema);
+  if (parsed instanceof NextResponse) return parsed;
+  const { filename, fileType, fileSize } = parsed.data;
+
   const { id: caseId } = await params;
   const firmId = session.user.firmId;
 
   const rolloverCase = await prisma.rolloverCase.findFirst({ where: { id: caseId, firmId } });
   if (!rolloverCase) return NextResponse.json({ error: "Not found" }, { status: 404 });
 
-  const { searchParams } = request.nextUrl;
-  const filename = searchParams.get("filename");
-  const fileType = searchParams.get("fileType");
-  const fileSize = parseInt(searchParams.get("fileSize") ?? "0", 10);
-
-  if (!filename || !fileType) {
-    return NextResponse.json({ error: "filename and fileType are required" }, { status: 400 });
-  }
   if (!ALLOWED_TYPES[fileType]) {
     return NextResponse.json(
       { error: "File type not allowed. Use PDF, JPG, PNG, WEBP, or DOCX." },

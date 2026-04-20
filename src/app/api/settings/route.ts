@@ -3,6 +3,34 @@ import { prisma } from "@/lib/prisma";
 import { NextResponse } from "next/server";
 import bcrypt from "bcryptjs";
 import { Prisma } from "@prisma/client";
+import { platformConfig } from "@/lib/platformConfig";
+import { parseBody } from "@/lib/validation";
+import { enforceRateLimit } from "@/lib/ratelimit";
+import { z } from "zod";
+
+const PreferencesSchema = z
+  .object({
+    defaultStatusFilter: z.string().optional(),
+    defaultViewFilter: z.string().optional(),
+    timezone: z.string().optional(),
+    showDashboardWidgets: z.boolean().optional(),
+    compactCaseList: z.boolean().optional(),
+  })
+  .strict();
+
+const UpdateProfileSchema = z
+  .object({
+    firstName: z.string().trim().min(1).max(100).optional(),
+    lastName: z.string().trim().min(1).max(100).optional(),
+    preferences: PreferencesSchema.optional(),
+    currentPassword: z.string().min(1).optional(),
+    newPassword: z.string().min(1).max(512).optional(),
+  })
+  .strict()
+  .refine(
+    (v) => (v.currentPassword ? !!v.newPassword : true) && (v.newPassword ? !!v.currentPassword : true),
+    { message: "Both currentPassword and newPassword are required to change password" },
+  );
 
 export async function GET() {
   const session = await auth();
@@ -30,21 +58,23 @@ export async function PATCH(req: Request) {
   const session = await auth();
   if (!session?.user) return NextResponse.json({ error: "Unauthorized" }, { status: 401 });
 
+  const parsed = await parseBody(req, UpdateProfileSchema);
+  if (parsed instanceof NextResponse) return parsed;
+  const body = parsed.data;
+
   const userId = session.user.id;
-  const body = await req.json();
 
   const updateData: {
     firstName?: string;
     lastName?: string;
     preferences?: Prisma.InputJsonValue;
     password?: string;
+    passwordUpdatedAt?: Date;
   } = {};
 
-  // Profile fields
-  if (body.firstName !== undefined) updateData.firstName = body.firstName.trim();
-  if (body.lastName !== undefined) updateData.lastName = body.lastName.trim();
+  if (body.firstName !== undefined) updateData.firstName = body.firstName;
+  if (body.lastName !== undefined) updateData.lastName = body.lastName;
 
-  // Preferences (merge with existing)
   if (body.preferences !== undefined) {
     const existing = await prisma.user.findUnique({
       where: { id: userId },
@@ -57,19 +87,33 @@ export async function PATCH(req: Request) {
     updateData.preferences = { ...existingPrefs, ...body.preferences };
   }
 
-  // Password change
   if (body.currentPassword && body.newPassword) {
-    const user = await prisma.user.findUnique({ where: { id: userId }, select: { password: true } });
+    const rateLimited = await enforceRateLimit("sensitive", `pwd:user:${userId}`);
+    if (rateLimited) return rateLimited;
+
+    const user = await prisma.user.findUnique({
+      where: { id: userId },
+      select: { password: true },
+    });
     if (!user) return NextResponse.json({ error: "User not found" }, { status: 404 });
 
     const valid = await bcrypt.compare(body.currentPassword, user.password);
     if (!valid) return NextResponse.json({ error: "Current password is incorrect" }, { status: 400 });
 
-    if (body.newPassword.length < 8) {
-      return NextResponse.json({ error: "New password must be at least 8 characters" }, { status: 400 });
+    const { minLength, requireNumber, requireSymbol } = platformConfig.password;
+
+    if (body.newPassword.length < minLength) {
+      return NextResponse.json({ error: `New password must be at least ${minLength} characters` }, { status: 400 });
+    }
+    if (requireNumber && !/\d/.test(body.newPassword)) {
+      return NextResponse.json({ error: "New password must contain at least one number" }, { status: 400 });
+    }
+    if (requireSymbol && !/[^A-Za-z0-9]/.test(body.newPassword)) {
+      return NextResponse.json({ error: "New password must contain at least one symbol" }, { status: 400 });
     }
 
     updateData.password = await bcrypt.hash(body.newPassword, 12);
+    updateData.passwordUpdatedAt = new Date();
   }
 
   if (Object.keys(updateData).length === 0) {

@@ -1,6 +1,15 @@
 import { NextResponse } from "next/server";
 import { auth } from "@/lib/auth";
 import { prisma } from "@/lib/prisma";
+import { parseBody } from "@/lib/validation";
+import { z } from "zod";
+
+const CreateCustodianNoteSchema = z.object({
+  title: z.string().trim().min(1).max(200),
+  body: z.string().trim().min(1).max(4000),
+  category: z.string().trim().max(40).nullish(),
+  pinned: z.boolean().optional(),
+}).strict();
 
 export async function POST(
   req: Request,
@@ -11,12 +20,11 @@ export async function POST(
     return NextResponse.json({ error: "Unauthorized" }, { status: 401 });
   }
 
-  const { id: custodianId } = await params;
+  const parsed = await parseBody(req, CreateCustodianNoteSchema);
+  if (parsed instanceof NextResponse) return parsed;
+  const body = parsed.data;
 
-  const body = await req.json().catch(() => null);
-  if (!body || typeof body.title !== "string" || typeof body.body !== "string") {
-    return NextResponse.json({ error: "title and body required" }, { status: 400 });
-  }
+  const { id: custodianId } = await params;
 
   const custodian = await prisma.custodian.findUnique({
     where: { id: custodianId },
@@ -31,9 +39,9 @@ export async function POST(
       custodianId,
       firmId: session.user.firmId,
       authorId: session.user.id,
-      title: body.title.slice(0, 200),
-      body: body.body.slice(0, 4000),
-      category: typeof body.category === "string" ? body.category.slice(0, 40) : null,
+      title: body.title,
+      body: body.body,
+      category: body.category ?? null,
       pinned: body.pinned === true,
     },
     include: {

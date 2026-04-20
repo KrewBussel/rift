@@ -1,6 +1,36 @@
 import { NextRequest, NextResponse } from "next/server";
 import { auth } from "@/lib/auth";
 import { prisma } from "@/lib/prisma";
+import { parseBody } from "@/lib/validation";
+import { z } from "zod";
+
+const CaseStatusSchema = z.enum([
+  "INTAKE",
+  "AWAITING_CLIENT_ACTION",
+  "READY_TO_SUBMIT",
+  "SUBMITTED",
+  "PROCESSING",
+  "IN_TRANSIT",
+  "COMPLETED",
+]);
+
+const AccountTypeSchema = z.enum(["TRADITIONAL_IRA_401K", "ROTH_IRA_401K", "IRA_403B", "OTHER"]);
+
+const UpdateCaseSchema = z
+  .object({
+    clientFirstName: z.string().trim().min(1).max(100).optional(),
+    clientLastName: z.string().trim().min(1).max(100).optional(),
+    clientEmail: z.string().trim().toLowerCase().email().max(200).optional(),
+    sourceProvider: z.string().trim().min(1).max(200).optional(),
+    destinationCustodian: z.string().trim().min(1).max(200).optional(),
+    accountType: AccountTypeSchema.optional(),
+    highPriority: z.boolean().optional(),
+    internalNotes: z.string().max(5000).nullable().optional(),
+    assignedAdvisorId: z.string().nullable().optional(),
+    assignedOpsId: z.string().nullable().optional(),
+    status: CaseStatusSchema.optional(),
+  })
+  .strict();
 
 export async function GET(request: NextRequest, { params }: { params: Promise<{ id: string }> }) {
   const session = await auth();
@@ -34,10 +64,13 @@ export async function PATCH(request: NextRequest, { params }: { params: Promise<
   const session = await auth();
   if (!session?.user) return NextResponse.json({ error: "Unauthorized" }, { status: 401 });
 
+  const parsed = await parseBody(request, UpdateCaseSchema);
+  if (parsed instanceof NextResponse) return parsed;
+  const body = parsed.data;
+
   const { id } = await params;
   const firmId = session.user.firmId;
   const userId = session.user.id;
-  const body = await request.json();
 
   const existing = await prisma.rolloverCase.findFirst({ where: { id, firmId } });
   if (!existing) return NextResponse.json({ error: "Not found" }, { status: 404 });
@@ -59,29 +92,25 @@ export async function PATCH(request: NextRequest, { params }: { params: Promise<
     },
   });
 
-  const events = [];
-
   if (body.status !== undefined && body.status !== existing.status) {
-    events.push(prisma.activityEvent.create({
+    await prisma.activityEvent.create({
       data: {
         caseId: id,
         actorUserId: userId,
         eventType: "STATUS_CHANGED",
         eventDetails: `Status changed from ${existing.status} to ${body.status}`,
       },
-    }));
+    });
   } else if (body.status === undefined) {
-    events.push(prisma.activityEvent.create({
+    await prisma.activityEvent.create({
       data: {
         caseId: id,
         actorUserId: userId,
         eventType: "CASE_UPDATED",
         eventDetails: "Case details updated",
       },
-    }));
+    });
   }
-
-  if (events.length) await Promise.all(events);
 
   return NextResponse.json(updated);
 }

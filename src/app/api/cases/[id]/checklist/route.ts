@@ -1,6 +1,13 @@
 import { NextRequest, NextResponse } from "next/server";
 import { auth } from "@/lib/auth";
 import { prisma } from "@/lib/prisma";
+import { parseBody } from "@/lib/validation";
+import { z } from "zod";
+
+const CreateChecklistItemSchema = z.object({
+  name: z.string().trim().min(1).max(200),
+  required: z.boolean().optional(),
+}).strict();
 
 const DEFAULT_CHECKLIST = [
   { name: "Distribution form",                  required: true,  sortOrder: 0 },
@@ -56,14 +63,15 @@ export async function POST(request: NextRequest, { params }: { params: Promise<{
   const session = await auth();
   if (!session?.user) return NextResponse.json({ error: "Unauthorized" }, { status: 401 });
 
+  const parsed = await parseBody(request, CreateChecklistItemSchema);
+  if (parsed instanceof NextResponse) return parsed;
+  const body = parsed.data;
+
   const { id } = await params;
   const firmId = session.user.firmId;
-  const body = await request.json();
 
   const rolloverCase = await prisma.rolloverCase.findFirst({ where: { id, firmId } });
   if (!rolloverCase) return NextResponse.json({ error: "Not found" }, { status: 404 });
-
-  if (!body.name?.trim()) return NextResponse.json({ error: "Name required" }, { status: 400 });
 
   const lastItem = await prisma.checklistItem.findFirst({
     where: { caseId: id },
@@ -73,7 +81,7 @@ export async function POST(request: NextRequest, { params }: { params: Promise<{
   const item = await prisma.checklistItem.create({
     data: {
       caseId: id,
-      name: body.name.trim(),
+      name: body.name,
       required: body.required ?? true,
       sortOrder: (lastItem?.sortOrder ?? -1) + 1,
     },
