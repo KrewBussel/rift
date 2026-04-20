@@ -1,15 +1,29 @@
 import { NextRequest, NextResponse } from "next/server";
 import { auth } from "@/lib/auth";
 import { prisma } from "@/lib/prisma";
+import { parseBody } from "@/lib/validation";
+import { z } from "zod";
+
+const ChecklistStatusSchema = z.enum(["NOT_STARTED", "REQUESTED", "RECEIVED", "REVIEWED", "COMPLETE"]);
+
+const UpdateChecklistSchema = z.object({
+  status: ChecklistStatusSchema.optional(),
+  notes: z.string().max(5000).nullish(),
+  name: z.string().trim().min(1).max(200).optional(),
+  required: z.boolean().optional(),
+}).strict();
 
 export async function PATCH(request: NextRequest, { params }: { params: Promise<{ id: string }> }) {
   const session = await auth();
   if (!session?.user) return NextResponse.json({ error: "Unauthorized" }, { status: 401 });
 
+  const parsed = await parseBody(request, UpdateChecklistSchema);
+  if (parsed instanceof NextResponse) return parsed;
+  const body = parsed.data;
+
   const { id } = await params;
   const firmId = session.user.firmId;
   const userId = session.user.id;
-  const body = await request.json();
 
   const item = await prisma.checklistItem.findFirst({
     where: { id },

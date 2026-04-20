@@ -19,8 +19,8 @@
     "@prisma/client": "^7.6.0",
     "@supabase/supabase-js": "^2.101.1",
     "@types/pg": "^8.20.0",
-    "@vercel/analytics": "^2.0.1",
-    "@vercel/speed-insights": "^2.0.0",
+    "@upstash/ratelimit": "^2.0.8",
+    "@upstash/redis": "^1.37.0",
     "bcryptjs": "^3.0.3",
     "next": "16.2.2",
     "next-auth": "^5.0.0-beta.30",
@@ -29,7 +29,8 @@
     "react": "19.2.4",
     "react-dom": "19.2.4",
     "recharts": "^3.8.1",
-    "resend": "^6.10.0"
+    "resend": "^6.10.0",
+    "zod": "^4.3.6"
   },
   "devDependencies": {
     "@tailwindcss/postcss": "^4",

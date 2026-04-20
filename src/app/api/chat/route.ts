@@ -2,14 +2,25 @@ import { NextResponse } from "next/server";
 import Anthropic from "@anthropic-ai/sdk";
 import { auth } from "@/lib/auth";
 import { prisma } from "@/lib/prisma";
+import { getFirmUsageSummary, logAIUsage } from "@/lib/aiUsage";
+import { parseBody } from "@/lib/validation";
+import { enforceRateLimit } from "@/lib/ratelimit";
+import { z } from "zod";
+
+const ChatRequestSchema = z.object({
+  messages: z
+    .array(
+      z.object({
+        role: z.enum(["user", "assistant"]),
+        content: z.string().min(1).max(50_000),
+      }),
+    )
+    .min(1)
+    .max(50),
+});
 
 export const runtime = "nodejs";
 export const maxDuration = 60;
-
-type ChatMessage = {
-  role: "user" | "assistant";
-  content: string;
-};
 
 const SYSTEM_PROMPT = `You are Rift Intelligence, an expert assistant for retirement rollover advisors and operations staff at a wealth-management firm.
 
@@ -44,17 +55,24 @@ export async function POST(req: Request) {
   const firmId = session.user.firmId;
   const userId = session.user.id;
 
-  let body: { messages: ChatMessage[] };
-  try {
-    body = await req.json();
-  } catch {
-    return NextResponse.json({ error: "Invalid JSON body" }, { status: 400 });
+  const rateLimited = await enforceRateLimit("chat", `chat:user:${userId}`);
+  if (rateLimited) return rateLimited;
+
+  const usageSummary = await getFirmUsageSummary(firmId);
+  if (usageSummary.overLimit) {
+    return NextResponse.json(
+      {
+        error: "AI usage limit reached for this billing period.",
+        code: "QUOTA_EXCEEDED",
+        percentUsed: usageSummary.percentUsed,
+      },
+      { status: 429 },
+    );
   }
 
-  const messages = body.messages ?? [];
-  if (!Array.isArray(messages) || messages.length === 0) {
-    return NextResponse.json({ error: "messages array is required" }, { status: 400 });
-  }
+  const parsed = await parseBody(req, ChatRequestSchema);
+  if (parsed instanceof NextResponse) return parsed;
+  const { messages } = parsed.data;
 
   // ── Monthly limit check ───────────────────────────────────────────────────
   const now = new Date();
@@ -120,6 +138,11 @@ export async function POST(req: Request) {
   const MAX_TURNS = 6;
   let finalText = "";
   const toolCalls: Array<{ query: string; resultCount: number }> = [];
+  let totalInputTokens = 0;
+  let totalOutputTokens = 0;
+  let totalCacheReadTokens = 0;
+  let totalCacheWriteTokens = 0;
+  const model = "claude-opus-4-7";
 
   // Accumulate token usage across all turns
   let totalInputTokens = 0;
@@ -129,7 +152,7 @@ export async function POST(req: Request) {
 
   for (let turn = 0; turn < MAX_TURNS; turn++) {
     const response: Anthropic.Message = await client.messages.create({
-      model: "claude-opus-4-7",
+      model,
       max_tokens: 4096,
       system: [
         {
@@ -142,16 +165,10 @@ export async function POST(req: Request) {
       messages: conversation,
     });
 
-    turnCount++;
-
-    // Accumulate token counts
-    const u = response.usage as Anthropic.Usage & {
-      cache_read_input_tokens?: number;
-      cache_creation_input_tokens?: number;
-    };
-    totalInputTokens += u.input_tokens;
-    totalOutputTokens += u.output_tokens;
-    totalCacheHitTokens += u.cache_read_input_tokens ?? 0;
+    totalInputTokens += response.usage?.input_tokens ?? 0;
+    totalOutputTokens += response.usage?.output_tokens ?? 0;
+    totalCacheReadTokens += response.usage?.cache_read_input_tokens ?? 0;
+    totalCacheWriteTokens += response.usage?.cache_creation_input_tokens ?? 0;
 
     conversation.push({ role: "assistant", content: response.content });
 
@@ -207,21 +224,17 @@ export async function POST(req: Request) {
     finalText = "Sorry — I wasn't able to generate a response. Try rephrasing.";
   }
 
-  // ── Log usage (fire-and-forget, don't block the response) ─────────────────
-  prisma.aiUsage
-    .create({
-      data: {
-        firmId,
-        userId,
-        inputTokens: totalInputTokens,
-        outputTokens: totalOutputTokens,
-        cacheHitTokens: totalCacheHitTokens,
-        turnCount,
-        toolCallCount: toolCalls.length,
-      },
-    })
-    .catch((err) => console.error("[AiUsage] Failed to log usage:", err));
-  // ─────────────────────────────────────────────────────────────────────────
+  if (totalInputTokens > 0 || totalOutputTokens > 0) {
+    await logAIUsage({
+      firmId,
+      userId,
+      model,
+      inputTokens: totalInputTokens,
+      outputTokens: totalOutputTokens,
+      cacheReadTokens: totalCacheReadTokens,
+      cacheWriteTokens: totalCacheWriteTokens,
+    }).catch((err) => console.error("[chat] failed to log AI usage", err));
+  }
 
   return NextResponse.json({
     message: finalText,

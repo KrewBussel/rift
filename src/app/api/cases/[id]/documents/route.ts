@@ -1,6 +1,16 @@
 import { NextRequest, NextResponse } from "next/server";
 import { auth } from "@/lib/auth";
 import { prisma } from "@/lib/prisma";
+import { parseBody } from "@/lib/validation";
+import { z } from "zod";
+
+const ConfirmUploadSchema = z.object({
+  key: z.string().min(1).max(1024),
+  name: z.string().trim().min(1).max(500),
+  fileType: z.string().min(1).max(200),
+  fileSize: z.number().int().positive().max(50 * 1024 * 1024),
+  checklistItemId: z.string().nullish(),
+}).strict();
 
 export async function GET(_req: NextRequest, { params }: { params: Promise<{ id: string }> }) {
   const session = await auth();
@@ -30,25 +40,16 @@ export async function POST(request: NextRequest, { params }: { params: Promise<{
   const session = await auth();
   if (!session?.user) return NextResponse.json({ error: "Unauthorized" }, { status: 401 });
 
+  const parsed = await parseBody(request, ConfirmUploadSchema);
+  if (parsed instanceof NextResponse) return parsed;
+  const { key, name, fileType, fileSize, checklistItemId } = parsed.data;
+
   const { id } = await params;
   const firmId = session.user.firmId;
   const userId = session.user.id;
 
   const rolloverCase = await prisma.rolloverCase.findFirst({ where: { id, firmId } });
   if (!rolloverCase) return NextResponse.json({ error: "Not found" }, { status: 404 });
-
-  const body = await request.json();
-  const { key, name, fileType, fileSize, checklistItemId } = body as {
-    key: string;
-    name: string;
-    fileType: string;
-    fileSize: number;
-    checklistItemId?: string;
-  };
-
-  if (!key || !name || !fileType || !fileSize) {
-    return NextResponse.json({ error: "Missing required fields: key, name, fileType, fileSize" }, { status: 400 });
-  }
 
   // Verify the S3 key was issued for this exact firm + case — prevents a user
   // from confirming a key that belongs to a different firm or case.

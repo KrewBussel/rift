@@ -26,7 +26,12 @@
       "Bash(python3 -c ' *)",
       "Skill(claude-api)",
       "Skill(claude-api:*)",
-      "WebFetch(domain:api.anthropic.com)"
+      "Bash(echo \"exit=$?\")",
+      "Bash(npx next *)",
+      "Bash(node -e \"const c=require\\('crypto'\\),fs=require\\('fs'\\);const files=['prisma/migrations/20260418000000_add_mailing_routes/migration.sql','prisma/migrations/20260418000001_add_ai_usage/migration.sql'];for\\(const f of files\\){console.log\\(f,c.createHash\\('sha256'\\).update\\(fs.readFileSync\\(f\\)\\).digest\\('hex'\\)\\)}\")",
+      "Bash(node -e \"console.log\\(require\\('./package.json'\\).dependencies.zod\\)\")",
+      "Bash(node -e \"require\\('dotenv'\\).config\\({path:'.env'}\\);const keys=['KV_REST_API_URL','KV_REST_API_TOKEN','UPSTASH_REDIS_REST_URL','UPSTASH_REDIS_REST_TOKEN'];for\\(const k of keys\\){const v=process.env[k];console.log\\(k+':',v?'SET \\('+v.slice\\(0,30\\)+'...\\)':'missing'\\)}\")",
+      "Bash(node -e \"require\\('dotenv'\\).config\\({path:'.env.local'}\\);const keys=['KV_REST_API_URL','KV_REST_API_TOKEN','UPSTASH_REDIS_REST_URL','UPSTASH_REDIS_REST_TOKEN','REDIS_URL'];for\\(const k of keys\\){const v=process.env[k];console.log\\(k+':',v?'SET \\('+v.slice\\(0,30\\)+'...\\)':'missing'\\)}\")"
     ]
   }
 }
