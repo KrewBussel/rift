@@ -2,6 +2,7 @@ import NextAuth from "next-auth";
 import Credentials from "next-auth/providers/credentials";
 import bcrypt from "bcryptjs";
 import { headers } from "next/headers";
+import * as Sentry from "@sentry/nextjs";
 import { prisma } from "./prisma";
 import { recordAudit } from "./audit";
 import { checkRateLimit } from "./ratelimit";
@@ -93,6 +94,10 @@ export const { handlers, auth, signIn, signOut } = NextAuth({
         session.user.id = token.id as string;
         session.user.firmId = token.firmId as string;
         session.user.role = token.role as string;
+        // Tag Sentry events with user identity (no PII beyond the internal id)
+        Sentry.setUser({ id: session.user.id });
+        Sentry.setTag("firmId", session.user.firmId);
+        Sentry.setTag("role", session.user.role);
       }
       return session;
     },
