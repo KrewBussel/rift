@@ -3,6 +3,7 @@
 import { useState } from "react";
 import { signIn } from "next-auth/react";
 import { useRouter } from "next/navigation";
+import Link from "next/link";
 
 export default function LoginPage() {
   const router = useRouter();
@@ -131,13 +132,22 @@ export default function LoginPage() {
             </div>
 
             <div>
-              <label
-                htmlFor="password"
-                className="block text-xs font-medium mb-1.5 uppercase tracking-wide"
-                style={{ color: "#7d8590" }}
-              >
-                Password
-              </label>
+              <div className="flex items-center justify-between mb-1.5">
+                <label
+                  htmlFor="password"
+                  className="block text-xs font-medium uppercase tracking-wide"
+                  style={{ color: "#7d8590" }}
+                >
+                  Password
+                </label>
+                <Link
+                  href="/forgot-password"
+                  className="text-xs hover:underline"
+                  style={{ color: "#58a6ff" }}
+                >
+                  Forgot?
+                </Link>
+              </div>
               <input
                 id="password"
                 name="password"

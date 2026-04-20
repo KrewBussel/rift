@@ -82,6 +82,7 @@ model User {
   aiUsageLogs       AIUsageLog[]
   activityEvents    ActivityEvent[]
   auditLogs         AuditLog[]
+  passwordResetTokens PasswordResetToken[]
   custodianNotes    CustodianNote[]
   uploadedDocuments Document[]
   notes             Note[]
@@ -236,6 +237,21 @@ model CustodianNote {
   firm        Firm      @relation(fields: [firmId], references: [id], onDelete: Cascade)
 
   @@index([custodianId, firmId])
+}
+
+model PasswordResetToken {
+  id         String   @id @default(cuid())
+  userId     String
+  tokenHash  String   @unique
+  expiresAt  DateTime
+  usedAt     DateTime?
+  ipAddress  String?
+  createdAt  DateTime @default(now())
+
+  user       User     @relation(fields: [userId], references: [id], onDelete: Cascade)
+
+  @@index([userId])
+  @@index([expiresAt])
 }
 
 model AuditLog {

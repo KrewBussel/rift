@@ -222,6 +222,34 @@ export function buildMissingDocsEmail(
   return { subject, html: baseTemplate(subject, `${count} cases missing required documents`, body) };
 }
 
+// ─── Password reset ───────────────────────────────────────────────────────────
+
+export function buildPasswordResetEmail(resetUrl: string, firstName: string): { subject: string; html: string } {
+  const subject = "Reset your Rift password";
+  const body = `
+    <h1 style="margin:0 0 16px 0;font-size:20px;font-weight:700;color:#111318;">Reset your password</h1>
+    <p style="margin:0 0 16px 0;font-size:14px;line-height:1.6;color:#374151;">
+      Hi ${firstName}, we received a request to reset your Rift password. Click the button below to choose a new one.
+    </p>
+    <table cellpadding="0" cellspacing="0" style="margin:24px 0;">
+      <tr>
+        <td style="background:#2563eb;border-radius:8px;">
+          <a href="${resetUrl}" style="display:inline-block;padding:10px 20px;font-size:14px;font-weight:500;color:#ffffff;text-decoration:none;">
+            Reset password
+          </a>
+        </td>
+      </tr>
+    </table>
+    <p style="margin:0 0 8px 0;font-size:13px;color:#6b7280;">
+      This link expires in 30 minutes and can only be used once.
+    </p>
+    <p style="margin:0;font-size:13px;color:#6b7280;">
+      If you didn't request this, you can ignore this email — your password won't change.
+    </p>
+  `;
+  return { subject, html: baseTemplate(subject, "Reset your Rift password", body) };
+}
+
 // ─── Send helpers ─────────────────────────────────────────────────────────────
 
 export async function sendEmail(to: string, subject: string, html: string): Promise<boolean> {

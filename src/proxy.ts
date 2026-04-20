@@ -36,7 +36,11 @@ export async function proxy(request: NextRequest) {
 
   const isAuth = !!session?.user;
   const isLoginPage = pathname === "/login";
-  const isPublicPage = pathname === "/" || pathname === "/login";
+  const isPublicPage =
+    pathname === "/" ||
+    pathname === "/login" ||
+    pathname === "/forgot-password" ||
+    pathname === "/reset-password";
 
   if (!isAuth && !isPublicPage) {
     return NextResponse.redirect(new URL("/login", request.url));
