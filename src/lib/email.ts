@@ -222,6 +222,43 @@ export function buildMissingDocsEmail(
   return { subject, html: baseTemplate(subject, `${count} cases missing required documents`, body) };
 }
 
+// ─── Client portal invite ─────────────────────────────────────────────────────
+
+export function buildClientPortalInviteEmail(opts: {
+  portalUrl: string;
+  clientFirstName: string;
+  firmName: string;
+  advisorName: string | null;
+  expiresInDays: number;
+}): { subject: string; html: string } {
+  const subject = `${opts.firmName}: secure access to your rollover case`;
+  const greeting = opts.advisorName
+    ? `${opts.advisorName} at ${opts.firmName} has shared secure access to your rollover case.`
+    : `${opts.firmName} has shared secure access to your rollover case.`;
+  const body = `
+    <h1 style="margin:0 0 16px 0;font-size:20px;font-weight:700;color:#111318;">Access your rollover case</h1>
+    <p style="margin:0 0 16px 0;font-size:14px;line-height:1.6;color:#374151;">
+      Hi ${opts.clientFirstName}, ${greeting} From the portal you can track progress, upload requested documents, and send a message to your team.
+    </p>
+    <table cellpadding="0" cellspacing="0" style="margin:24px 0;">
+      <tr>
+        <td style="background:#2563eb;border-radius:8px;">
+          <a href="${opts.portalUrl}" style="display:inline-block;padding:10px 20px;font-size:14px;font-weight:500;color:#ffffff;text-decoration:none;">
+            Open secure portal
+          </a>
+        </td>
+      </tr>
+    </table>
+    <p style="margin:0 0 8px 0;font-size:13px;color:#6b7280;">
+      This link expires in ${opts.expiresInDays} days and can only be used once. After you open it, your session stays active for 24 hours.
+    </p>
+    <p style="margin:0;font-size:13px;color:#6b7280;">
+      Didn't expect this? You can ignore this email safely — the link won't do anything unless opened.
+    </p>
+  `;
+  return { subject, html: baseTemplate(subject, "Secure access to your rollover case", body) };
+}
+
 // ─── Password reset ───────────────────────────────────────────────────────────
 
 export function buildPasswordResetEmail(resetUrl: string, firstName: string): { subject: string; html: string } {

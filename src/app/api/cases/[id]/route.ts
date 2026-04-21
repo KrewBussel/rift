@@ -2,6 +2,7 @@ import { NextRequest, NextResponse } from "next/server";
 import { auth } from "@/lib/auth";
 import { prisma } from "@/lib/prisma";
 import { parseBody } from "@/lib/validation";
+import { syncOpportunityStage } from "@/lib/crmSync";
 import { z } from "zod";
 
 const CaseStatusSchema = z.enum([
@@ -101,6 +102,9 @@ export async function PATCH(request: NextRequest, { params }: { params: Promise<
         eventDetails: `Status changed from ${existing.status} to ${body.status}`,
       },
     });
+    if (existing.wealthboxOpportunityId) {
+      await syncOpportunityStage(id);
+    }
   } else if (body.status === undefined) {
     await prisma.activityEvent.create({
       data: {

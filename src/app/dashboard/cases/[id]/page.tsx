@@ -71,12 +71,22 @@ export default async function CaseDetailPage({ params }: { params: Promise<{ id:
 
   if (!rolloverCase) notFound();
 
+  const crmConnection = await prisma.crmConnection.findUnique({
+    where: { firmId },
+    select: { id: true, provider: true, connectedUserName: true },
+  });
+  const crmProviderLabel = crmConnection
+    ? crmConnection.provider === "SALESFORCE" ? "Salesforce" : "Wealthbox"
+    : null;
+
   // Serialize dates
   const serializedCase = {
     ...rolloverCase,
     statusUpdatedAt: rolloverCase.statusUpdatedAt.toISOString(),
     createdAt: rolloverCase.createdAt.toISOString(),
     updatedAt: rolloverCase.updatedAt.toISOString(),
+    wealthboxLinkedAt: rolloverCase.wealthboxLinkedAt?.toISOString() ?? null,
+    wealthboxLastSyncedAt: rolloverCase.wealthboxLastSyncedAt?.toISOString() ?? null,
     notes: rolloverCase.notes.map((n) => ({ ...n, createdAt: n.createdAt.toISOString() })),
     activityEvents: rolloverCase.activityEvents.map((e) => ({ ...e, createdAt: e.createdAt.toISOString() })),
     tasks: rolloverCase.tasks.map((t) => ({
@@ -109,6 +119,8 @@ export default async function CaseDetailPage({ params }: { params: Promise<{ id:
         userRole={userRole}
         initialChecklist={serializedChecklist}
         initialDocuments={serializedDocuments}
+        crmConnected={!!crmConnection}
+        crmProviderLabel={crmProviderLabel}
       />
     </>
   );

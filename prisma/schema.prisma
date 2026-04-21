@@ -7,10 +7,10 @@ datasource db {
 }
 
 model Firm {
-  id                  String          @id @default(cuid())
+  id                  String              @id @default(cuid())
   name                String
-  createdAt           DateTime        @default(now())
-  updatedAt           DateTime        @updatedAt
+  createdAt           DateTime            @default(now())
+  updatedAt           DateTime            @updatedAt
   legalName           String?
   taxId               String?
   businessAddress     String?
@@ -18,20 +18,24 @@ model Firm {
   supportPhone        String?
   websiteUrl          String?
   logoUrl             String?
-  planTier            PlanTier        @default(STARTER)
-  seatsLimit          Int             @default(5)
+  planTier            PlanTier            @default(STARTER)
+  seatsLimit          Int                 @default(5)
   billingEmail        String?
   renewalDate         DateTime?
   stripeCustomerId    String?
-  aiMonthlyTokenLimit Int             @default(500000)
-  aiPlanName          String          @default("Starter")
+  aiMonthlyTokenLimit Int                 @default(500000)
+  aiPlanName          String              @default("Starter")
   aiUsageLogs         AIUsageLog[]
   auditLogs           AuditLog[]
+  clientAccessTokens  ClientAccessToken[]
+  clientSessions      ClientSession[]
   custodianNotes      CustodianNote[]
   settings            FirmSettings?
   reminderLogs        ReminderLog[]
   cases               RolloverCase[]
   users               User[]
+  crmConnection       CrmConnection?
+  crmStageMappings    CrmStageMapping[]
 }
 
 model FirmSettings {
@@ -83,6 +87,7 @@ model User {
   activityEvents    ActivityEvent[]
   auditLogs         AuditLog[]
   passwordResetTokens PasswordResetToken[]
+  issuedClientAccessTokens ClientAccessToken[] @relation("IssuedClientAccessTokens")
   custodianNotes    CustodianNote[]
   uploadedDocuments Document[]
   notes             Note[]
@@ -110,8 +115,14 @@ model RolloverCase {
   statusUpdatedAt      DateTime        @default(now())
   createdAt            DateTime        @default(now())
   updatedAt            DateTime        @updatedAt
+  wealthboxOpportunityId String?
+  wealthboxLinkedAt      DateTime?
+  wealthboxLastSyncedAt  DateTime?
+  wealthboxLastSyncError String?
   activityEvents       ActivityEvent[]
   checklistItems       ChecklistItem[]
+  clientAccessTokens   ClientAccessToken[]
+  clientSessions       ClientSession[]
   documents            Document[]
   notes                Note[]
   assignedAdvisor      User?           @relation("AssignedAdvisor", fields: [assignedAdvisorId], references: [id])
@@ -121,14 +132,16 @@ model RolloverCase {
 }
 
 model ActivityEvent {
-  id           String       @id @default(cuid())
-  caseId       String
-  actorUserId  String
-  eventType    EventType
-  eventDetails String?
-  createdAt    DateTime     @default(now())
-  actor        User         @relation(fields: [actorUserId], references: [id])
-  case         RolloverCase @relation(fields: [caseId], references: [id], onDelete: Cascade)
+  id              String         @id @default(cuid())
+  caseId          String
+  actorUserId     String?
+  clientSessionId String?
+  eventType       EventType
+  eventDetails    String?
+  createdAt       DateTime       @default(now())
+  actor           User?          @relation(fields: [actorUserId], references: [id])
+  case            RolloverCase   @relation(fields: [caseId], references: [id], onDelete: Cascade)
+  clientSession   ClientSession? @relation(fields: [clientSessionId], references: [id], onDelete: SetNull)
 }
 
 model Task {
@@ -150,10 +163,11 @@ model Task {
 model Note {
   id           String       @id @default(cuid())
   caseId       String
-  authorUserId String
+  authorUserId String?
+  fromClient   Boolean      @default(false)
   body         String
   createdAt    DateTime     @default(now())
-  author       User         @relation(fields: [authorUserId], references: [id])
+  author       User?        @relation(fields: [authorUserId], references: [id])
   case         RolloverCase @relation(fields: [caseId], references: [id], onDelete: Cascade)
 }
 
@@ -300,6 +314,94 @@ model CustodianMailingRoute {
   custodian        Custodian @relation(fields: [custodianId], references: [id], onDelete: Cascade)
 
   @@index([custodianId])
+}
+
+model ClientAccessToken {
+  id             String          @id @default(cuid())
+  caseId         String
+  firmId         String
+  tokenHash      String          @unique
+  scope          ClientScope     @default(FULL)
+  expiresAt      DateTime
+  consumedAt     DateTime?
+  revokedAt      DateTime?
+  issuedByUserId String
+  createdAt      DateTime        @default(now())
+  case           RolloverCase    @relation(fields: [caseId], references: [id], onDelete: Cascade)
+  firm           Firm            @relation(fields: [firmId], references: [id], onDelete: Cascade)
+  issuedBy       User            @relation("IssuedClientAccessTokens", fields: [issuedByUserId], references: [id])
+  sessions       ClientSession[]
+
+  @@index([caseId, revokedAt, consumedAt])
+  @@index([expiresAt])
+}
+
+model ClientSession {
+  id             String            @id @default(cuid())
+  caseId         String
+  firmId         String
+  tokenId        String
+  tokenHash      String            @unique
+  scope          ClientScope
+  expiresAt      DateTime
+  revokedAt      DateTime?
+  lastSeenAt     DateTime          @default(now())
+  userAgent      String?
+  ipAddress      String?
+  createdAt      DateTime          @default(now())
+  token          ClientAccessToken @relation(fields: [tokenId], references: [id], onDelete: Cascade)
+  case           RolloverCase      @relation(fields: [caseId], references: [id], onDelete: Cascade)
+  firm           Firm              @relation(fields: [firmId], references: [id], onDelete: Cascade)
+  activityEvents ActivityEvent[]
+
+  @@index([caseId, revokedAt])
+  @@index([expiresAt])
+}
+
+enum ClientScope {
+  VIEW
+  UPLOAD
+  FULL
+}
+
+model CrmConnection {
+  id                    String      @id @default(cuid())
+  firmId                String      @unique
+  provider              CrmProvider
+  encryptedToken        String
+  tokenIv               String
+  tokenTag              String
+  refreshTokenCiphertext String?
+  refreshTokenIv        String?
+  refreshTokenTag       String?
+  tokenExpiresAt        DateTime?
+  instanceUrl           String?
+  connectedUserId       String?
+  connectedUserName     String?
+  connectedUserEmail    String?
+  connectedAt           DateTime    @default(now())
+  lastHealthCheckAt     DateTime?
+  lastHealthOk          Boolean     @default(true)
+  lastHealthError       String?
+  updatedAt             DateTime    @updatedAt
+  firm                  Firm        @relation(fields: [firmId], references: [id], onDelete: Cascade)
+}
+
+model CrmStageMapping {
+  id           String     @id @default(cuid())
+  firmId       String
+  riftStatus   CaseStatus
+  crmStageId   String
+  crmStageName String
+  updatedAt    DateTime   @updatedAt
+  firm         Firm       @relation(fields: [firmId], references: [id], onDelete: Cascade)
+
+  @@unique([firmId, riftStatus])
+}
+
+enum CrmProvider {
+  WEALTHBOX
+  SALESFORCE
 }
 
 enum PlanTier {

@@ -33,7 +33,8 @@
       "Bash(node -e \"require\\('dotenv'\\).config\\({path:'.env'}\\);const keys=['KV_REST_API_URL','KV_REST_API_TOKEN','UPSTASH_REDIS_REST_URL','UPSTASH_REDIS_REST_TOKEN'];for\\(const k of keys\\){const v=process.env[k];console.log\\(k+':',v?'SET \\('+v.slice\\(0,30\\)+'...\\)':'missing'\\)}\")",
       "Bash(node -e \"require\\('dotenv'\\).config\\({path:'.env.local'}\\);const keys=['KV_REST_API_URL','KV_REST_API_TOKEN','UPSTASH_REDIS_REST_URL','UPSTASH_REDIS_REST_TOKEN','REDIS_URL'];for\\(const k of keys\\){const v=process.env[k];console.log\\(k+':',v?'SET \\('+v.slice\\(0,30\\)+'...\\)':'missing'\\)}\")",
       "Bash(echo \"tsc=$?\")",
-      "Bash(echo \"build=$?\")"
+      "Bash(echo \"build=$?\")",
+      "WebFetch(domain:dev.wealthbox.com)"
     ]
   }
 }

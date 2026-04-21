@@ -10,10 +10,10 @@ import DocumentsPanel from "./DocumentsPanel";
 import DarkSelect from "./DarkSelect";
 
 interface User { id: string; firstName: string; lastName: string; role: string; }
-interface Note { id: string; body: string; createdAt: string; author: { id: string; firstName: string; lastName: string }; }
-interface ActivityEvent { id: string; eventType: string; eventDetails: string | null; createdAt: string; actor: { id: string; firstName: string; lastName: string }; }
+interface Note { id: string; body: string; createdAt: string; fromClient: boolean; author: { id: string; firstName: string; lastName: string } | null; }
+interface ActivityEvent { id: string; eventType: string; eventDetails: string | null; createdAt: string; clientSessionId: string | null; actor: { id: string; firstName: string; lastName: string } | null; }
 interface Task { id: string; title: string; description: string | null; status: "OPEN" | "COMPLETED" | "BLOCKED"; dueDate: string | null; assignee: { id: string; firstName: string; lastName: string } | null; createdBy: { id: string; firstName: string; lastName: string }; createdAt: string; }
-interface RolloverCase { id: string; clientFirstName: string; clientLastName: string; clientEmail: string; sourceProvider: string; destinationCustodian: string; accountType: string; status: string; highPriority: boolean; internalNotes: string | null; statusUpdatedAt: string; createdAt: string; updatedAt: string; assignedAdvisor: { id: string; firstName: string; lastName: string } | null; assignedOps: { id: string; firstName: string; lastName: string } | null; notes: Note[]; activityEvents: ActivityEvent[]; tasks: Task[]; }
+interface RolloverCase { id: string; clientFirstName: string; clientLastName: string; clientEmail: string; sourceProvider: string; destinationCustodian: string; accountType: string; status: string; highPriority: boolean; internalNotes: string | null; statusUpdatedAt: string; createdAt: string; updatedAt: string; wealthboxOpportunityId: string | null; wealthboxLinkedAt: string | null; wealthboxLastSyncedAt: string | null; wealthboxLastSyncError: string | null; assignedAdvisor: { id: string; firstName: string; lastName: string } | null; assignedOps: { id: string; firstName: string; lastName: string } | null; notes: Note[]; activityEvents: ActivityEvent[]; tasks: Task[]; }
 interface ChecklistDocument { id: string; name: string; fileType: string; fileSize: number; createdAt: string; uploadedBy: { id: string; firstName: string; lastName: string }; checklistItem: { id: string; name: string } | null; }
 type ChecklistStatus = "NOT_STARTED" | "REQUESTED" | "RECEIVED" | "REVIEWED" | "COMPLETE";
 interface ChecklistItem { id: string; name: string; required: boolean; status: ChecklistStatus; notes: string | null; sortOrder: number; documents: ChecklistDocument[]; }
@@ -60,8 +60,8 @@ const CARD = { background: "#161b22", border: "1px solid #21262d" };
 const CARD_HEADER_BORDER = { borderBottom: "1px solid #21262d" };
 const ICON_BOX = { background: "#21262d", width: 28, height: 28, borderRadius: 8, display: "flex", alignItems: "center", justifyContent: "center", flexShrink: 0 as const };
 
-export default function CaseDetail({ rolloverCase: initial, users, currentUserId, userRole, initialChecklist, initialDocuments }: {
-  rolloverCase: RolloverCase; users: User[]; currentUserId: string; userRole: string; initialChecklist: ChecklistItem[]; initialDocuments: ChecklistDocument[];
+export default function CaseDetail({ rolloverCase: initial, users, currentUserId, userRole, initialChecklist, initialDocuments, crmConnected = false, crmProviderLabel = null }: {
+  rolloverCase: RolloverCase; users: User[]; currentUserId: string; userRole: string; initialChecklist: ChecklistItem[]; initialDocuments: ChecklistDocument[]; crmConnected?: boolean; crmProviderLabel?: string | null;
 }) {
   const [docRefreshKey, setDocRefreshKey] = useState(0);
   const router = useRouter();
@@ -70,6 +70,131 @@ export default function CaseDetail({ rolloverCase: initial, users, currentUserId
   const [noteText, setNoteText] = useState("");
   const [submittingNote, setSubmittingNote] = useState(false);
   const [editingDetails, setEditingDetails] = useState(false);
+  const [clientLinkBusy, setClientLinkBusy] = useState<"idle" | "issuing" | "revoking">("idle");
+  const [clientLinkMsg, setClientLinkMsg] = useState<string | null>(null);
+  const canManageClientLink = userRole === "ADMIN" || userRole === "OPS";
+
+  async function handleIssueClientLink() {
+    if (!canManageClientLink) return;
+    setClientLinkBusy("issuing");
+    setClientLinkMsg(null);
+    const res = await fetch(`/api/cases/${rolloverCase.id}/client-link`, {
+      method: "POST",
+      headers: { "Content-Type": "application/json" },
+      body: JSON.stringify({}),
+    });
+    setClientLinkBusy("idle");
+    if (!res.ok) {
+      setClientLinkMsg("Failed to send portal invite.");
+      return;
+    }
+    const body = await res.json();
+    setClientLinkMsg(body.emailSent ? "Portal invite sent." : "Link issued (email not sent — check config).");
+  }
+
+  async function handleRevokeClientAccess() {
+    if (!canManageClientLink) return;
+    if (!confirm("Revoke all active client portal access for this case?")) return;
+    setClientLinkBusy("revoking");
+    setClientLinkMsg(null);
+    const res = await fetch(`/api/cases/${rolloverCase.id}/client-link`, { method: "DELETE" });
+    setClientLinkBusy("idle");
+    setClientLinkMsg(res.ok ? "Client access revoked." : "Failed to revoke.");
+  }
+  const [wbBusy, setWbBusy] = useState<"idle" | "search" | "linking" | "creating" | "unlinking" | "refreshing">("idle");
+  const [wbSearch, setWbSearch] = useState("");
+  const [wbResults, setWbResults] = useState<Array<{ id: string; name: string; stage: string | null }>>([]);
+  const [wbMsg, setWbMsg] = useState<string | null>(null);
+  const canManageWealthbox = userRole === "ADMIN" || userRole === "OPS";
+
+  async function wbRefresh() {
+    setWbBusy("refreshing");
+    setWbMsg(null);
+    const res = await fetch(`/api/cases/${rolloverCase.id}/crm/refresh`, { method: "POST" });
+    setWbBusy("idle");
+    if (!res.ok) {
+      setWbMsg("Refresh failed.");
+      return;
+    }
+    const body = await res.json();
+    if (body.ok === false) {
+      const reasonLabel: Record<string, string> = {
+        no_connection: "CRM not connected.",
+        not_linked: "Case isn't linked to a CRM opportunity.",
+        no_mapping: `Stage "${body.error ?? ""}" isn't mapped to a Rift status.`,
+        opp_no_stage: "Opportunity has no stage in CRM yet.",
+        api_error: `CRM error: ${body.error ?? "unknown"}`,
+      };
+      setWbMsg(reasonLabel[body.reason] ?? "Refresh failed.");
+    } else if (body.changed) {
+      setWbMsg(`Updated to ${body.newStatus.replace(/_/g, " ").toLowerCase()} (from CRM stage "${body.stageName ?? ""}").`);
+    } else {
+      setWbMsg("Already in sync.");
+    }
+    const full = await fetch(`/api/cases/${rolloverCase.id}`).then((r) => r.json());
+    setRolloverCase(full);
+  }
+
+  async function wbSearchOpportunities() {
+    setWbBusy("search");
+    setWbMsg(null);
+    const qs = wbSearch.trim() ? `?q=${encodeURIComponent(wbSearch.trim())}` : "";
+    const res = await fetch(`/api/integrations/crm/opportunities${qs}`);
+    setWbBusy("idle");
+    if (!res.ok) { setWbMsg("Couldn't fetch opportunities."); return; }
+    const body = await res.json();
+    setWbResults(body.opportunities ?? []);
+  }
+
+  async function wbLink(opportunityId: string) {
+    setWbBusy("linking");
+    setWbMsg(null);
+    const res = await fetch(`/api/cases/${rolloverCase.id}/crm`, {
+      method: "POST",
+      headers: { "Content-Type": "application/json" },
+      body: JSON.stringify({ mode: "link", opportunityId }),
+    });
+    setWbBusy("idle");
+    if (!res.ok) {
+      const body = await res.json().catch(() => ({}));
+      setWbMsg(body.error ?? "Link failed.");
+      return;
+    }
+    const full = await fetch(`/api/cases/${rolloverCase.id}`).then((r) => r.json());
+    setRolloverCase(full);
+    setWbResults([]);
+    setWbSearch("");
+  }
+
+  async function wbCreate() {
+    setWbBusy("creating");
+    setWbMsg(null);
+    const res = await fetch(`/api/cases/${rolloverCase.id}/crm`, {
+      method: "POST",
+      headers: { "Content-Type": "application/json" },
+      body: JSON.stringify({ mode: "create" }),
+    });
+    setWbBusy("idle");
+    if (!res.ok) {
+      const body = await res.json().catch(() => ({}));
+      setWbMsg(body.error ?? "Create failed.");
+      return;
+    }
+    const full = await fetch(`/api/cases/${rolloverCase.id}`).then((r) => r.json());
+    setRolloverCase(full);
+  }
+
+  async function wbUnlink() {
+    if (!confirm("Unlink this case from its CRM opportunity?")) return;
+    setWbBusy("unlinking");
+    const res = await fetch(`/api/cases/${rolloverCase.id}/crm`, { method: "DELETE" });
+    setWbBusy("idle");
+    if (res.ok) {
+      const full = await fetch(`/api/cases/${rolloverCase.id}`).then((r) => r.json());
+      setRolloverCase(full);
+    }
+  }
+
   const [detailsDraft, setDetailsDraft] = useState({
     sourceProvider: initial.sourceProvider,
     destinationCustodian: initial.destinationCustodian,
@@ -143,6 +268,31 @@ export default function CaseDetail({ rolloverCase: initial, users, currentUserId
             <span className="mx-1.5" style={{ color: "#30363d" }}>·</span>
             Opened {formatDate(rolloverCase.createdAt)}
           </p>
+          {canManageClientLink && (
+            <div className="flex items-center gap-2 mt-2">
+              <button
+                type="button"
+                onClick={handleIssueClientLink}
+                disabled={clientLinkBusy !== "idle"}
+                className="text-xs px-2.5 py-1 rounded-md transition-colors disabled:opacity-50"
+                style={{ background: "#1f2937", color: "#c9d1d9", border: "1px solid #30363d" }}
+              >
+                {clientLinkBusy === "issuing" ? "Sending…" : "Send client portal link"}
+              </button>
+              <button
+                type="button"
+                onClick={handleRevokeClientAccess}
+                disabled={clientLinkBusy !== "idle"}
+                className="text-xs px-2.5 py-1 rounded-md transition-colors disabled:opacity-50"
+                style={{ background: "transparent", color: "#9ca3af", border: "1px solid #30363d" }}
+              >
+                {clientLinkBusy === "revoking" ? "Revoking…" : "Revoke access"}
+              </button>
+              {clientLinkMsg && (
+                <span className="text-xs" style={{ color: "#7d8590" }}>{clientLinkMsg}</span>
+              )}
+            </div>
+          )}
         </div>
 
         {/* Status selector */}
@@ -249,6 +399,114 @@ export default function CaseDetail({ rolloverCase: initial, users, currentUserId
         <div className="space-y-5">
           <DocumentsPanel caseId={rolloverCase.id} initialDocuments={initialDocuments} userRole={userRole} refreshKey={docRefreshKey} />
 
+          {/* CRM (Wealthbox / Salesforce) */}
+          {crmConnected && (
+            <section className="rounded-xl overflow-hidden" style={CARD}>
+              <div className="flex items-center justify-between gap-2.5 px-5 pt-4 pb-3" style={CARD_HEADER_BORDER}>
+                <div className="flex items-center gap-2.5">
+                  <div style={ICON_BOX}>
+                    <svg width="14" height="14" viewBox="0 0 14 14" fill="none" style={{ color: "#7d8590" }}>
+                      <path d="M2 4.5A2.5 2.5 0 014.5 2h5A2.5 2.5 0 0112 4.5v5A2.5 2.5 0 019.5 12h-5A2.5 2.5 0 012 9.5v-5z" stroke="currentColor" strokeWidth="1.3"/>
+                      <path d="M5 7l1.5 1.5L9 5.5" stroke="currentColor" strokeWidth="1.3" strokeLinecap="round" strokeLinejoin="round"/>
+                    </svg>
+                  </div>
+                  <h2 className="text-sm font-semibold" style={{ color: "#e4e6ea" }}>{crmProviderLabel ?? "CRM"}</h2>
+                </div>
+                {rolloverCase.wealthboxLastSyncedAt && (
+                  <span className="text-xs" style={{ color: rolloverCase.wealthboxLastSyncError ? "#f87171" : "#6ee7b7" }}>
+                    {rolloverCase.wealthboxLastSyncError ? "Sync error" : `Synced ${formatDateTime(rolloverCase.wealthboxLastSyncedAt)}`}
+                  </span>
+                )}
+              </div>
+              <div className="px-5 py-4 space-y-3">
+                {rolloverCase.wealthboxOpportunityId ? (
+                  <>
+                    <p className="text-sm" style={{ color: "#c9d1d9" }}>
+                      Linked to opportunity <span style={{ fontFamily: "monospace", color: "#79c0ff" }}>#{rolloverCase.wealthboxOpportunityId}</span>
+                    </p>
+                    {rolloverCase.wealthboxLastSyncError && (
+                      <p className="text-xs" style={{ color: "#f87171" }}>{rolloverCase.wealthboxLastSyncError}</p>
+                    )}
+                    {canManageWealthbox && (
+                      <div className="flex items-center gap-2">
+                        <button
+                          onClick={wbRefresh}
+                          disabled={wbBusy === "refreshing"}
+                          className="text-xs px-3 py-1.5 rounded-md disabled:opacity-50"
+                          style={{ background: "#1f2937", border: "1px solid #30363d", color: "#c9d1d9" }}
+                        >
+                          {wbBusy === "refreshing" ? "Refreshing…" : "Refresh from CRM"}
+                        </button>
+                        <button
+                          onClick={wbUnlink}
+                          disabled={wbBusy === "unlinking"}
+                          className="text-xs px-3 py-1.5 rounded-md disabled:opacity-50"
+                          style={{ background: "#1f2937", border: "1px solid #30363d", color: "#c9d1d9" }}
+                        >
+                          {wbBusy === "unlinking" ? "Unlinking…" : "Unlink"}
+                        </button>
+                      </div>
+                    )}
+                    {wbMsg && <p className="text-xs" style={{ color: "#7d8590" }}>{wbMsg}</p>}
+                  </>
+                ) : canManageWealthbox ? (
+                  <>
+                    <div className="flex gap-2">
+                      <input
+                        type="text"
+                        value={wbSearch}
+                        onChange={(e) => setWbSearch(e.target.value)}
+                        placeholder="Search opportunities by name"
+                        className={inputCls}
+                        style={inputStyle}
+                      />
+                      <button
+                        onClick={wbSearchOpportunities}
+                        disabled={wbBusy === "search"}
+                        className="text-xs px-3 py-1.5 rounded-md disabled:opacity-50"
+                        style={{ background: "#1f2937", border: "1px solid #30363d", color: "#c9d1d9" }}
+                      >
+                        {wbBusy === "search" ? "Searching…" : "Search"}
+                      </button>
+                    </div>
+                    {wbResults.length > 0 && (
+                      <ul className="space-y-1">
+                        {wbResults.map((o) => (
+                          <li key={o.id} className="flex items-center justify-between gap-2 text-xs p-2 rounded-md" style={{ background: "#0d1117", border: "1px solid #21262d" }}>
+                            <span style={{ color: "#c9d1d9" }}>
+                              {o.name}
+                              {o.stage && <span style={{ color: "#7d8590" }}> · {o.stage}</span>}
+                            </span>
+                            <button
+                              onClick={() => wbLink(o.id)}
+                              disabled={wbBusy === "linking"}
+                              className="text-xs px-2 py-1 rounded-md disabled:opacity-50"
+                              style={{ background: "#2563eb", color: "#fff" }}
+                            >
+                              Link
+                            </button>
+                          </li>
+                        ))}
+                      </ul>
+                    )}
+                    <div className="text-xs" style={{ color: "#7d8590" }}>Or</div>
+                    <button
+                      onClick={wbCreate}
+                      disabled={wbBusy === "creating"}
+                      className="text-xs px-3 py-1.5 rounded-md disabled:opacity-50"
+                      style={{ background: "#2563eb", color: "#fff" }}
+                    >
+                      {wbBusy === "creating" ? "Creating…" : "Create new opportunity"}
+                    </button>
+                    {wbMsg && <p className="text-xs" style={{ color: "#f87171" }}>{wbMsg}</p>}
+                  </>
+                ) : (
+                  <p className="text-xs" style={{ color: "#7d8590" }}>Not linked to a CRM opportunity.</p>
+                )}
+              </div>
+            </section>
+          )}
+
           {/* Activity */}
           <section className="rounded-xl overflow-hidden" style={CARD}>
             <div className="flex items-center gap-2.5 px-5 pt-4 pb-3" style={CARD_HEADER_BORDER}>
@@ -273,7 +531,9 @@ export default function CaseDetail({ rolloverCase: initial, users, currentUserId
                       </div>
                       <div className={i < arr.length - 1 ? "pb-4" : ""}>
                         <p className="text-xs leading-relaxed" style={{ color: "#8b949e" }}>
-                          <span className="font-medium" style={{ color: "#c9d1d9" }}>{event.actor.firstName} {event.actor.lastName}</span>
+                          <span className="font-medium" style={{ color: "#c9d1d9" }}>
+                            {event.actor ? `${event.actor.firstName} ${event.actor.lastName}` : event.clientSessionId ? "Client" : "System"}
+                          </span>
                           {" "}
                           {event.eventDetails ?? EVENT_LABELS[event.eventType] ?? event.eventType}
                         </p>
@@ -309,9 +569,13 @@ export default function CaseDetail({ rolloverCase: initial, users, currentUserId
                     <div className="flex items-center justify-between mb-1.5">
                       <div className="flex items-center gap-2">
                         <div className="w-5 h-5 rounded-full flex items-center justify-center" style={{ background: "#2d333b" }}>
-                          <span className="text-[9px] font-semibold" style={{ color: "#8b949e" }}>{note.author.firstName.charAt(0)}</span>
+                          <span className="text-[9px] font-semibold" style={{ color: "#8b949e" }}>
+                            {note.author ? note.author.firstName.charAt(0) : note.fromClient ? "C" : "S"}
+                          </span>
                         </div>
-                        <span className="text-xs font-medium" style={{ color: "#c9d1d9" }}>{note.author.firstName} {note.author.lastName}</span>
+                        <span className="text-xs font-medium" style={{ color: "#c9d1d9" }}>
+                          {note.author ? `${note.author.firstName} ${note.author.lastName}` : note.fromClient ? "Client" : "System"}
+                        </span>
                       </div>
                       <span className="text-xs" style={{ color: "#7d8590" }}>{formatDateTime(note.createdAt)}</span>
                     </div>

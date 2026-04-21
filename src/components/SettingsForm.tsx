@@ -136,6 +136,7 @@ type Tab =
   | "billing"
   | "compliance"
   | "notifications"
+  | "integrations"
   | "audit-log";
 
 const ADMIN_TABS: Tab[] = [
@@ -149,6 +150,7 @@ const ADMIN_TABS: Tab[] = [
   "billing",
   "compliance",
   "notifications",
+  "integrations",
   "audit-log",
 ];
 
@@ -165,6 +167,7 @@ const TAB_LABELS: Record<Tab, string> = {
   billing: "Billing",
   compliance: "Compliance",
   notifications: "Notifications",
+  integrations: "Integrations",
   "audit-log": "Audit Log",
 };
 
@@ -233,6 +236,7 @@ export default function SettingsForm({ user, firmSettings, firm, seatsUsed, aiUs
       {isAdmin && activeTab === "notifications" && firmSettings && (
         <NotificationsSection firmSettings={firmSettings} cronSecret={cronSecret} />
       )}
+      {isAdmin && activeTab === "integrations" && <IntegrationsSection />}
       {isAdmin && activeTab === "audit-log" && <AuditLogSection />}
     </div>
   );
@@ -1309,6 +1313,298 @@ function SaveBar({
       >
         {saving ? (savingLabel ?? "Saving…") : label}
       </button>
+    </div>
+  );
+}
+
+/* ─── Integrations ────────────────────────────────────────────────────────── */
+
+const RIFT_STATUSES = [
+  { value: "INTAKE",                 label: "Intake" },
+  { value: "AWAITING_CLIENT_ACTION", label: "Awaiting Client Action" },
+  { value: "READY_TO_SUBMIT",        label: "Ready to Submit" },
+  { value: "SUBMITTED",              label: "Submitted" },
+  { value: "PROCESSING",             label: "Processing" },
+  { value: "IN_TRANSIT",             label: "In Transit" },
+  { value: "COMPLETED",              label: "Completed" },
+] as const;
+
+type CrmProvider = "WEALTHBOX" | "SALESFORCE";
+interface CrmConnection {
+  id: string;
+  provider: CrmProvider;
+  instanceUrl: string | null;
+  connectedUserId: string | null;
+  connectedUserName: string | null;
+  connectedUserEmail: string | null;
+  connectedAt: string;
+  lastHealthCheckAt: string | null;
+  lastHealthOk: boolean;
+  lastHealthError: string | null;
+}
+interface CrmMapping { riftStatus: string; crmStageId: string; crmStageName: string }
+interface CrmStage { id: string; name: string }
+
+const PROVIDER_LABEL: Record<CrmProvider, string> = {
+  WEALTHBOX: "Wealthbox",
+  SALESFORCE: "Salesforce",
+};
+
+function IntegrationsSection() {
+  const [loading, setLoading] = useState(true);
+  const [connection, setConnection] = useState<CrmConnection | null>(null);
+  const [mappings, setMappings] = useState<CrmMapping[]>([]);
+  const [stages, setStages] = useState<CrmStage[]>([]);
+  const [stagesError, setStagesError] = useState<string | null>(null);
+  const [tokenInput, setTokenInput] = useState("");
+  const [connecting, setConnecting] = useState(false);
+  const [connectErr, setConnectErr] = useState<string | null>(null);
+  const [draft, setDraft] = useState<Record<string, string>>({});
+  const [savingMap, setSavingMap] = useState(false);
+  const [mapMsg, setMapMsg] = useState<string | null>(null);
+
+  async function loadState() {
+    setLoading(true);
+    const res = await fetch("/api/integrations/crm");
+    if (res.ok) {
+      const body = await res.json();
+      setConnection(body.connection);
+      setMappings(body.mappings ?? []);
+      const next: Record<string, string> = {};
+      for (const m of body.mappings ?? []) next[m.riftStatus] = m.crmStageId;
+      setDraft(next);
+    }
+    setLoading(false);
+  }
+
+  async function loadStages() {
+    setStagesError(null);
+    const res = await fetch("/api/integrations/crm/stages");
+    if (!res.ok) {
+      setStagesError("Couldn't load stages. Check the connection.");
+      return;
+    }
+    const body = await res.json();
+    setStages(body.stages ?? []);
+  }
+
+  useEffect(() => { loadState(); }, []);
+  useEffect(() => { if (connection) loadStages(); }, [connection?.id]);
+
+  async function handleConnectWealthbox(e: React.FormEvent) {
+    e.preventDefault();
+    setConnectErr(null);
+    setConnecting(true);
+    const res = await fetch("/api/integrations/wealthbox", {
+      method: "POST",
+      headers: { "Content-Type": "application/json" },
+      body: JSON.stringify({ token: tokenInput.trim() }),
+    });
+    setConnecting(false);
+    if (!res.ok) {
+      const body = await res.json().catch(() => ({}));
+      setConnectErr(body.error ?? "Failed to connect");
+      return;
+    }
+    setTokenInput("");
+    await loadState();
+  }
+
+  async function handleDisconnect() {
+    if (!confirm("Disconnect CRM? All case links and stage mappings will be cleared.")) return;
+    const res = await fetch("/api/integrations/crm", { method: "DELETE" });
+    if (res.ok) {
+      setConnection(null);
+      setMappings([]);
+      setStages([]);
+      setDraft({});
+    }
+  }
+
+  async function saveMappings() {
+    setSavingMap(true);
+    setMapMsg(null);
+    const payload = RIFT_STATUSES
+      .filter((s) => draft[s.value])
+      .map((s) => {
+        const stage = stages.find((st) => st.id === draft[s.value]);
+        return {
+          riftStatus: s.value,
+          crmStageId: draft[s.value],
+          crmStageName: stage?.name ?? draft[s.value],
+        };
+      });
+    const res = await fetch("/api/integrations/crm/mapping", {
+      method: "PUT",
+      headers: { "Content-Type": "application/json" },
+      body: JSON.stringify({ mappings: payload }),
+    });
+    setSavingMap(false);
+    if (res.ok) {
+      const body = await res.json();
+      setMappings(body.mappings ?? []);
+      setMapMsg("Mappings saved.");
+    } else {
+      setMapMsg("Failed to save mappings.");
+    }
+  }
+
+  if (loading) {
+    return <p className="text-sm" style={{ color: "#7d8590" }}>Loading…</p>;
+  }
+
+  return (
+    <div className="space-y-6">
+      {!connection ? (
+        <>
+          <div style={CARD_STYLE} className="p-5">
+            <div className="flex items-start justify-between gap-4">
+              <div>
+                <h2 className="text-base font-semibold" style={{ color: "#e4e6ea" }}>Wealthbox</h2>
+                <p className="text-sm mt-1" style={{ color: "#9ca3af" }}>
+                  Connect with a personal access token — no OAuth app setup required.
+                </p>
+              </div>
+            </div>
+            <form onSubmit={handleConnectWealthbox} className="mt-4 space-y-3">
+              <p className="text-xs" style={{ color: "#7d8590" }}>
+                In Wealthbox, open <span style={{ color: "#c9d1d9" }}>Settings → API Access → Create Access Token</span>, then paste the token here.
+              </p>
+              <input
+                type="password"
+                placeholder="Wealthbox access token"
+                value={tokenInput}
+                onChange={(e) => setTokenInput(e.target.value)}
+                className="w-full rounded-lg px-3 py-2 text-sm"
+                style={{ background: "#0d1117", border: "1px solid #30363d", color: "#c9d1d9" }}
+              />
+              {connectErr && <p className="text-xs" style={{ color: "#f87171" }}>{connectErr}</p>}
+              <button
+                type="submit"
+                disabled={connecting || !tokenInput.trim()}
+                className="text-sm px-4 py-2 rounded-md disabled:opacity-50"
+                style={{ background: "#2563eb", color: "#fff" }}
+              >
+                {connecting ? "Verifying…" : "Connect Wealthbox"}
+              </button>
+            </form>
+          </div>
+
+          <div style={CARD_STYLE} className="p-5">
+            <div className="flex items-start justify-between gap-4">
+              <div>
+                <h2 className="text-base font-semibold" style={{ color: "#e4e6ea" }}>Salesforce</h2>
+                <p className="text-sm mt-1" style={{ color: "#9ca3af" }}>
+                  Connect via OAuth. You&rsquo;ll be redirected to Salesforce to approve access.
+                </p>
+              </div>
+            </div>
+            <div className="mt-4">
+              <a
+                href="/api/integrations/salesforce/authorize"
+                className="inline-block text-sm px-4 py-2 rounded-md"
+                style={{ background: "#2563eb", color: "#fff" }}
+              >
+                Connect Salesforce
+              </a>
+              <p className="text-xs mt-3" style={{ color: "#7d8590" }}>
+                Requires Rift to be registered as a Connected App in your Salesforce org. Your admin should configure <code style={{ color: "#c9d1d9" }}>SALESFORCE_CLIENT_ID</code> / <code style={{ color: "#c9d1d9" }}>SALESFORCE_CLIENT_SECRET</code> in the Rift environment.
+              </p>
+            </div>
+          </div>
+        </>
+      ) : (
+        <div style={CARD_STYLE} className="p-5">
+          <div className="flex items-start justify-between gap-4">
+            <div>
+              <h2 className="text-base font-semibold" style={{ color: "#e4e6ea" }}>{PROVIDER_LABEL[connection.provider]}</h2>
+              <p className="text-sm mt-1" style={{ color: "#9ca3af" }}>
+                Auto-update {PROVIDER_LABEL[connection.provider]} opportunity stages as Rift case statuses change.
+              </p>
+            </div>
+            <span
+              className="text-xs px-2 py-1 rounded-md"
+              style={{
+                background: connection.lastHealthOk ? "#0d2318" : "#2d1515",
+                color: connection.lastHealthOk ? "#6ee7b7" : "#f87171",
+              }}
+            >
+              {connection.lastHealthOk ? "Connected" : "Error"}
+            </span>
+          </div>
+          <div className="mt-4 space-y-2">
+            <p className="text-sm" style={{ color: "#c9d1d9" }}>
+              Connected as <span style={{ fontWeight: 500 }}>{connection.connectedUserName ?? connection.connectedUserEmail ?? `${PROVIDER_LABEL[connection.provider]} user`}</span>
+              {connection.connectedUserEmail && <span style={{ color: "#7d8590" }}> · {connection.connectedUserEmail}</span>}
+            </p>
+            {connection.instanceUrl && (
+              <p className="text-xs" style={{ color: "#7d8590" }}>Org: {connection.instanceUrl}</p>
+            )}
+            <p className="text-xs" style={{ color: "#7d8590" }}>
+              Connected {formatDate(connection.connectedAt)}
+              {connection.lastHealthCheckAt && ` · Last checked ${formatDate(connection.lastHealthCheckAt)}`}
+            </p>
+            {!connection.lastHealthOk && connection.lastHealthError && (
+              <p className="text-xs" style={{ color: "#f87171" }}>{connection.lastHealthError}</p>
+            )}
+            <button
+              onClick={handleDisconnect}
+              className="text-xs px-3 py-1.5 rounded-md mt-1"
+              style={{ background: "#1f2937", border: "1px solid #30363d", color: "#c9d1d9" }}
+            >
+              Disconnect
+            </button>
+          </div>
+        </div>
+      )}
+
+      {connection && (
+        <div style={CARD_STYLE} className="p-5">
+          <h3 className="text-sm font-semibold" style={{ color: "#e4e6ea" }}>Stage mapping</h3>
+          <p className="text-xs mt-1" style={{ color: "#9ca3af" }}>
+            Pick the {PROVIDER_LABEL[connection.provider]} opportunity stage that should be set when a Rift case enters each status.
+          </p>
+          {stagesError && <p className="text-xs mt-3" style={{ color: "#f87171" }}>{stagesError}</p>}
+          {stages.length === 0 && !stagesError ? (
+            <p className="text-xs mt-3" style={{ color: "#7d8590" }}>Loading stages…</p>
+          ) : (
+            <div className="mt-4 space-y-2">
+              {RIFT_STATUSES.map((s) => (
+                <div key={s.value} className="grid grid-cols-2 gap-3 items-center">
+                  <label className="text-sm" style={{ color: "#c9d1d9" }}>{s.label}</label>
+                  <select
+                    value={draft[s.value] ?? ""}
+                    onChange={(e) => setDraft({ ...draft, [s.value]: e.target.value })}
+                    className="rounded-lg px-3 py-1.5 text-sm"
+                    style={{ background: "#0d1117", border: "1px solid #30363d", color: "#c9d1d9" }}
+                  >
+                    <option value="">— none —</option>
+                    {stages.map((st) => (
+                      <option key={st.id} value={st.id}>{st.name}</option>
+                    ))}
+                  </select>
+                </div>
+              ))}
+              <div className="pt-2 flex items-center gap-3">
+                <button
+                  onClick={saveMappings}
+                  disabled={savingMap}
+                  className="text-sm px-4 py-2 rounded-md disabled:opacity-50"
+                  style={{ background: "#2563eb", color: "#fff" }}
+                >
+                  {savingMap ? "Saving…" : "Save mapping"}
+                </button>
+                {mapMsg && <span className="text-xs" style={{ color: "#7d8590" }}>{mapMsg}</span>}
+                {mappings.length > 0 && (
+                  <span className="text-xs" style={{ color: "#7d8590" }}>
+                    {mappings.length} mapping{mappings.length === 1 ? "" : "s"} saved
+                  </span>
+                )}
+              </div>
+            </div>
+          )}
+        </div>
+      )}
     </div>
   );
 }

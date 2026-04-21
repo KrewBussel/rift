@@ -58,20 +58,6 @@ type ChatMessage = {
   toolCalls?: Array<{ query: string; resultCount: number }>;
 };
 
-const US_STATES_ROUTE = [
-  "AK","AL","AR","AZ","CA","CO","CT","DC","DE","FL","GA","HI","IA","ID","IL","IN",
-  "KS","KY","LA","MA","MD","ME","MI","MN","MO","MS","MT","NC","ND","NE","NH","NJ",
-  "NM","NV","NY","OH","OK","OR","PA","RI","SC","SD","TN","TX","UT","VA","VT","WA",
-  "WI","WV","WY",
-];
-
-type RouteFormData = {
-  label: string;
-  states: string[];
-  mailingAddress: string;
-  overnightAddress: string;
-};
-
 const SUGGESTIONS = [
   "What's Fidelity's Medallion threshold?",
   "Who takes the longest to process a 401(k) rollover?",
@@ -677,7 +663,7 @@ function OverviewTab({
       </Section>
 
       <Section title="Mailing">
-        <MailingSection c={c} firmOperatingStates={firmOperatingStates} onUpdate={onUpdate} />
+        <MailingSection c={c} firmOperatingStates={firmOperatingStates} />
       </Section>
 
       <Section title="Processing">
@@ -773,18 +759,10 @@ function OverviewTab({
 function MailingSection({
   c,
   firmOperatingStates,
-  onUpdate,
 }: {
   c: Custodian;
   firmOperatingStates: string[];
-  onUpdate: (c: Custodian) => void;
 }) {
-  const [showForm, setShowForm] = useState(false);
-  const [editingRoute, setEditingRoute] = useState<MailingRoute | null>(null);
-  const [saving, setSaving] = useState(false);
-  const [deletingId, setDeletingId] = useState<string | null>(null);
-  const [formErr, setFormErr] = useState<string | null>(null);
-
   const hasRoutes = c.mailingRoutes.length > 0;
   const firmStates = firmOperatingStates.map((s) => s.toUpperCase());
   const matchedRoute =
@@ -792,67 +770,8 @@ function MailingSection({
       ? c.mailingRoutes.find((r) => r.states.some((s) => firmStates.includes(s.toUpperCase()))) ?? null
       : null;
 
-  async function handleSaveRoute(data: RouteFormData) {
-    setSaving(true);
-    setFormErr(null);
-    try {
-      const url = editingRoute
-        ? `/api/custodians/${c.id}/mailing-routes/${editingRoute.id}`
-        : `/api/custodians/${c.id}/mailing-routes`;
-      const res = await fetch(url, {
-        method: editingRoute ? "PUT" : "POST",
-        headers: { "Content-Type": "application/json" },
-        body: JSON.stringify(data),
-      });
-      if (!res.ok) {
-        const b = await res.json().catch(() => ({}));
-        throw new Error(b.error ?? "Failed to save");
-      }
-      const route = (await res.json()) as MailingRoute;
-      const newRoutes = editingRoute
-        ? c.mailingRoutes.map((r) => (r.id === route.id ? route : r))
-        : [...c.mailingRoutes, route];
-      onUpdate({ ...c, mailingRoutes: newRoutes });
-      setShowForm(false);
-      setEditingRoute(null);
-    } catch (e) {
-      setFormErr(e instanceof Error ? e.message : "Failed to save");
-    } finally {
-      setSaving(false);
-    }
-  }
-
-  async function handleDeleteRoute(routeId: string) {
-    if (!confirm("Delete this routing rule?")) return;
-    setDeletingId(routeId);
-    const res = await fetch(`/api/custodians/${c.id}/mailing-routes/${routeId}`, { method: "DELETE" });
-    if (res.ok) {
-      onUpdate({ ...c, mailingRoutes: c.mailingRoutes.filter((r) => r.id !== routeId) });
-    }
-    setDeletingId(null);
-  }
-
-  function startEdit(route: MailingRoute) {
-    setEditingRoute(route);
-    setShowForm(true);
-    setFormErr(null);
-  }
-
-  function startAdd() {
-    setEditingRoute(null);
-    setShowForm(true);
-    setFormErr(null);
-  }
-
-  function cancelForm() {
-    setShowForm(false);
-    setEditingRoute(null);
-    setFormErr(null);
-  }
-
   return (
     <div className="space-y-3">
-      {/* State context badge — only shown when routes exist */}
       {hasRoutes && (
         firmStates.length > 0 ? (
           <div
@@ -884,18 +803,9 @@ function MailingSection({
         )
       )}
 
-      {/* Routes or fallback addresses */}
       {hasRoutes ? (
         <>
-          {matchedRoute && (
-            <MailingRouteCard
-              route={matchedRoute}
-              matched
-              deleting={deletingId === matchedRoute.id}
-              onEdit={() => startEdit(matchedRoute)}
-              onDelete={() => handleDeleteRoute(matchedRoute.id)}
-            />
-          )}
+          {matchedRoute && <MailingRouteCard route={matchedRoute} matched />}
           {firmStates.length > 0 && !matchedRoute && (
             <p className="text-xs italic" style={{ color: "#7d8590" }}>
               No routing match for your state{firmStates.length > 1 ? "s" : ""}. All routes shown below.
@@ -904,58 +814,21 @@ function MailingSection({
           {c.mailingRoutes
             .filter((r) => r !== matchedRoute)
             .map((r) => (
-              <MailingRouteCard
-                key={r.id}
-                route={r}
-                matched={false}
-                deleting={deletingId === r.id}
-                onEdit={() => startEdit(r)}
-                onDelete={() => handleDeleteRoute(r.id)}
-              />
+              <MailingRouteCard key={r.id} route={r} matched={false} />
             ))}
         </>
-      ) : (
+      ) : (c.mailingAddress || c.overnightAddress) ? (
         <>
-          {(c.mailingAddress || c.overnightAddress) ? (
-            <>
-              <Field label="Mailing" value={c.mailingAddress} multiline />
-              <Field label="Overnight" value={c.overnightAddress} multiline />
-            </>
-          ) : (
-            <p className="text-xs" style={{ color: "#484f58" }}>
-              No mailing information yet. Add a state routing rule below.
-            </p>
-          )}
+          <Field label="Mailing" value={c.mailingAddress} multiline />
+          <Field label="Overnight" value={c.overnightAddress} multiline />
         </>
-      )}
-
-      {/* Wire instructions (not state-specific) */}
-      {c.wireInstructions && <Field label="Wire" value={c.wireInstructions} multiline />}
-
-      {/* Add / edit form */}
-      {showForm ? (
-        <RouteForm
-          initial={editingRoute}
-          saving={saving}
-          error={formErr}
-          onSave={handleSaveRoute}
-          onCancel={cancelForm}
-        />
       ) : (
-        <button
-          type="button"
-          onClick={startAdd}
-          className="text-xs flex items-center gap-1.5 mt-1 transition-colors"
-          style={{ color: "#484f58" }}
-          onMouseOver={(e) => (e.currentTarget.style.color = "#c9d1d9")}
-          onMouseOut={(e) => (e.currentTarget.style.color = "#484f58")}
-        >
-          <svg width="11" height="11" viewBox="0 0 12 12" fill="none">
-            <path d="M6 1v10M1 6h10" stroke="currentColor" strokeWidth="1.5" strokeLinecap="round" />
-          </svg>
-          Add state routing rule
-        </button>
+        <p className="text-xs" style={{ color: "#484f58" }}>
+          No mailing information on file.
+        </p>
       )}
+
+      {c.wireInstructions && <Field label="Wire" value={c.wireInstructions} multiline />}
     </div>
   );
 }
@@ -963,15 +836,9 @@ function MailingSection({
 function MailingRouteCard({
   route,
   matched,
-  onEdit,
-  onDelete,
-  deleting,
 }: {
   route: MailingRoute;
   matched: boolean;
-  onEdit: () => void;
-  onDelete: () => void;
-  deleting: boolean;
 }) {
   return (
     <div
@@ -981,43 +848,18 @@ function MailingRouteCard({
         border: `1px solid ${matched ? "#1a4a1a" : "#21262d"}`,
       }}
     >
-      <div className="flex items-center justify-between gap-2">
-        <div className="flex items-center gap-2 min-w-0">
-          <span className="text-xs font-semibold truncate" style={{ color: matched ? "#3fb950" : "#8b949e" }}>
-            {route.label}
+      <div className="flex items-center gap-2 min-w-0">
+        <span className="text-xs font-semibold truncate" style={{ color: matched ? "#3fb950" : "#8b949e" }}>
+          {route.label}
+        </span>
+        {matched && (
+          <span
+            className="text-[10px] px-1.5 py-0.5 rounded font-medium flex-shrink-0"
+            style={{ background: "#0d3a0d", color: "#3fb950", border: "1px solid #1a4a1a" }}
+          >
+            ✓ Your match
           </span>
-          {matched && (
-            <span
-              className="text-[10px] px-1.5 py-0.5 rounded font-medium flex-shrink-0"
-              style={{ background: "#0d3a0d", color: "#3fb950", border: "1px solid #1a4a1a" }}
-            >
-              ✓ Your match
-            </span>
-          )}
-        </div>
-        <div className="flex items-center gap-3 flex-shrink-0">
-          <button
-            type="button"
-            onClick={onEdit}
-            className="text-[10px] transition-colors"
-            style={{ color: "#7d8590" }}
-            onMouseOver={(e) => (e.currentTarget.style.color = "#c9d1d9")}
-            onMouseOut={(e) => (e.currentTarget.style.color = "#7d8590")}
-          >
-            Edit
-          </button>
-          <button
-            type="button"
-            onClick={onDelete}
-            disabled={deleting}
-            className="text-[10px] transition-colors disabled:opacity-40"
-            style={{ color: "#7d8590" }}
-            onMouseOver={(e) => (e.currentTarget.style.color = "#ff7b72")}
-            onMouseOut={(e) => (e.currentTarget.style.color = "#7d8590")}
-          >
-            {deleting ? "…" : "Delete"}
-          </button>
-        </div>
+        )}
       </div>
 
       {route.states.length > 0 && (
@@ -1046,130 +888,6 @@ function MailingRouteCard({
         </div>
       )}
     </div>
-  );
-}
-
-function RouteForm({
-  initial,
-  saving,
-  error,
-  onSave,
-  onCancel,
-}: {
-  initial: MailingRoute | null;
-  saving: boolean;
-  error: string | null;
-  onSave: (data: RouteFormData) => void;
-  onCancel: () => void;
-}) {
-  const [label, setLabel] = useState(initial?.label ?? "");
-  const [states, setStates] = useState<string[]>(initial?.states ?? []);
-  const [mailing, setMailing] = useState(initial?.mailingAddress ?? "");
-  const [overnight, setOvernight] = useState(initial?.overnightAddress ?? "");
-
-  function toggleState(s: string) {
-    setStates((prev) => (prev.includes(s) ? prev.filter((x) => x !== s) : [...prev, s].sort()));
-  }
-
-  return (
-    <form
-      onSubmit={(e) => { e.preventDefault(); onSave({ label, states, mailingAddress: mailing, overnightAddress: overnight }); }}
-      className="space-y-3 p-3 rounded-lg"
-      style={{ background: "#161b22", border: "1px solid #30363d" }}
-    >
-      <p className="text-xs font-semibold" style={{ color: "#8b949e" }}>
-        {initial ? "Edit routing rule" : "New routing rule"}
-      </p>
-
-      <div>
-        <label className="block text-[10px] uppercase tracking-wide mb-1" style={{ color: "#484f58" }}>
-          Route Label
-        </label>
-        <input
-          value={label}
-          onChange={(e) => setLabel(e.target.value)}
-          placeholder="e.g. El Paso Operations Center"
-          required
-          className="w-full px-2.5 py-1.5 rounded-md text-sm outline-none"
-          style={{ background: "#0d1117", border: "1px solid #21262d", color: "#e4e6ea" }}
-        />
-      </div>
-
-      <div>
-        <label className="block text-[10px] uppercase tracking-wide mb-1.5" style={{ color: "#484f58" }}>
-          States using this address ({states.length} selected)
-        </label>
-        <div className="grid grid-cols-9 gap-0.5">
-          {US_STATES_ROUTE.map((s) => {
-            const sel = states.includes(s);
-            return (
-              <button
-                key={s}
-                type="button"
-                onClick={() => toggleState(s)}
-                className="text-[10px] py-1 rounded font-mono transition-colors"
-                style={{
-                  background: sel ? "#1f6feb" : "#0d1117",
-                  border: `1px solid ${sel ? "#388bfd" : "#21262d"}`,
-                  color: sel ? "#e4e6ea" : "#484f58",
-                }}
-              >
-                {s}
-              </button>
-            );
-          })}
-        </div>
-      </div>
-
-      <div>
-        <label className="block text-[10px] uppercase tracking-wide mb-1" style={{ color: "#484f58" }}>
-          Standard Mailing Address
-        </label>
-        <textarea
-          value={mailing}
-          onChange={(e) => setMailing(e.target.value)}
-          placeholder={"Charles Schwab & Co., Inc.\nEl Paso Operation Center\nP.O. Box 982600\nEl Paso, TX 79998"}
-          rows={4}
-          className="w-full px-2.5 py-1.5 rounded-md text-sm outline-none resize-none font-mono"
-          style={{ background: "#0d1117", border: "1px solid #21262d", color: "#c9d1d9" }}
-        />
-      </div>
-
-      <div>
-        <label className="block text-[10px] uppercase tracking-wide mb-1" style={{ color: "#484f58" }}>
-          Overnight Address
-        </label>
-        <textarea
-          value={overnight}
-          onChange={(e) => setOvernight(e.target.value)}
-          placeholder={"Charles Schwab & Co., Inc.\nEl Paso Operation Center\n1945 Northwestern Drive\nEl Paso, TX 79912"}
-          rows={3}
-          className="w-full px-2.5 py-1.5 rounded-md text-sm outline-none resize-none font-mono"
-          style={{ background: "#0d1117", border: "1px solid #21262d", color: "#c9d1d9" }}
-        />
-      </div>
-
-      {error && <p className="text-xs" style={{ color: "#ff7b72" }}>{error}</p>}
-
-      <div className="flex items-center justify-end gap-2">
-        <button
-          type="button"
-          onClick={onCancel}
-          className="text-xs px-3 py-1.5 rounded-md"
-          style={{ background: "#21262d", color: "#c9d1d9" }}
-        >
-          Cancel
-        </button>
-        <button
-          type="submit"
-          disabled={saving || !label.trim()}
-          className="text-xs px-3 py-1.5 rounded-md font-semibold disabled:opacity-40"
-          style={{ background: "#388bfd", color: "#fff" }}
-        >
-          {saving ? "Saving…" : initial ? "Update route" : "Add route"}
-        </button>
-      </div>
-    </form>
   );
 }
 
