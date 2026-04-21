@@ -2,7 +2,7 @@ import { auth } from "@/lib/auth";
 import { NextResponse } from "next/server";
 import type { NextRequest } from "next/server";
 
-function buildCsp(nonce: string): string {
+function buildCsp(): string {
   const isDev = process.env.NODE_ENV === "development";
 
   const sentryIngest = "https://*.ingest.sentry.io https://*.ingest.us.sentry.io https://*.ingest.de.sentry.io";
@@ -12,10 +12,11 @@ function buildCsp(nonce: string): string {
 
   const directives: string[] = [
     `default-src 'self'`,
-    // Scripts: nonce + strict-dynamic means only scripts carrying the nonce run,
-    // and any scripts they load inherit trust. No attacker-injected <script> can run.
-    `script-src 'self' 'nonce-${nonce}' 'strict-dynamic'${isDev ? " 'unsafe-eval'" : ""}`,
-    // Styles: inline needed for React style={} attributes and some Tailwind output.
+    // Scripts: 'self' covers Next.js bundles from /_next/*, 'unsafe-inline' covers
+    // the hydration scripts Next.js injects. Tightening this to nonce + strict-dynamic
+    // requires threading the nonce through Next.js's SSR pipeline in a way that works
+    // with Vercel's edge caching; see the follow-up note in AGENTS.md.
+    `script-src 'self' 'unsafe-inline'${isDev ? " 'unsafe-eval'" : ""}`,
     `style-src 'self' 'unsafe-inline'`,
     `img-src 'self' data: blob: ${awsS3}`,
     `font-src 'self' data:`,
@@ -56,16 +57,9 @@ export async function proxy(request: NextRequest) {
     return NextResponse.next();
   }
 
-  const nonce = Buffer.from(crypto.randomUUID()).toString("base64");
-  const csp = buildCsp(nonce);
-
-  const requestHeaders = new Headers(request.headers);
-  requestHeaders.set("x-nonce", nonce);
-  requestHeaders.set("Content-Security-Policy", csp);
-
-  const response = NextResponse.next({ request: { headers: requestHeaders } });
+  const csp = buildCsp();
+  const response = NextResponse.next();
   response.headers.set("Content-Security-Policy", csp);
-
   return response;
 }
 
