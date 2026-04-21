@@ -16,6 +16,16 @@ const PreferencesSchema = z
     showDashboardWidgets: z.boolean().optional(),
     compactCaseList: z.boolean().optional(),
     dashboardWidgets: z.array(z.string().trim().min(1).max(50)).max(20).optional(),
+    intelligenceSearches: z
+      .array(
+        z.object({
+          query: z.string().trim().min(1).max(500),
+          ts: z.string().max(64),
+        }),
+      )
+      .max(20)
+      .optional(),
+    pinnedCustodians: z.array(z.string().trim().min(1).max(50)).max(3).optional(),
   })
   .strict();
 

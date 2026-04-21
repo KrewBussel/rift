@@ -24,7 +24,7 @@ export default async function DashboardLayout({ children }: { children: React.Re
       <Sidebar user={{ ...session.user!, id: session.user!.id }} />
       <div className="flex-1 overflow-y-auto min-w-0 flex flex-col">
         {user && <DashboardHeader user={user} firm={firm} />}
-        <main className="flex-1 max-w-7xl mx-auto w-full px-6 lg:px-10 py-8">
+        <main className="flex-1 min-h-0 flex flex-col max-w-7xl mx-auto w-full px-6 lg:px-10 py-8">
           {children}
         </main>
       </div>
