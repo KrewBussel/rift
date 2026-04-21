@@ -16,7 +16,8 @@ export async function GET() {
     const client = await getProviderClient(connection);
     const stages = await client.getStages();
     return NextResponse.json({ stages, provider: connection.provider });
-  } catch {
-    return NextResponse.json({ error: "Failed to fetch stages" }, { status: 502 });
+  } catch (err) {
+    const message = err instanceof Error ? err.message : "Failed to fetch stages";
+    return NextResponse.json({ error: message }, { status: 502 });
   }
 }

@@ -1377,15 +1377,21 @@ function IntegrationsSection() {
     setLoading(false);
   }
 
+  const [stagesLoaded, setStagesLoaded] = useState(false);
+
   async function loadStages() {
     setStagesError(null);
+    setStagesLoaded(false);
     const res = await fetch("/api/integrations/crm/stages");
     if (!res.ok) {
-      setStagesError("Couldn't load stages. Check the connection.");
+      const body = await res.json().catch(() => ({}));
+      setStagesError(body.error ?? `Couldn't load stages (HTTP ${res.status}).`);
+      setStagesLoaded(true);
       return;
     }
     const body = await res.json();
     setStages(body.stages ?? []);
+    setStagesLoaded(true);
   }
 
   useEffect(() => { loadState(); }, []);
@@ -1565,8 +1571,14 @@ function IntegrationsSection() {
             Pick the {PROVIDER_LABEL[connection.provider]} opportunity stage that should be set when a Rift case enters each status.
           </p>
           {stagesError && <p className="text-xs mt-3" style={{ color: "#f87171" }}>{stagesError}</p>}
-          {stages.length === 0 && !stagesError ? (
+          {!stagesLoaded && !stagesError ? (
             <p className="text-xs mt-3" style={{ color: "#7d8590" }}>Loading stages…</p>
+          ) : stagesLoaded && stages.length === 0 && !stagesError ? (
+            <p className="text-xs mt-3" style={{ color: "#f59e0b" }}>
+              No stages found in {PROVIDER_LABEL[connection.provider]}. {connection.provider === "WEALTHBOX"
+                ? "Open Wealthbox → Settings → Categories → Opportunity Stages and add at least one stage."
+                : "Add opportunity stages in your CRM first."}
+            </p>
           ) : (
             <div className="mt-4 space-y-2">
               {RIFT_STATUSES.map((s) => (

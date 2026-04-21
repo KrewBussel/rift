@@ -96,3 +96,73 @@ body {
   50%       { opacity: 1; }
 }
 .hero-glow-pulse { animation: glow-breathe 5s ease-in-out infinite; }
+
+/* ── Liquid chrome: animated metallic gradient clipped to text or surface ── */
+@keyframes chrome-pan {
+  0%   { background-position: 0% 50%; }
+  100% { background-position: 200% 50%; }
+}
+.chrome-text {
+  background: linear-gradient(
+    90deg,
+    #7c8190 0%,
+    #c7ccd6 18%,
+    #ffffff 34%,
+    #e2e6ee 50%,
+    #a5aab8 66%,
+    #e9ecf2 82%,
+    #7c8190 100%
+  );
+  background-size: 220% 100%;
+  -webkit-background-clip: text;
+  background-clip: text;
+  color: transparent;
+  animation: chrome-pan 7s linear infinite;
+}
+.chrome-surface {
+  background:
+    linear-gradient(
+      100deg,
+      #1a1d24 0%,
+      #2b303d 20%,
+      #d9dde4 42%,
+      #ffffff 50%,
+      #c6cad2 58%,
+      #353a47 80%,
+      #1a1d24 100%
+    );
+  background-size: 220% 100%;
+  animation: chrome-pan 7s linear infinite;
+}
+.chrome-border {
+  position: relative;
+}
+.chrome-border::before {
+  content: "";
+  position: absolute; inset: 0;
+  padding: 1px;
+  border-radius: inherit;
+  background: linear-gradient(100deg, #2b303d, #e2e6ee 45%, #2b303d 60%, #7a8091 80%, #2b303d);
+  background-size: 220% 100%;
+  animation: chrome-pan 9s linear infinite;
+  -webkit-mask: linear-gradient(#000 0 0) content-box, linear-gradient(#000 0 0);
+  -webkit-mask-composite: xor; mask-composite: exclude;
+  pointer-events: none;
+}
+
+/* ── Integrations: flowing dashed connector lines ──────────────────────── */
+@keyframes flow-dash {
+  from { stroke-dashoffset: 24; }
+  to   { stroke-dashoffset: 0; }
+}
+.flow-dash { stroke-dasharray: 3 5; animation: flow-dash 1.6s linear infinite; }
+
+@keyframes orb-breathe {
+  0%, 100% { transform: scale(1);    filter: brightness(1); }
+  50%       { transform: scale(1.03); filter: brightness(1.08); }
+}
+.orb-breathe { animation: orb-breathe 4s ease-in-out infinite; }
+
+/* Dashboard widget content: internal scroll with hidden scrollbars */
+.widget-scroll { scrollbar-width: none; }
+.widget-scroll::-webkit-scrollbar { display: none; }

@@ -4,7 +4,15 @@ import { prisma } from "@/lib/prisma";
 import { CaseStatus } from "@prisma/client";
 import CaseList from "@/components/CaseList";
 import DashboardWidgets from "@/components/DashboardWidgets";
-import AdminDashboard from "@/components/AdminDashboard";
+import AdminDashboard, {
+  type AdminDashboardData,
+  type PipelineBucket,
+  type NeedsAttentionItem,
+  type ActivityItem,
+  type TeamMember,
+} from "@/components/AdminDashboard";
+import { getFirmUsageSummary } from "@/lib/aiUsage";
+import { getOrCreateFirmSettings } from "@/lib/reminders";
 
 const STATUS_LABELS: Record<string, string> = {
   INTAKE: "Intake",
@@ -15,6 +23,33 @@ const STATUS_LABELS: Record<string, string> = {
   IN_TRANSIT: "In Transit",
   COMPLETED: "Completed",
 };
+
+const STATUS_COLORS: Record<string, string> = {
+  INTAKE: "#6e7681",
+  AWAITING_CLIENT_ACTION: "#d29922",
+  READY_TO_SUBMIT: "#388bfd",
+  SUBMITTED: "#a78bfa",
+  PROCESSING: "#fb923c",
+  IN_TRANSIT: "#818cf8",
+  COMPLETED: "#3fb950",
+};
+
+function describeEvent(type: string): string {
+  switch (type) {
+    case "CASE_CREATED":          return "opened case";
+    case "CASE_UPDATED":          return "updated case";
+    case "STATUS_CHANGED":        return "moved case";
+    case "NOTE_ADDED":            return "added a note to";
+    case "OWNER_CHANGED":         return "reassigned";
+    case "TASK_CREATED":          return "created a task on";
+    case "TASK_COMPLETED":        return "completed a task on";
+    case "TASK_REOPENED":         return "reopened a task on";
+    case "FILE_UPLOADED":         return "uploaded a file to";
+    case "FILE_DELETED":          return "deleted a file from";
+    case "CHECKLIST_ITEM_UPDATED": return "updated the checklist for";
+    default:                      return "touched";
+  }
+}
 
 const STALE_DAYS = 7;
 
@@ -44,125 +79,233 @@ export default async function DashboardPage({
 
   /* ── ADMIN path ─────────────────────────────────────────────────────── */
   if (role === "ADMIN") {
-    const recentIds = (prefs.recentlyViewedCaseIds ?? []) as string[];
+    const savedLayout = Array.isArray(prefs.dashboardWidgets)
+      ? (prefs.dashboardWidgets as string[]).filter((x) => typeof x === "string")
+      : null;
 
-    const caseInclude = {
-      assignedAdvisor: { select: { id: true, firstName: true, lastName: true } },
-      assignedOps: { select: { id: true, firstName: true, lastName: true } },
-    };
+    const firmSettings = await getOrCreateFirmSettings(firmId);
+    const stalledThreshold = new Date(Date.now() - firmSettings.stalledCaseDays * 24 * 60 * 60 * 1000);
+    const now = new Date();
+    const thisMonthStart = new Date(now.getFullYear(), now.getMonth(), 1);
+    const lastMonthStart = new Date(now.getFullYear(), now.getMonth() - 1, 1);
+    const thirtyDaysAgo = new Date(now.getTime() - 30 * 24 * 60 * 60 * 1000);
 
-    const fillCount = Math.max(0, 6 - recentIds.length);
+    const [
+      firm,
+      allCases,
+      stalledCases,
+      overdueTasks,
+      activityRows,
+      aiUsage,
+      crmConnection,
+      crmLinkedCount,
+      teamUsers,
+      openedThisMonth,
+      completedThisMonth,
+      openedLastMonth,
+      completedLastMonth,
+      recentlyCompleted,
+    ] = await Promise.all([
+        prisma.firm.findUnique({ where: { id: firmId }, select: { name: true } }),
+        prisma.rolloverCase.findMany({
+          where: { firmId },
+          select: { status: true },
+        }),
+        prisma.rolloverCase.findMany({
+          where: {
+            firmId,
+            status: { not: "COMPLETED" },
+            updatedAt: { lt: stalledThreshold },
+          },
+          select: {
+            id: true,
+            clientFirstName: true,
+            clientLastName: true,
+            status: true,
+            updatedAt: true,
+          },
+          orderBy: { updatedAt: "asc" },
+          take: 6,
+        }),
+        prisma.task.findMany({
+          where: {
+            case: { firmId },
+            status: { not: "COMPLETED" },
+            dueDate: { lt: now },
+          },
+          select: {
+            id: true,
+            title: true,
+            dueDate: true,
+            case: { select: { id: true, clientFirstName: true, clientLastName: true } },
+            assignee: { select: { firstName: true, lastName: true } },
+          },
+          orderBy: { dueDate: "asc" },
+          take: 6,
+        }),
+        prisma.activityEvent.findMany({
+          where: { case: { firmId } },
+          include: {
+            actor: { select: { firstName: true, lastName: true } },
+            case: { select: { id: true, clientFirstName: true, clientLastName: true } },
+          },
+          orderBy: { createdAt: "desc" },
+          take: 15,
+        }),
+        getFirmUsageSummary(firmId),
+        prisma.crmConnection.findUnique({
+          where: { firmId },
+          select: {
+            provider: true,
+            lastHealthCheckAt: true,
+            lastHealthOk: true,
+            lastHealthError: true,
+          },
+        }),
+        prisma.rolloverCase.count({
+          where: { firmId, wealthboxOpportunityId: { not: null } },
+        }),
+        prisma.user.findMany({
+          where: {
+            firmId,
+            deactivatedAt: null,
+            role: { in: ["ADVISOR", "OPS"] },
+          },
+          select: {
+            id: true, firstName: true, lastName: true, role: true,
+            _count: {
+              select: {
+                assignedCases: { where: { status: { not: "COMPLETED" } } },
+                ownedCases: { where: { status: { not: "COMPLETED" } } },
+              },
+            },
+          },
+          orderBy: [{ role: "asc" }, { firstName: "asc" }],
+        }),
+        prisma.rolloverCase.count({
+          where: { firmId, createdAt: { gte: thisMonthStart } },
+        }),
+        prisma.rolloverCase.count({
+          where: { firmId, status: "COMPLETED", statusUpdatedAt: { gte: thisMonthStart } },
+        }),
+        prisma.rolloverCase.count({
+          where: { firmId, createdAt: { gte: lastMonthStart, lt: thisMonthStart } },
+        }),
+        prisma.rolloverCase.count({
+          where: { firmId, status: "COMPLETED", statusUpdatedAt: { gte: lastMonthStart, lt: thisMonthStart } },
+        }),
+        prisma.rolloverCase.findMany({
+          where: { firmId, status: "COMPLETED", statusUpdatedAt: { gte: thirtyDaysAgo } },
+          select: { createdAt: true, statusUpdatedAt: true },
+        }),
+      ]);
 
-    const [users, allCases, viewedCases, fillCases, firm] = await Promise.all([
-      prisma.user.findMany({
-        where: { firmId },
-        select: { id: true, firstName: true, lastName: true, role: true },
-        orderBy: { firstName: "asc" },
-      }),
-      prisma.rolloverCase.findMany({
-        where: { firmId },
-        select: { assignedAdvisorId: true, assignedOpsId: true, status: true },
-      }),
-      recentIds.length > 0
-        ? prisma.rolloverCase.findMany({
-            where: { id: { in: recentIds }, firmId },
-            include: caseInclude,
-          })
-        : Promise.resolve([] as Awaited<ReturnType<typeof prisma.rolloverCase.findMany<{ include: typeof caseInclude }>>>),
-      fillCount > 0
-        ? prisma.rolloverCase.findMany({
-            where: { firmId, ...(recentIds.length > 0 ? { id: { notIn: recentIds } } : {}) },
-            include: caseInclude,
-            orderBy: { updatedAt: "desc" },
-            take: fillCount,
-          })
-        : Promise.resolve([] as Awaited<ReturnType<typeof prisma.rolloverCase.findMany<{ include: typeof caseInclude }>>>),
-      prisma.firm.findUnique({ where: { id: firmId }, select: { name: true } }),
-    ]);
-
-    // Viewed cases in view order, padded with recently updated
-    const viewedSorted = recentIds
-      .map((id) => viewedCases.find((c) => c.id === id))
-      .filter(Boolean) as typeof viewedCases;
-    const recentCases = [...viewedSorted, ...fillCases].slice(0, 6);
-
-    const statusCounts: Record<string, number> = {};
-    for (const c of allCases) {
-      statusCounts[c.status] = (statusCounts[c.status] ?? 0) + 1;
-    }
-
-    const advisors = users.filter((u) => u.role === "ADVISOR");
-    const opsUsers = users.filter((u) => u.role === "OPS");
-
-    const advisorStats = advisors.map((u) => {
-      const mine = allCases.filter((c) => c.assignedAdvisorId === u.id);
-      return {
-        id: u.id,
-        firstName: u.firstName,
-        lastName: u.lastName,
-        total: mine.length,
-        active: mine.filter((c) => c.status !== "COMPLETED").length,
-        completed: mine.filter((c) => c.status === "COMPLETED").length,
-      };
-    });
-
-    const opsStats = opsUsers.map((u) => {
-      const mine = allCases.filter((c) => c.assignedOpsId === u.id);
-      return {
-        id: u.id,
-        firstName: u.firstName,
-        lastName: u.lastName,
-        total: mine.length,
-        active: mine.filter((c) => c.status !== "COMPLETED").length,
-        completed: mine.filter((c) => c.status === "COMPLETED").length,
-      };
-    });
-
-    const firmTotals = {
-      total: allCases.length,
-      active: allCases.filter((c) => c.status !== "COMPLETED").length,
-      completed: allCases.filter((c) => c.status === "COMPLETED").length,
-      awaitingClient: allCases.filter((c) => c.status === "AWAITING_CLIENT_ACTION").length,
-    };
-
-    const serializedRecent = recentCases.map((c) => ({
-      ...c,
-      statusUpdatedAt: c.statusUpdatedAt.toISOString(),
-      createdAt: c.createdAt.toISOString(),
-      updatedAt: c.updatedAt.toISOString(),
+    const pipeline: PipelineBucket[] = (Object.keys(STATUS_LABELS) as CaseStatus[]).map((status) => ({
+      status,
+      label: STATUS_LABELS[status],
+      count: allCases.filter((c) => c.status === status).length,
+      color: STATUS_COLORS[status],
     }));
+
+    const daysAgo = (d: Date) => Math.max(1, Math.floor((now.getTime() - d.getTime()) / (1000 * 60 * 60 * 24)));
+
+    const needsAttention: NeedsAttentionItem[] = [
+      ...stalledCases.map<NeedsAttentionItem>((c) => ({
+        id: `case-${c.id}`,
+        kind: "stalled_case",
+        title: `${c.clientFirstName} ${c.clientLastName}`,
+        detail: `${STATUS_LABELS[c.status]} · stalled`,
+        href: `/dashboard/cases/${c.id}`,
+        daysAgo: daysAgo(c.updatedAt),
+      })),
+      ...overdueTasks.map<NeedsAttentionItem>((t) => ({
+        id: `task-${t.id}`,
+        kind: "overdue_task",
+        title: t.title,
+        detail: `${t.case.clientFirstName} ${t.case.clientLastName}${t.assignee ? ` · ${t.assignee.firstName} ${t.assignee.lastName}` : ""}`,
+        href: `/dashboard/cases/${t.case.id}`,
+        daysAgo: t.dueDate ? daysAgo(t.dueDate) : 1,
+      })),
+    ].sort((a, b) => b.daysAgo - a.daysAgo);
+
+    const activity: ActivityItem[] = activityRows.map((e) => ({
+      id: e.id,
+      actor: e.actor ? `${e.actor.firstName} ${e.actor.lastName}` : null,
+      verb: describeEvent(e.eventType),
+      target: e.case ? `${e.case.clientFirstName} ${e.case.clientLastName}` : null,
+      href: e.case ? `/dashboard/cases/${e.case.id}` : null,
+      createdAt: e.createdAt.toISOString(),
+    }));
+
+    const team: TeamMember[] = teamUsers
+      .map<TeamMember>((u) => ({
+        id: u.id,
+        name: `${u.firstName} ${u.lastName}`,
+        role: u.role as "ADVISOR" | "OPS",
+        activeCases: u.role === "ADVISOR" ? u._count.assignedCases : u._count.ownedCases,
+      }))
+      .sort((a, b) => b.activeCases - a.activeCases);
+
+    const totalMs = recentlyCompleted.reduce(
+      (sum, c) => sum + (c.statusUpdatedAt.getTime() - c.createdAt.getTime()),
+      0
+    );
+    const avgDaysToComplete =
+      recentlyCompleted.length === 0
+        ? null
+        : totalMs / recentlyCompleted.length / (1000 * 60 * 60 * 24);
+
+    const data: AdminDashboardData = {
+      pipeline,
+      needsAttention,
+      activity,
+      team,
+      throughput: {
+        openedThisMonth,
+        completedThisMonth,
+        openedLastMonth,
+        completedLastMonth,
+      },
+      velocity: {
+        avgDaysToComplete,
+        completedIn30Days: recentlyCompleted.length,
+      },
+      aiUsage: {
+        planName: aiUsage.planName,
+        tokensUsed: aiUsage.tokensUsed,
+        tokensLimit: aiUsage.monthlyTokenLimit,
+        percentUsed: aiUsage.percentUsed,
+        periodResetsAt: aiUsage.periodEnd.toISOString(),
+      },
+      crm: {
+        connected: !!crmConnection,
+        provider: crmConnection?.provider ?? null,
+        lastSyncedAt: crmConnection?.lastHealthCheckAt?.toISOString() ?? null,
+        healthOk: crmConnection?.lastHealthOk ?? true,
+        healthError: crmConnection?.lastHealthError ?? null,
+        linkedCaseCount: crmLinkedCount,
+      },
+    };
 
     return (
       <>
-        <div className="mb-6">
-          <div className="flex items-center gap-3 mb-1">
-            <h1
-              className="text-2xl font-semibold tracking-tight"
-              style={{ color: "#e4e6ea" }}
-            >
+        <div className="mb-6 flex items-start justify-between gap-6">
+          <div className="min-w-0">
+            <h1 className="text-2xl font-semibold tracking-tight" style={{ color: "#e4e6ea" }}>
               {userName}&rsquo;s Dashboard
             </h1>
-            {firm?.name && (
-              <span
-                className="px-2.5 py-1 text-xs font-medium"
-                style={{ background: "#161b22", border: "1px solid #21262d", color: "#7d8590", borderRadius: 4 }}
-              >
-                {firm.name}
-              </span>
-            )}
+            <p className="text-sm mt-1" style={{ color: "#7d8590" }}>
+              Firm-wide overview. Customize widgets to match how your team works.
+            </p>
           </div>
-          <p className="text-sm" style={{ color: "#7d8590" }}>
-            Overview of your firm&rsquo;s cases and team performance.
-          </p>
+          <div className="flex-shrink-0 text-right">
+            <p className="text-[11px] uppercase tracking-widest" style={{ color: "#7d8590" }}>Today</p>
+            <p className="text-base font-semibold mt-1 font-[family-name:var(--font-inter-tight)]" style={{ color: "#e4e6ea" }}>
+              {new Date().toLocaleDateString("en-US", { weekday: "long", month: "long", day: "numeric" })}
+            </p>
+          </div>
         </div>
-        <AdminDashboard
-          recentCases={serializedRecent}
-          advisorStats={advisorStats}
-          opsStats={opsStats}
-          firmTotals={firmTotals}
-          statusCounts={statusCounts}
-          statusLabels={STATUS_LABELS}
-        />
+        <AdminDashboard data={data} initialLayout={savedLayout as never} />
       </>
     );
   }

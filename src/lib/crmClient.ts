@@ -59,19 +59,19 @@ export async function getProviderClient(connection: CrmConnection): Promise<CrmP
       },
       async searchOpportunities(query?: string) {
         const list = await wb.searchOpportunities(token, { query, limit: 25 });
-        return list.opportunities.map((o) => ({
-          id: String(o.id),
-          name: o.name,
-          stage: o.stage ?? null,
-        }));
+        return list.opportunities.map((o) => {
+          const stage = wb.pickStage(o);
+          return { id: String(o.id), name: o.name, stage: stage.name };
+        });
       },
       async getOpportunity(id) {
         const o = await wb.getOpportunity(token, id);
+        const stage = wb.pickStage(o);
         return {
           id: String(o.id),
           name: o.name,
-          stage: o.stage ?? null,
-          stageId: o.stage_id != null ? String(o.stage_id) : null,
+          stage: stage.name,
+          stageId: stage.id != null ? String(stage.id) : null,
         };
       },
       async updateOpportunityStage(id, stageId) {
@@ -79,11 +79,12 @@ export async function getProviderClient(connection: CrmConnection): Promise<CrmP
       },
       async createOpportunity({ name, stageId }) {
         const o = await wb.createOpportunity(token, { name, stageId });
+        const stage = wb.pickStage(o);
         return {
           id: String(o.id),
           name: o.name,
-          stage: o.stage ?? null,
-          stageId: o.stage_id != null ? String(o.stage_id) : null,
+          stage: stage.name,
+          stageId: stage.id != null ? String(stage.id) : null,
         };
       },
     };

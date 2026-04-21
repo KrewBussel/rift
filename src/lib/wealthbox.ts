@@ -51,17 +51,33 @@ export interface WealthboxStage {
   document_type: string; // "Opportunity" for opportunity stages
 }
 
+/**
+ * Raw Wealthbox opportunity as returned by the API. Fields are defensively typed
+ * because Wealthbox's response shape isn't fully documented — the stage may come
+ * back as a number (id) or an object, and we normalize via `pickStage` below.
+ */
 export interface WealthboxOpportunity {
   id: number;
   name: string;
-  stage?: string | null;
+  stage?: number | string | { id?: number; name?: string } | null;
   stage_id?: number | null;
+  stage_name?: string | null;
   probability?: number | null;
-  amount?: { amount: number; currency: string } | null;
-  close_date?: string | null;
-  contacts?: Array<{ id: number; name: string }>;
+  amounts?: Array<{ amount: number; currency: string; kind?: string }>;
+  target_close?: string | null;
+  linked_to?: Array<{ id: number; name?: string; type?: string }>;
   created_at?: string;
   updated_at?: string;
+}
+
+/** Normalized {id, name} for the opportunity's current stage. */
+export function pickStage(opp: WealthboxOpportunity): { id: number | null; name: string | null } {
+  if (opp.stage && typeof opp.stage === "object") {
+    return { id: opp.stage.id ?? null, name: opp.stage.name ?? opp.stage_name ?? null };
+  }
+  if (typeof opp.stage === "number") return { id: opp.stage, name: opp.stage_name ?? null };
+  if (typeof opp.stage === "string") return { id: opp.stage_id ?? null, name: opp.stage };
+  return { id: opp.stage_id ?? null, name: opp.stage_name ?? null };
 }
 
 export interface WealthboxOpportunityList {
@@ -69,20 +85,26 @@ export interface WealthboxOpportunityList {
   meta?: { total_entries?: number };
 }
 
-export interface WealthboxCategoryList {
-  stages?: WealthboxStage[]; // /categories/opportunity_stage returns {stages:[...]}
-  categories?: WealthboxStage[];
-}
-
 export async function getMe(token: string): Promise<WealthboxMe> {
   return request<WealthboxMe>(token, "/me");
 }
 
+/**
+ * Opportunity stages are a Customizable Category. The endpoint is plural
+ * (`opportunity_stages`). Response shape isn't fully documented; we accept
+ * several wrapper keys and also a bare array.
+ */
 export async function getOpportunityStages(token: string): Promise<WealthboxStage[]> {
-  // Wealthbox exposes category lists at /categories/<category_type>
-  // The opportunity_stage category returns { stages: [...] } or { categories: [...] }
-  const res = await request<WealthboxCategoryList>(token, "/categories/opportunity_stage");
-  return res.stages ?? res.categories ?? [];
+  const res = await request<unknown>(token, "/categories/opportunity_stages");
+  if (Array.isArray(res)) return res as WealthboxStage[];
+  if (res && typeof res === "object") {
+    const r = res as Record<string, unknown>;
+    for (const key of ["opportunity_stages", "stages", "categories", "data"]) {
+      const v = r[key];
+      if (Array.isArray(v)) return v as WealthboxStage[];
+    }
+  }
+  return [];
 }
 
 export async function searchOpportunities(token: string, opts: { query?: string; limit?: number } = {}): Promise<WealthboxOpportunityList> {
@@ -97,16 +119,52 @@ export async function getOpportunity(token: string, id: number | string): Promis
   return request<WealthboxOpportunity>(token, `/opportunities/${id}`);
 }
 
+/** Wealthbox minimum payload for POST /opportunities and PUT /opportunities/:id. */
+function defaultTargetClose(): string {
+  const d = new Date();
+  d.setDate(d.getDate() + 90);
+  // Wealthbox accepts ISO-ish datetime strings. Use YYYY-MM-DD HH:MM:SS -0000.
+  const pad = (n: number) => String(n).padStart(2, "0");
+  return `${d.getUTCFullYear()}-${pad(d.getUTCMonth() + 1)}-${pad(d.getUTCDate())} 00:00:00 +0000`;
+}
+
+const DEFAULT_AMOUNTS = [{ amount: 0, currency: "USD", kind: "Fee" }];
+
+/**
+ * Update an opportunity's stage. Wealthbox's PUT requires the full required
+ * field set, not a partial patch — so we fetch current state, mutate the
+ * stage, then PUT the whole thing back.
+ */
 export async function updateOpportunityStage(token: string, id: number | string, stageId: number | string): Promise<WealthboxOpportunity> {
+  const existing = await getOpportunity(token, id);
+  const body = {
+    name: existing.name,
+    target_close: existing.target_close ?? defaultTargetClose(),
+    probability: existing.probability ?? 50,
+    stage: Number(stageId),
+    amounts: existing.amounts?.length ? existing.amounts : DEFAULT_AMOUNTS,
+  };
   return request<WealthboxOpportunity>(token, `/opportunities/${id}`, {
     method: "PUT",
-    body: JSON.stringify({ stage_id: Number(stageId) }),
+    body: JSON.stringify(body),
   });
 }
 
-export async function createOpportunity(token: string, opts: { name: string; stageId?: number | string; contactIds?: number[] }): Promise<WealthboxOpportunity> {
-  const body: Record<string, unknown> = { name: opts.name };
-  if (opts.stageId !== undefined) body.stage_id = Number(opts.stageId);
+export async function createOpportunity(token: string, opts: {
+  name: string;
+  stageId?: number | string;
+  contactIds?: number[];
+  targetClose?: string;
+  probability?: number;
+  amounts?: Array<{ amount: number; currency: string; kind?: string }>;
+}): Promise<WealthboxOpportunity> {
+  const body: Record<string, unknown> = {
+    name: opts.name,
+    target_close: opts.targetClose ?? defaultTargetClose(),
+    probability: opts.probability ?? 50,
+    amounts: opts.amounts ?? DEFAULT_AMOUNTS,
+  };
+  if (opts.stageId !== undefined) body.stage = Number(opts.stageId);
   if (opts.contactIds?.length) body.linked_to = opts.contactIds.map((id) => ({ id, type: "Contact" }));
   return request<WealthboxOpportunity>(token, "/opportunities", {
     method: "POST",

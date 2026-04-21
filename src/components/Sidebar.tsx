@@ -136,10 +136,24 @@ export default function Sidebar({ user }: Props) {
               href="/dashboard"
               className="flex items-center gap-2.5 select-none min-w-0"
             >
-              <svg width="22" height="19" viewBox="0 0 32 28" fill="none" className="flex-shrink-0">
-                <rect x="0" y="0" width="14" height="28" rx="2" fill="#388bfd" />
-                <rect x="6" y="0" width="18" height="14" rx="2" fill="#79c0ff" opacity="0.85" />
-                <rect x="12" y="12" width="16" height="16" rx="2" fill="#388bfd" opacity="0.55" />
+              <svg width="22" height="22" viewBox="0 0 28 28" fill="none" className="flex-shrink-0">
+                <defs>
+                  <linearGradient id="sb-logo-a" x1="0" y1="0" x2="1" y2="1">
+                    <stop offset="0" stopColor="#60a5fa" />
+                    <stop offset="1" stopColor="#1d4ed8" />
+                  </linearGradient>
+                  <linearGradient id="sb-logo-b" x1="0" y1="0" x2="1" y2="1">
+                    <stop offset="0" stopColor="#a78bfa" />
+                    <stop offset="1" stopColor="#4f46e5" />
+                  </linearGradient>
+                  <linearGradient id="sb-logo-c" x1="0" y1="0" x2="1" y2="1">
+                    <stop offset="0" stopColor="#67e8f9" />
+                    <stop offset="1" stopColor="#0891b2" />
+                  </linearGradient>
+                </defs>
+                <rect x="0"  y="2"  width="10" height="24" rx="2.5" fill="url(#sb-logo-a)" />
+                <rect x="6"  y="6"  width="14" height="16" rx="2.5" fill="url(#sb-logo-b)" opacity="0.92" />
+                <rect x="14" y="10" width="14" height="12" rx="2.5" fill="url(#sb-logo-c)" opacity="0.85" />
               </svg>
               <span
                 className="font-black text-[15px] truncate"
