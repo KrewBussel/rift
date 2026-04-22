@@ -880,9 +880,10 @@ function OverviewTab({
         </div>
       )}
 
-      {/* Two-column layout: contact/mailing on the left, ops details on the right */}
-      <div className="grid md:grid-cols-2 gap-4">
-        <div className="space-y-4">
+      {/* Masonry-style 2-column layout: cards flow into whichever column is shorter
+          so content balances automatically regardless of which cards are visible. */}
+      <div className="md:columns-2 md:gap-4">
+        <div className="break-inside-avoid mb-4">
           <CategoryCard title="Contact" accent="#60a5fa" icon={<IconPhone />}>
             <div className="space-y-1.5">
               <Field label="Phone" value={c.phone} mono />
@@ -894,13 +895,9 @@ function OverviewTab({
               )}
             </div>
           </CategoryCard>
-
-          <CategoryCard title="Mailing" accent="#22d3ee" icon={<IconMail />}>
-            <MailingSection c={c} firmOperatingStates={firmOperatingStates} />
-          </CategoryCard>
         </div>
 
-        <div className="space-y-4">
+        <div className="break-inside-avoid mb-4">
           <CategoryCard title="Signatures" accent="#a78bfa" icon={<IconSignature />}>
             {c.signatureRequirements && (
               <p className="text-sm mb-3 leading-relaxed" style={{ color: "#c9d1d9" }}>
@@ -920,8 +917,16 @@ function OverviewTab({
               <Chip on={c.acceptsDigitalSignature} label={c.acceptsDigitalSignature ? "DocuSign ok" : "No DocuSign"} />
             </div>
           </CategoryCard>
+        </div>
 
-          {c.quirks.length > 0 && (
+        <div className="break-inside-avoid mb-4">
+          <CategoryCard title="Mailing" accent="#22d3ee" icon={<IconMail />}>
+            <MailingSection c={c} firmOperatingStates={firmOperatingStates} />
+          </CategoryCard>
+        </div>
+
+        {c.quirks.length > 0 && (
+          <div className="break-inside-avoid mb-4">
             <CategoryCard title="Quirks to watch" accent="#f59e0b" icon={<IconAlert />}>
               <ul className="space-y-2">
                 {c.quirks.map((q, i) => (
@@ -932,9 +937,11 @@ function OverviewTab({
                 ))}
               </ul>
             </CategoryCard>
-          )}
+          </div>
+        )}
 
-          {c.commonForms.length > 0 && (
+        {c.commonForms.length > 0 && (
+          <div className="break-inside-avoid mb-4">
             <CategoryCard title="Common forms" accent="#6ee7b7" icon={<IconDoc />}>
               <div className="flex flex-wrap gap-1.5">
                 {c.commonForms.map((f) => (
@@ -948,9 +955,11 @@ function OverviewTab({
                 ))}
               </div>
             </CategoryCard>
-          )}
+          </div>
+        )}
 
-          {c.aliases.length > 0 && (
+        {c.aliases.length > 0 && (
+          <div className="break-inside-avoid mb-4">
             <CategoryCard title="Also known as" accent="#6b7280" icon={<IconTag />}>
               <div className="flex flex-wrap gap-1.5">
                 {c.aliases.map((a) => (
@@ -964,8 +973,8 @@ function OverviewTab({
                 ))}
               </div>
             </CategoryCard>
-          )}
-        </div>
+          </div>
+        )}
       </div>
 
       {c.lastVerifiedAt && (

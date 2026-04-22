@@ -25,6 +25,8 @@ export default async function SettingsPage() {
         email: true,
         role: true,
         preferences: true,
+        bio: true,
+        emailSignature: true,
         createdAt: true,
       },
     }),

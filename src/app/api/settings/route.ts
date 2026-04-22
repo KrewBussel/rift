@@ -33,6 +33,8 @@ const UpdateProfileSchema = z
   .object({
     firstName: z.string().trim().min(1).max(100).optional(),
     lastName: z.string().trim().min(1).max(100).optional(),
+    bio: z.string().max(500).nullable().optional(),
+    emailSignature: z.string().max(2000).nullable().optional(),
     preferences: PreferencesSchema.optional(),
     currentPassword: z.string().min(1).optional(),
     newPassword: z.string().min(1).max(512).optional(),
@@ -78,6 +80,8 @@ export async function PATCH(req: Request) {
   const updateData: {
     firstName?: string;
     lastName?: string;
+    bio?: string | null;
+    emailSignature?: string | null;
     preferences?: Prisma.InputJsonValue;
     password?: string;
     passwordUpdatedAt?: Date;
@@ -85,6 +89,8 @@ export async function PATCH(req: Request) {
 
   if (body.firstName !== undefined) updateData.firstName = body.firstName;
   if (body.lastName !== undefined) updateData.lastName = body.lastName;
+  if (body.bio !== undefined) updateData.bio = body.bio;
+  if (body.emailSignature !== undefined) updateData.emailSignature = body.emailSignature;
 
   if (body.preferences !== undefined) {
     const existing = await prisma.user.findUnique({

@@ -1,6 +1,7 @@
 "use client";
 
 import { useEffect, useState } from "react";
+import { useRouter, useSearchParams } from "next/navigation";
 import { formatDate } from "@/lib/utils";
 
 /* ─── Shared types & styles ──────────────────────────────────────────────── */
@@ -20,6 +21,8 @@ interface User {
   email: string;
   role: string;
   preferences: UserPreferences;
+  bio: string | null;
+  emailSignature: string | null;
   createdAt: string;
 }
 
@@ -113,7 +116,7 @@ const INPUT_STYLE: React.CSSProperties = {
   caretColor: "#58a6ff",
 };
 
-const inputCls = "w-full px-3 py-2 text-sm focus:outline-none focus:ring-2 focus:ring-blue-500 transition-colors";
+const inputCls = "w-full px-3 py-2 text-sm focus:outline-none focus:ring-0 transition-colors";
 
 const CARD_STYLE: React.CSSProperties = {
   background: "#161b22",
@@ -171,73 +174,172 @@ const TAB_LABELS: Record<Tab, string> = {
   "audit-log": "Audit Log",
 };
 
+const TAB_DESCRIPTIONS: Record<Tab, string> = {
+  profile: "Your name, avatar, and contact information.",
+  password: "Update your password. We recommend changing it every 90 days.",
+  preferences: "Default filters, timezone, and dashboard behavior.",
+  organization: "Firm name, contact info, and branding.",
+  security: "Password policy, session duration, and 2FA enforcement.",
+  team: "Invite, manage, and deactivate firm members.",
+  "ai-usage": "Tokens consumed this billing period and plan limits.",
+  billing: "Plan, seats, and renewal details.",
+  compliance: "Data retention, export, and compliance contacts.",
+  notifications: "Email digests, reminders, and cron configuration.",
+  integrations: "Connect Wealthbox or Salesforce and map case stages.",
+  "audit-log": "Every action logged for compliance review.",
+};
+
+type NavGroup = { id: string; label: string; tabs: Tab[] };
+
+const USER_NAV: NavGroup[] = [
+  { id: "account", label: "Account", tabs: ["profile", "password", "preferences"] },
+  { id: "usage",   label: "Usage",   tabs: ["ai-usage"] },
+];
+
+const ADMIN_NAV: NavGroup[] = [
+  { id: "account",       label: "Account",       tabs: ["profile", "password", "preferences"] },
+  { id: "workspace",     label: "Workspace",     tabs: ["organization", "team", "billing"] },
+  { id: "security",      label: "Security & compliance", tabs: ["security", "compliance", "audit-log"] },
+  { id: "integrations",  label: "Integrations",  tabs: ["integrations", "notifications"] },
+  { id: "usage",         label: "Usage",         tabs: ["ai-usage"] },
+];
+
+function groupForTab(tab: Tab, nav: NavGroup[]): NavGroup | null {
+  return nav.find((g) => g.tabs.includes(tab)) ?? null;
+}
+
 /* ─── Root ───────────────────────────────────────────────────────────────── */
 
 export default function SettingsForm({ user, firmSettings, firm, seatsUsed, aiUsage, platform, cronSecret }: Props) {
+  const router = useRouter();
+  const searchParams = useSearchParams();
   const isAdmin = user.role === "ADMIN";
-  const tabs = isAdmin ? ADMIN_TABS : USER_TABS;
-  const [activeTab, setActiveTab] = useState<Tab>("profile");
+  const nav = isAdmin ? ADMIN_NAV : USER_NAV;
+  const validTabs = isAdmin ? ADMIN_TABS : USER_TABS;
+
+  // URL-routed active tab (?tab=...). Falls back to profile and silently
+  // ignores tabs the current role can't access.
+  const paramTab = (searchParams.get("tab") ?? "profile") as Tab;
+  const activeTab: Tab = validTabs.includes(paramTab) ? paramTab : "profile";
+  const activeGroup = groupForTab(activeTab, nav);
+
+  const setActiveTab = (t: Tab) => {
+    const params = new URLSearchParams(searchParams.toString());
+    params.set("tab", t);
+    router.replace(`?${params.toString()}`, { scroll: false });
+  };
 
   return (
-    <div className="max-w-4xl">
-      <div className="mb-6">
-        <h1 className="text-2xl font-semibold tracking-tight" style={{ color: "#e4e6ea" }}>
-          Settings
-        </h1>
-        <p className="text-sm mt-1" style={{ color: "#7d8590" }}>
-          {isAdmin ? "Manage your firm, security, and compliance" : "Manage your profile and preferences"}
-        </p>
-      </div>
+    <div className="flex flex-col md:flex-row md:gap-10 md:items-start">
+      {/* Sidebar navigation */}
+      <aside className="md:w-[220px] flex-shrink-0 md:sticky md:top-20">
+        <div className="mb-5 md:mb-6">
+          <h1 className="text-xl font-semibold tracking-tight" style={{ color: "#e4e6ea" }}>
+            Settings
+          </h1>
+          <p className="text-xs mt-1" style={{ color: "#7d8590" }}>
+            {isAdmin ? "Your profile, firm, and integrations" : "Your profile and preferences"}
+          </p>
+        </div>
 
-      <div
-        className="flex flex-wrap gap-0.5 mb-6"
-        style={{ borderBottom: "1px solid #21262d" }}
-      >
-        {tabs.map((tab) => (
-          <button
-            key={tab}
-            onClick={() => setActiveTab(tab)}
-            className="px-4 py-2.5 text-sm font-medium transition-colors -mb-px"
-            style={{
-              color: activeTab === tab ? "#e4e6ea" : "#7d8590",
-              borderBottom: activeTab === tab ? "2px solid #388bfd" : "2px solid transparent",
-            }}
+        <nav className="space-y-5">
+          {nav.map((group) => (
+            <div key={group.id}>
+              <p
+                className="text-[10px] font-semibold uppercase tracking-widest mb-1.5 px-2"
+                style={{ color: "#7d8590" }}
+              >
+                {group.label}
+              </p>
+              <ul className="space-y-0.5">
+                {group.tabs.map((t) => {
+                  const active = activeTab === t;
+                  return (
+                    <li key={t}>
+                      <button
+                        onClick={() => setActiveTab(t)}
+                        className="w-full flex items-center gap-2 text-left px-2 py-1.5 rounded-md text-sm transition-colors"
+                        style={{
+                          background: active ? "#141a24" : "transparent",
+                          color: active ? "#e4e6ea" : "#9ca3af",
+                          border: `1px solid ${active ? "#252b38" : "transparent"}`,
+                        }}
+                      >
+                        {active && (
+                          <span
+                            aria-hidden
+                            className="w-0.5 h-4 rounded-full flex-shrink-0"
+                            style={{ background: "#60a5fa" }}
+                          />
+                        )}
+                        <span className={active ? "" : "pl-[10px]"}>{TAB_LABELS[t]}</span>
+                      </button>
+                    </li>
+                  );
+                })}
+              </ul>
+            </div>
+          ))}
+        </nav>
+      </aside>
+
+      {/* Content area */}
+      <div className="flex-1 min-w-0 max-w-3xl">
+        {/* Per-page header with breadcrumb */}
+        <div className="mb-6">
+          <div className="flex items-center gap-1.5 text-xs mb-2" style={{ color: "#7d8590" }}>
+            <span>Settings</span>
+            <span style={{ color: "#3d4450" }}>/</span>
+            {activeGroup && (
+              <>
+                <span>{activeGroup.label}</span>
+                <span style={{ color: "#3d4450" }}>/</span>
+              </>
+            )}
+            <span style={{ color: "#c9d1d9" }}>{TAB_LABELS[activeTab]}</span>
+          </div>
+          <h2
+            className="text-2xl font-semibold tracking-tight font-[family-name:var(--font-inter-tight)]"
+            style={{ color: "#e4e6ea", letterSpacing: "-0.015em" }}
           >
-            {TAB_LABELS[tab]}
-          </button>
-        ))}
+            {TAB_LABELS[activeTab]}
+          </h2>
+          <p className="text-sm mt-1" style={{ color: "#7d8590" }}>
+            {TAB_DESCRIPTIONS[activeTab]}
+          </p>
+        </div>
+
+        {activeTab === "profile" && <ProfileSection user={user} />}
+        {activeTab === "password" && <PasswordSection />}
+        {activeTab === "preferences" && <PreferencesSection user={user} />}
+        {activeTab === "ai-usage" && <AIUsageSection initial={aiUsage} />}
+
+        {isAdmin && activeTab === "organization" && firm && <OrganizationSection initial={firm} />}
+        {isAdmin && activeTab === "security" && firmSettings && (
+          <SecuritySection
+            initial={firmSettings}
+            baseline={{
+              passwordMinLength: platform.passwordMinLength,
+              passwordRequireNumber: platform.passwordRequireNumber,
+              passwordRequireSymbol: platform.passwordRequireSymbol,
+              sessionTimeoutMinutes: platform.sessionTimeoutMinutes,
+            }}
+          />
+        )}
+        {isAdmin && activeTab === "team" && <TeamSection currentUserId={user.id} />}
+        {isAdmin && activeTab === "billing" && firm && <BillingSection firm={firm} seatsUsed={seatsUsed} />}
+        {isAdmin && activeTab === "compliance" && firmSettings && (
+          <ComplianceSection
+            initial={firmSettings}
+            retention={{ caseDataDays: platform.retentionCaseDataDays, auditLogDays: platform.retentionAuditLogDays }}
+          />
+        )}
+        {isAdmin && activeTab === "notifications" && firmSettings && (
+          <NotificationsSection firmSettings={firmSettings} cronSecret={cronSecret} />
+        )}
+        {isAdmin && activeTab === "integrations" && <IntegrationsSection />}
+        {isAdmin && activeTab === "audit-log" && <AuditLogSection />}
       </div>
-
-      {activeTab === "profile" && <ProfileSection user={user} />}
-      {activeTab === "password" && <PasswordSection />}
-      {activeTab === "preferences" && <PreferencesSection user={user} />}
-      {activeTab === "ai-usage" && <AIUsageSection initial={aiUsage} />}
-
-      {isAdmin && activeTab === "organization" && firm && <OrganizationSection initial={firm} />}
-      {isAdmin && activeTab === "security" && firmSettings && (
-        <SecuritySection
-          initial={firmSettings}
-          baseline={{
-            passwordMinLength: platform.passwordMinLength,
-            passwordRequireNumber: platform.passwordRequireNumber,
-            passwordRequireSymbol: platform.passwordRequireSymbol,
-            sessionTimeoutMinutes: platform.sessionTimeoutMinutes,
-          }}
-        />
-      )}
-      {isAdmin && activeTab === "team" && <TeamSection currentUserId={user.id} />}
-      {isAdmin && activeTab === "billing" && firm && <BillingSection firm={firm} seatsUsed={seatsUsed} />}
-      {isAdmin && activeTab === "compliance" && firmSettings && (
-        <ComplianceSection
-          initial={firmSettings}
-          retention={{ caseDataDays: platform.retentionCaseDataDays, auditLogDays: platform.retentionAuditLogDays }}
-        />
-      )}
-      {isAdmin && activeTab === "notifications" && firmSettings && (
-        <NotificationsSection firmSettings={firmSettings} cronSecret={cronSecret} />
-      )}
-      {isAdmin && activeTab === "integrations" && <IntegrationsSection />}
-      {isAdmin && activeTab === "audit-log" && <AuditLogSection />}
     </div>
   );
 }
@@ -247,6 +349,8 @@ export default function SettingsForm({ user, firmSettings, firm, seatsUsed, aiUs
 function ProfileSection({ user }: { user: User }) {
   const [firstName, setFirstName] = useState(user.firstName);
   const [lastName, setLastName] = useState(user.lastName);
+  const [bio, setBio] = useState(user.bio ?? "");
+  const [emailSignature, setEmailSignature] = useState(user.emailSignature ?? "");
   const [saving, setSaving] = useState(false);
   const [message, setMessage] = useState<{ type: "success" | "error"; text: string } | null>(null);
 
@@ -255,7 +359,11 @@ function ProfileSection({ user }: { user: User }) {
   const [avatarUploading, setAvatarUploading] = useState(false);
   const [avatarMessage, setAvatarMessage] = useState<{ type: "success" | "error"; text: string } | null>(null);
 
-  const isDirty = firstName !== user.firstName || lastName !== user.lastName;
+  const isDirty =
+    firstName !== user.firstName ||
+    lastName !== user.lastName ||
+    bio !== (user.bio ?? "") ||
+    emailSignature !== (user.emailSignature ?? "");
 
   async function handleSave(e: React.FormEvent) {
     e.preventDefault();
@@ -266,7 +374,12 @@ function ProfileSection({ user }: { user: User }) {
     const res = await fetch("/api/settings", {
       method: "PATCH",
       headers: { "Content-Type": "application/json" },
-      body: JSON.stringify({ firstName, lastName }),
+      body: JSON.stringify({
+        firstName,
+        lastName,
+        bio: bio.trim() || null,
+        emailSignature: emailSignature.trim() || null,
+      }),
     });
 
     setSaving(false);
@@ -298,75 +411,141 @@ function ProfileSection({ user }: { user: User }) {
   }
 
   return (
-    <div style={CARD_STYLE} className="p-6 space-y-6">
-      <div className="flex items-center gap-4">
-        <label className="relative flex-shrink-0 cursor-pointer group" title="Change photo">
-          <input type="file" accept="image/jpeg,image/png,image/webp" className="sr-only" onChange={handleAvatarChange} disabled={avatarUploading} />
-          {!avatarError ? (
-            <img key={avatarVersion} src={`/api/users/me/avatar?v=${avatarVersion}`} alt="Profile photo" className="w-14 h-14 rounded-full object-cover" onError={() => setAvatarError(true)} />
-          ) : (
-            <div className="w-14 h-14 rounded-full flex items-center justify-center text-lg font-semibold" style={{ background: "#1f3a5f", color: "#79c0ff" }}>
-              {user.firstName.charAt(0).toUpperCase()}
-            </div>
-          )}
-          <div className="absolute inset-0 rounded-full flex items-center justify-center opacity-0 group-hover:opacity-100 transition-opacity" style={{ background: "rgba(0,0,0,0.55)" }}>
-            {avatarUploading ? (
-              <svg className="animate-spin" width="16" height="16" viewBox="0 0 16 16" fill="none">
-                <circle cx="8" cy="8" r="6" stroke="white" strokeWidth="2" strokeOpacity="0.3" />
-                <path d="M8 2a6 6 0 0 1 6 6" stroke="white" strokeWidth="2" strokeLinecap="round" />
-              </svg>
+    <form onSubmit={handleSave}>
+      <div style={CARD_STYLE} className="overflow-hidden">
+        {/* Identity header: avatar + name + role chip + member-since */}
+        <div className="p-6 flex items-start gap-5" style={{ borderBottom: "1px solid #252b38" }}>
+          <label className="relative flex-shrink-0 cursor-pointer group" title="Change photo">
+            <input type="file" accept="image/jpeg,image/png,image/webp" className="sr-only" onChange={handleAvatarChange} disabled={avatarUploading} />
+            {!avatarError ? (
+              <img
+                key={avatarVersion}
+                src={`/api/users/me/avatar?v=${avatarVersion}`}
+                alt="Profile photo"
+                className="w-20 h-20 rounded-full object-cover"
+                style={{ border: "1px solid #252b38" }}
+                onError={() => setAvatarError(true)}
+              />
             ) : (
-              <svg width="16" height="16" viewBox="0 0 16 16" fill="none">
-                <path d="M2 12V5.5A1.5 1.5 0 0 1 3.5 4H5l1-1.5h4L11 4h1.5A1.5 1.5 0 0 1 14 5.5V12a1.5 1.5 0 0 1-1.5 1.5h-9A1.5 1.5 0 0 1 2 12Z" stroke="white" strokeWidth="1.3" />
-                <circle cx="8" cy="8.5" r="2" stroke="white" strokeWidth="1.3" />
-              </svg>
+              <div
+                className="w-20 h-20 rounded-full flex items-center justify-center text-2xl font-semibold"
+                style={{
+                  background: "linear-gradient(135deg, #1d4ed8 0%, #4f46e5 55%, #0891b2 100%)",
+                  color: "#fff",
+                  boxShadow: "inset 0 1px 0 rgba(255,255,255,0.15)",
+                }}
+              >
+                {user.firstName.charAt(0).toUpperCase()}{user.lastName.charAt(0).toUpperCase()}
+              </div>
             )}
+            <div className="absolute inset-0 rounded-full flex items-center justify-center opacity-0 group-hover:opacity-100 transition-opacity" style={{ background: "rgba(0,0,0,0.55)" }}>
+              {avatarUploading ? (
+                <svg className="animate-spin" width="18" height="18" viewBox="0 0 16 16" fill="none">
+                  <circle cx="8" cy="8" r="6" stroke="white" strokeWidth="2" strokeOpacity="0.3" />
+                  <path d="M8 2a6 6 0 0 1 6 6" stroke="white" strokeWidth="2" strokeLinecap="round" />
+                </svg>
+              ) : (
+                <svg width="18" height="18" viewBox="0 0 16 16" fill="none">
+                  <path d="M2 12V5.5A1.5 1.5 0 0 1 3.5 4H5l1-1.5h4L11 4h1.5A1.5 1.5 0 0 1 14 5.5V12a1.5 1.5 0 0 1-1.5 1.5h-9A1.5 1.5 0 0 1 2 12Z" stroke="white" strokeWidth="1.3" />
+                  <circle cx="8" cy="8.5" r="2" stroke="white" strokeWidth="1.3" />
+                </svg>
+              )}
+            </div>
+          </label>
+
+          <div className="min-w-0 flex-1">
+            <div className="flex items-center gap-2.5 flex-wrap">
+              <p className="text-base font-semibold" style={{ color: "#e4e6ea" }}>
+                {user.firstName} {user.lastName}
+              </p>
+              <span className="inline-flex items-center rounded-md px-2 py-0.5 text-[10px] uppercase tracking-widest font-semibold" style={{ background: "#0d1f38", color: "#79c0ff", border: "1px solid #1e3a8a" }}>
+                {ROLE_LABELS[user.role] ?? user.role}
+              </span>
+            </div>
+            <p className="text-sm mt-1" style={{ color: "#7d8590" }}>{user.email}</p>
+            <p className="text-xs mt-2" style={{ color: "#484f58" }}>
+              Member since {formatDate(user.createdAt)}
+              {avatarMessage
+                ? <span className="ml-2" style={{ color: avatarMessage.type === "success" ? "#6ee7b7" : "#f87171" }}>· {avatarMessage.text}</span>
+                : <span className="ml-2" style={{ color: "#484f58" }}>· Click photo to change (JPEG/PNG/WebP, max 2 MB)</span>}
+            </p>
           </div>
-        </label>
+        </div>
 
-        <div>
-          <p className="text-sm font-semibold" style={{ color: "#e4e6ea" }}>
-            {user.firstName} {user.lastName}
+        {/* Basic info */}
+        <div className="p-6 space-y-5" style={{ borderBottom: "1px solid #252b38" }}>
+          <SubSectionHeading title="Basic info" description="Your display name and contact. Email is managed by your firm admin." />
+          <div className="grid grid-cols-2 gap-4">
+            <Field label="First name">
+              <input type="text" value={firstName} onChange={(e) => setFirstName(e.target.value)} required className={inputCls} style={INPUT_STYLE} />
+            </Field>
+            <Field label="Last name">
+              <input type="text" value={lastName} onChange={(e) => setLastName(e.target.value)} required className={inputCls} style={INPUT_STYLE} />
+            </Field>
+          </div>
+          <Field label="Email address">
+            <input type="email" value={user.email} readOnly className="w-full rounded-lg px-3 py-2 text-sm cursor-not-allowed" style={{ background: "#0a0d12", border: "1px solid #252b38", color: "#484f58" }} />
+          </Field>
+        </div>
+
+        {/* Bio */}
+        <div className="p-6 space-y-3" style={{ borderBottom: "1px solid #252b38" }}>
+          <SubSectionHeading
+            title="About you"
+            description="A short bio. Shown to clients on the portal when you're their assigned advisor."
+          />
+          <textarea
+            value={bio}
+            onChange={(e) => setBio(e.target.value.slice(0, 500))}
+            placeholder="e.g. CFP® with 10 years helping retirees navigate rollovers. Based in Chicago."
+            rows={3}
+            className="w-full rounded-lg px-3 py-2 text-sm focus:outline-none focus:ring-0 transition-colors resize-none"
+            style={INPUT_STYLE}
+          />
+          <p className="text-[11px] text-right" style={{ color: "#484f58" }}>
+            {bio.length}/500
           </p>
-          <p className="text-sm" style={{ color: "#7d8590" }}>{user.email}</p>
-          <span className="inline-flex items-center mt-1.5 rounded-full px-2 py-0.5 text-xs font-medium" style={{ background: "#162032", color: "#79c0ff" }}>
-            {ROLE_LABELS[user.role] ?? user.role}
-          </span>
-          {avatarMessage && (
-            <p className="text-xs mt-1" style={{ color: avatarMessage.type === "success" ? "#3fb950" : "#f87171" }}>
-              {avatarMessage.text}
-            </p>
-          )}
-          {!avatarMessage && (
-            <p className="text-xs mt-1" style={{ color: "#484f58" }}>
-              Click photo to change · JPEG, PNG, WebP · max 2 MB
-            </p>
-          )}
-        </div>
-      </div>
-
-      <div style={DIVIDER_STYLE} />
-
-      <form onSubmit={handleSave} className="space-y-4">
-        <div className="grid grid-cols-2 gap-4">
-          <Field label="First name">
-            <input type="text" value={firstName} onChange={(e) => setFirstName(e.target.value)} required className={inputCls} style={INPUT_STYLE} />
-          </Field>
-          <Field label="Last name">
-            <input type="text" value={lastName} onChange={(e) => setLastName(e.target.value)} required className={inputCls} style={INPUT_STYLE} />
-          </Field>
         </div>
 
-        <Field label="Email address">
-          <input type="email" value={user.email} readOnly className="w-full rounded-lg px-3 py-2 text-sm cursor-not-allowed" style={{ background: "#161b22", border: "1px solid #21262d", color: "#484f58" }} />
-          <p className="text-xs mt-1" style={{ color: "#484f58" }}>Email cannot be changed. Contact your admin.</p>
-        </Field>
+        {/* Email signature */}
+        <div className="p-6 space-y-3">
+          <SubSectionHeading
+            title="Email signature"
+            description="Appended automatically when you send client portal invites and reminders from Rift."
+          />
+          <textarea
+            value={emailSignature}
+            onChange={(e) => setEmailSignature(e.target.value.slice(0, 2000))}
+            placeholder={`Sarah Mitchell\nSummit Wealth Partners\n(555) 123-4567`}
+            rows={5}
+            className="w-full rounded-lg px-3 py-2 text-sm font-mono focus:outline-none focus:ring-0 transition-colors resize-none"
+            style={INPUT_STYLE}
+          />
+          <p className="text-[11px] text-right" style={{ color: "#484f58" }}>
+            {emailSignature.length}/2000
+          </p>
+        </div>
 
-        <div className="flex items-center justify-between pt-2">
-          <p className="text-xs" style={{ color: "#484f58" }}>Member since {formatDate(user.createdAt)}</p>
+        {/* Save bar */}
+        <div
+          className="px-6 py-4 flex items-center justify-between gap-4"
+          style={{ background: "#0a0d12", borderTop: "1px solid #252b38" }}
+        >
+          <p className="text-xs" style={{ color: "#7d8590" }}>
+            {isDirty ? "You have unsaved changes." : "All changes saved."}
+          </p>
           <SaveBar saving={saving} disabled={!isDirty} message={message} label="Save changes" />
         </div>
-      </form>
+      </div>
+    </form>
+  );
+}
+
+function SubSectionHeading({ title, description }: { title: string; description: string }) {
+  return (
+    <div>
+      <h3 className="text-sm font-semibold" style={{ color: "#e4e6ea" }}>{title}</h3>
+      <p className="text-xs mt-0.5 leading-relaxed" style={{ color: "#7d8590" }}>{description}</p>
     </div>
   );
 }
@@ -1197,7 +1376,7 @@ function NotificationsSection({ firmSettings: initial, cronSecret }: { firmSetti
               {stalledCase && (
                 <div className="pl-12">
                   <Field label="Stalled threshold">
-                    <select value={stalledDays} onChange={(e) => setStalledDays(Number(e.target.value))} className="rounded-lg px-3 py-2 text-sm focus:outline-none focus:ring-2 focus:ring-blue-500" style={INPUT_STYLE}>
+                    <select value={stalledDays} onChange={(e) => setStalledDays(Number(e.target.value))} className="rounded-lg px-3 py-2 text-sm focus:outline-none focus:ring-0" style={INPUT_STYLE}>
                       <option value={3}>3 days</option>
                       <option value={5}>5 days</option>
                       <option value={7}>7 days</option>

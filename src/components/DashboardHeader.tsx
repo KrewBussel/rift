@@ -1,6 +1,7 @@
 "use client";
 
 import Link from "next/link";
+import GlobalSearch from "./GlobalSearch";
 
 /** Persistent dashboard header. User identity on the left, firm on the right.
  *  Client component so the avatar image can fail over to initials on error. */
@@ -31,10 +32,10 @@ export default function DashboardHeader({
         borderBottom: "1px solid #252b38",
       }}
     >
-      <div className="max-w-7xl mx-auto px-6 lg:px-10 h-16 flex items-center justify-between gap-4">
+      <div className="max-w-7xl mx-auto px-6 lg:px-10 h-16 flex items-center gap-6">
         {/* Left: firm */}
         {firm && (
-          <div className="min-w-0 flex items-center gap-2.5">
+          <div className="min-w-0 flex items-center gap-2.5 flex-shrink-0">
             <span
               aria-hidden
               className="w-1 h-6 rounded-full flex-shrink-0"
@@ -48,6 +49,11 @@ export default function DashboardHeader({
             </p>
           </div>
         )}
+
+        {/* Middle: global search */}
+        <div className="flex-1 min-w-0 max-w-xl mx-auto hidden md:block">
+          <GlobalSearch userRole={(user.role as "ADMIN" | "ADVISOR" | "OPS") ?? "OPS"} />
+        </div>
 
         {/* Right: identity */}
         <Link

@@ -92,7 +92,7 @@ function ResetPasswordForm() {
             placeholder="••••••••••••"
             value={newPassword}
             onChange={(e) => setNewPassword(e.target.value)}
-            className="w-full rounded-lg px-3 py-2.5 text-sm focus:outline-none focus:ring-2 focus:ring-blue-500 transition-colors"
+            className="w-full rounded-lg px-3 py-2.5 text-sm focus:outline-none focus:ring-0 transition-colors"
             style={{
               background: "#0d1117",
               border: newPassword && newPassword.length < 12 ? "1px solid #5c2626" : "1px solid #30363d",
@@ -117,7 +117,7 @@ function ResetPasswordForm() {
             placeholder="••••••••••••"
             value={confirmPassword}
             onChange={(e) => setConfirmPassword(e.target.value)}
-            className="w-full rounded-lg px-3 py-2.5 text-sm focus:outline-none focus:ring-2 focus:ring-blue-500 transition-colors"
+            className="w-full rounded-lg px-3 py-2.5 text-sm focus:outline-none focus:ring-0 transition-colors"
             style={{
               background: "#0d1117",
               border: confirmPassword && !passwordsMatch ? "1px solid #5c2626" : "1px solid #30363d",

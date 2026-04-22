@@ -26,7 +26,7 @@ const STEPS = [
   { title: "Options & Review",    description: "Final details before creating the case." },
 ];
 
-const inputCls = "w-full rounded-xl px-4 py-3 text-sm focus:outline-none focus:ring-2 focus:ring-blue-500 transition-colors";
+const inputCls = "w-full rounded-xl px-4 py-3 text-sm focus:outline-none focus:ring-0 transition-colors";
 const inputStyle = {
   background: "#0d1117",
   border: "1px solid #30363d",

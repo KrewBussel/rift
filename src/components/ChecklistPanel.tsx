@@ -162,7 +162,7 @@ export default function ChecklistPanel({ caseId, initialItems, userRole, onDocum
               {expandedNotes.has(item.id) ? (
                 <div className="mt-2 space-y-1.5">
                   <textarea
-                    className="w-full text-xs rounded-lg px-2.5 py-1.5 resize-none focus:outline-none focus:ring-2 focus:ring-blue-500"
+                    className="w-full text-xs rounded-lg px-2.5 py-1.5 resize-none focus:outline-none focus:ring-0"
                     style={{ background: "#161b22", border: "1px solid #30363d", color: "#c9d1d9" }}
                     rows={2}
                     value={notesDraft[item.id] ?? ""}
@@ -333,7 +333,7 @@ export default function ChecklistPanel({ caseId, initialItems, userRole, onDocum
         {addingItem && (
           <form onSubmit={handleAddItem} className="flex gap-2 mb-4">
             <input autoFocus type="text" placeholder="New checklist item…" value={newItemName} onChange={(e) => setNewItemName(e.target.value)}
-              className="flex-1 rounded-lg px-3 py-1.5 text-sm focus:outline-none focus:ring-2 focus:ring-blue-500"
+              className="flex-1 rounded-lg px-3 py-1.5 text-sm focus:outline-none focus:ring-0"
               style={{ background: "#0d1117", border: "1px solid #30363d", color: "#c9d1d9" }} />
             <button type="submit" disabled={saving === "new"} className="rounded-lg bg-blue-600 px-3 py-1.5 text-xs font-medium text-white hover:bg-blue-500 disabled:opacity-50 transition-colors">
               {saving === "new" ? "Adding…" : "Add"}

@@ -8,6 +8,7 @@ import TaskList from "./TaskList";
 import ChecklistPanel from "./ChecklistPanel";
 import DocumentsPanel from "./DocumentsPanel";
 import DarkSelect from "./DarkSelect";
+import Avatar from "./Avatar";
 
 interface User { id: string; firstName: string; lastName: string; role: string; }
 interface Note { id: string; body: string; createdAt: string; fromClient: boolean; author: { id: string; firstName: string; lastName: string } | null; }
@@ -53,7 +54,7 @@ const EVENT_LABELS: Record<string, string> = {
   OWNER_CHANGED: "Owner changed",
 };
 
-const inputCls = "w-full rounded-lg px-3 py-1.5 text-sm focus:outline-none focus:ring-2 focus:ring-blue-500 focus:border-transparent";
+const inputCls = "w-full rounded-lg px-3 py-1.5 text-sm focus:outline-none focus:ring-0 focus:border-transparent";
 const inputStyle = { background: "#0d1117", border: "1px solid #30363d", color: "#c9d1d9" };
 
 const CARD = { background: "#161b22", border: "1px solid #21262d" };
@@ -568,11 +569,15 @@ export default function CaseDetail({ rolloverCase: initial, users, currentUserId
                   <div key={note.id} className="rounded-lg p-3" style={{ background: "#0d1117", border: "1px solid #21262d" }}>
                     <div className="flex items-center justify-between mb-1.5">
                       <div className="flex items-center gap-2">
-                        <div className="w-5 h-5 rounded-full flex items-center justify-center" style={{ background: "#2d333b" }}>
-                          <span className="text-[9px] font-semibold" style={{ color: "#8b949e" }}>
-                            {note.author ? note.author.firstName.charAt(0) : note.fromClient ? "C" : "S"}
-                          </span>
-                        </div>
+                        {note.author ? (
+                          <Avatar userId={note.author.id} firstName={note.author.firstName} lastName={note.author.lastName} size={20} />
+                        ) : (
+                          <div className="w-5 h-5 rounded-full flex items-center justify-center flex-shrink-0" style={{ background: "#2d333b" }}>
+                            <span className="text-[9px] font-semibold" style={{ color: "#8b949e" }}>
+                              {note.fromClient ? "C" : "S"}
+                            </span>
+                          </div>
+                        )}
                         <span className="text-xs font-medium" style={{ color: "#c9d1d9" }}>
                           {note.author ? `${note.author.firstName} ${note.author.lastName}` : note.fromClient ? "Client" : "System"}
                         </span>
@@ -589,7 +594,7 @@ export default function CaseDetail({ rolloverCase: initial, users, currentUserId
                   onChange={(e) => setNoteText(e.target.value)}
                   placeholder="Write a note…"
                   rows={2}
-                  className="flex-1 rounded-lg px-3 py-2 text-sm focus:outline-none focus:ring-2 focus:ring-blue-500 resize-none"
+                  className="flex-1 rounded-lg px-3 py-2 text-sm focus:outline-none focus:ring-0 resize-none"
                   style={{ background: "#0d1117", border: "1px solid #30363d", color: "#c9d1d9" }}
                 />
                 <button

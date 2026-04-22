@@ -3,6 +3,7 @@
 import { useEffect, useMemo, useRef, useState } from "react";
 import Link from "next/link";
 import { formatDateTime } from "@/lib/utils";
+import Avatar from "./Avatar";
 
 /* ─── Types ──────────────────────────────────────────────────────────────── */
 
@@ -230,7 +231,7 @@ function SearchInput({ value, onChange }: { value: string; onChange: (v: string)
         value={value}
         onChange={(e) => onChange(e.target.value)}
         placeholder="Search clients, providers…"
-        className="w-full rounded-md pl-9 pr-3 py-2 text-sm focus:outline-none focus:ring-2 focus:ring-blue-500/40 transition-colors"
+        className="w-full rounded-md pl-9 pr-3 py-2 text-sm focus:outline-none focus:ring-0/40 transition-colors"
         style={{ background: "#0a0d12", border: "1px solid #252b38", color: TEXT }}
       />
     </div>
@@ -578,17 +579,16 @@ function AssigneeChip({
       </span>
     );
   }
-  const initials = (user.firstName[0] ?? "") + (user.lastName[0] ?? "");
   const colors = role === "ADVISOR"
     ? { bg: "#0d1f38", text: "#79c0ff", border: "#1e3a8a" }
     : { bg: "#1d1535", text: "#c4b5fd", border: "#2d2f5a" };
   return (
     <span
-      className="inline-flex items-center gap-1.5 text-xs px-2 py-0.5 rounded"
+      className="inline-flex items-center gap-1.5 text-xs pl-0.5 pr-2 py-0.5 rounded"
       style={{ background: colors.bg, border: `1px solid ${colors.border}`, color: colors.text }}
       title={`${role === "ADVISOR" ? "Advisor" : "Ops"}: ${user.firstName} ${user.lastName}`}
     >
-      <span className="font-semibold text-[10px] tracking-wider">{initials.toUpperCase()}</span>
+      <Avatar userId={user.id} firstName={user.firstName} lastName={user.lastName} size={18} />
       <span className="hidden lg:inline">{user.firstName}</span>
     </span>
   );

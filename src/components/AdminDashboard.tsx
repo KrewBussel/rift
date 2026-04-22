@@ -277,7 +277,7 @@ export default function AdminDashboard({
   };
 
   return (
-    <div>
+    <div className="pb-8">
       <div className="flex items-center justify-end gap-2 mb-4">
         {editing && hidden.length > 0 && (
           <span className="text-xs" style={{ color: MUTED }}>
@@ -755,8 +755,8 @@ function TeamWorkloadWidget({ team }: { team: TeamMember[] }) {
       <div className="flex items-baseline justify-between mb-3 flex-shrink-0">
         <p className="text-xs" style={{ color: MUTED }}>{team.length} people · {totalActive} active cases</p>
       </div>
-      <ul className="space-y-2.5 flex-1 overflow-y-auto widget-scroll min-h-0 pr-1 -mr-1">
-        {team.map((m) => {
+      <ul className="flex flex-col justify-between flex-1 min-h-0 pr-1 -mr-1">
+        {team.slice(0, 10).map((m) => {
           const pct = (m.activeCases / max) * 100;
           const overloaded = m.activeCases >= Math.ceil(avg * 1.5) && totalActive >= 6;
           const barColor = overloaded ? "#f59e0b" : m.role === "ADVISOR" ? "#60a5fa" : "#a78bfa";

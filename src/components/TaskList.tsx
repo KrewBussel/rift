@@ -16,7 +16,7 @@ const DEFAULT_TASKS = [
   "Confirm transfer progress",
 ];
 
-const inputCls = "w-full rounded-lg px-3 py-1.5 text-sm focus:outline-none focus:ring-2 focus:ring-blue-500 focus:border-transparent";
+const inputCls = "w-full rounded-lg px-3 py-1.5 text-sm focus:outline-none focus:ring-0 focus:border-transparent";
 const inputStyle = { background: "#0d1117", border: "1px solid #30363d", color: "#c9d1d9" };
 
 function isOverdue(task: Task) {
