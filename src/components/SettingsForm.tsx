@@ -35,7 +35,16 @@ interface FirmSettings {
   require2FA: boolean;
   complianceContactEmail: string | null;
   allowDataExport: boolean;
+  operatingStates: string[];
 }
+
+const US_STATES = [
+  "AL", "AK", "AZ", "AR", "CA", "CO", "CT", "DE", "FL", "GA",
+  "HI", "ID", "IL", "IN", "IA", "KS", "KY", "LA", "ME", "MD",
+  "MA", "MI", "MN", "MS", "MO", "MT", "NE", "NV", "NH", "NJ",
+  "NM", "NY", "NC", "ND", "OH", "OK", "OR", "PA", "RI", "SC",
+  "SD", "TN", "TX", "UT", "VT", "VA", "WA", "WV", "WI", "WY", "DC",
+];
 
 interface Firm {
   id: string;
@@ -114,6 +123,15 @@ const INPUT_STYLE: React.CSSProperties = {
   borderRadius: "8px",
   fontSize: "14px",
   caretColor: "#58a6ff",
+};
+
+const LOCKED_INPUT_STYLE: React.CSSProperties = {
+  background: "#0a0d12",
+  border: "1px solid #252b38",
+  color: "#c9d1d9",
+  borderRadius: "8px",
+  fontSize: "14px",
+  cursor: "default",
 };
 
 const inputCls = "w-full px-3 py-2 text-sm focus:outline-none focus:ring-0 transition-colors";
@@ -314,7 +332,12 @@ export default function SettingsForm({ user, firmSettings, firm, seatsUsed, aiUs
         {activeTab === "preferences" && <PreferencesSection user={user} />}
         {activeTab === "ai-usage" && <AIUsageSection initial={aiUsage} />}
 
-        {isAdmin && activeTab === "organization" && firm && <OrganizationSection initial={firm} />}
+        {isAdmin && activeTab === "organization" && firm && (
+          <div className="space-y-4">
+            <OrganizationSection initial={firm} />
+            {firmSettings && <OperatingStatesSection initial={firmSettings} />}
+          </div>
+        )}
         {isAdmin && activeTab === "security" && firmSettings && (
           <SecuritySection
             initial={firmSettings}
@@ -351,6 +374,7 @@ function ProfileSection({ user }: { user: User }) {
   const [lastName, setLastName] = useState(user.lastName);
   const [bio, setBio] = useState(user.bio ?? "");
   const [emailSignature, setEmailSignature] = useState(user.emailSignature ?? "");
+  const [editing, setEditing] = useState(false);
   const [saving, setSaving] = useState(false);
   const [message, setMessage] = useState<{ type: "success" | "error"; text: string } | null>(null);
 
@@ -365,8 +389,18 @@ function ProfileSection({ user }: { user: User }) {
     bio !== (user.bio ?? "") ||
     emailSignature !== (user.emailSignature ?? "");
 
+  function handleCancel() {
+    setFirstName(user.firstName);
+    setLastName(user.lastName);
+    setBio(user.bio ?? "");
+    setEmailSignature(user.emailSignature ?? "");
+    setMessage(null);
+    setEditing(false);
+  }
+
   async function handleSave(e: React.FormEvent) {
     e.preventDefault();
+    if (!editing) return;
     if (!firstName.trim() || !lastName.trim()) return;
     setSaving(true);
     setMessage(null);
@@ -383,12 +417,19 @@ function ProfileSection({ user }: { user: User }) {
     });
 
     setSaving(false);
-    if (res.ok) setMessage({ type: "success", text: "Profile updated successfully." });
-    else {
+    if (res.ok) {
+      setMessage({ type: "success", text: "Profile updated successfully." });
+      setEditing(false);
+    } else {
       const data = await res.json();
       setMessage({ type: "error", text: data.error ?? "Failed to save." });
     }
   }
+
+  const textStyle = editing ? INPUT_STYLE : LOCKED_INPUT_STYLE;
+  const textareaCls = editing
+    ? "w-full rounded-lg px-3 py-2 text-sm focus:outline-none focus:ring-0 transition-colors resize-none"
+    : "w-full rounded-lg px-3 py-2 text-sm resize-none cursor-not-allowed";
 
   async function handleAvatarChange(e: React.ChangeEvent<HTMLInputElement>) {
     const file = e.target.files?.[0];
@@ -470,6 +511,16 @@ function ProfileSection({ user }: { user: User }) {
                 : <span className="ml-2" style={{ color: "#484f58" }}>· Click photo to change (JPEG/PNG/WebP, max 2 MB)</span>}
             </p>
           </div>
+
+          <EditControls
+            editing={editing}
+            isDirty={isDirty}
+            saving={saving}
+            message={message}
+            onEdit={() => { setEditing(true); setMessage(null); }}
+            onCancel={handleCancel}
+            saveLabel="Save changes"
+          />
         </div>
 
         {/* Basic info */}
@@ -477,10 +528,10 @@ function ProfileSection({ user }: { user: User }) {
           <SubSectionHeading title="Basic info" description="Your display name and contact. Email is managed by your firm admin." />
           <div className="grid grid-cols-2 gap-4">
             <Field label="First name">
-              <input type="text" value={firstName} onChange={(e) => setFirstName(e.target.value)} required className={inputCls} style={INPUT_STYLE} />
+              <input type="text" value={firstName} onChange={(e) => setFirstName(e.target.value)} readOnly={!editing} required className={inputCls} style={textStyle} />
             </Field>
             <Field label="Last name">
-              <input type="text" value={lastName} onChange={(e) => setLastName(e.target.value)} required className={inputCls} style={INPUT_STYLE} />
+              <input type="text" value={lastName} onChange={(e) => setLastName(e.target.value)} readOnly={!editing} required className={inputCls} style={textStyle} />
             </Field>
           </div>
           <Field label="Email address">
@@ -497,10 +548,11 @@ function ProfileSection({ user }: { user: User }) {
           <textarea
             value={bio}
             onChange={(e) => setBio(e.target.value.slice(0, 500))}
+            readOnly={!editing}
             placeholder="e.g. CFP® with 10 years helping retirees navigate rollovers. Based in Chicago."
             rows={3}
-            className="w-full rounded-lg px-3 py-2 text-sm focus:outline-none focus:ring-0 transition-colors resize-none"
-            style={INPUT_STYLE}
+            className={textareaCls}
+            style={textStyle}
           />
           <p className="text-[11px] text-right" style={{ color: "#484f58" }}>
             {bio.length}/500
@@ -516,26 +568,17 @@ function ProfileSection({ user }: { user: User }) {
           <textarea
             value={emailSignature}
             onChange={(e) => setEmailSignature(e.target.value.slice(0, 2000))}
+            readOnly={!editing}
             placeholder={`Sarah Mitchell\nSummit Wealth Partners\n(555) 123-4567`}
             rows={5}
-            className="w-full rounded-lg px-3 py-2 text-sm font-mono focus:outline-none focus:ring-0 transition-colors resize-none"
-            style={INPUT_STYLE}
+            className={`${textareaCls} font-mono`}
+            style={textStyle}
           />
           <p className="text-[11px] text-right" style={{ color: "#484f58" }}>
             {emailSignature.length}/2000
           </p>
         </div>
 
-        {/* Save bar */}
-        <div
-          className="px-6 py-4 flex items-center justify-between gap-4"
-          style={{ background: "#0a0d12", borderTop: "1px solid #252b38" }}
-        >
-          <p className="text-xs" style={{ color: "#7d8590" }}>
-            {isDirty ? "You have unsaved changes." : "All changes saved."}
-          </p>
-          <SaveBar saving={saving} disabled={!isDirty} message={message} label="Save changes" />
-        </div>
       </div>
     </form>
   );
@@ -758,7 +801,7 @@ function AIUsageSection({ initial }: { initial: AIUsage }) {
 /* ─── Organization (Admin) ───────────────────────────────────────────────── */
 
 function OrganizationSection({ initial }: { initial: Firm }) {
-  const [form, setForm] = useState({
+  const initialForm = {
     name: initial.name,
     legalName: initial.legalName ?? "",
     taxId: initial.taxId ?? "",
@@ -766,16 +809,27 @@ function OrganizationSection({ initial }: { initial: Firm }) {
     supportEmail: initial.supportEmail ?? "",
     supportPhone: initial.supportPhone ?? "",
     websiteUrl: initial.websiteUrl ?? "",
-  });
+  };
+  const [form, setForm] = useState(initialForm);
+  const [editing, setEditing] = useState(false);
   const [saving, setSaving] = useState(false);
   const [message, setMessage] = useState<{ type: "success" | "error"; text: string } | null>(null);
+
+  const isDirty = (Object.keys(form) as (keyof typeof form)[]).some((k) => form[k] !== initialForm[k]);
 
   function set<K extends keyof typeof form>(k: K, v: string) {
     setForm((f) => ({ ...f, [k]: v }));
   }
 
+  function handleCancel() {
+    setForm(initialForm);
+    setMessage(null);
+    setEditing(false);
+  }
+
   async function handleSave(e: React.FormEvent) {
     e.preventDefault();
+    if (!editing) return;
     setSaving(true);
     setMessage(null);
     const res = await fetch("/api/firm/organization", {
@@ -784,7 +838,87 @@ function OrganizationSection({ initial }: { initial: Firm }) {
       body: JSON.stringify(form),
     });
     setSaving(false);
-    if (res.ok) setMessage({ type: "success", text: "Organization profile saved." });
+    if (res.ok) {
+      setMessage({ type: "success", text: "Organization profile saved." });
+      setEditing(false);
+    } else {
+      const data = await res.json();
+      setMessage({ type: "error", text: data.error ?? "Failed to save." });
+    }
+  }
+
+  const textStyle = editing ? INPUT_STYLE : LOCKED_INPUT_STYLE;
+
+  return (
+    <div style={CARD_STYLE} className="overflow-hidden">
+      <form onSubmit={handleSave}>
+        <div className="px-6 pt-5 pb-3 flex items-center justify-between gap-4" style={{ borderBottom: "1px solid #252b38" }}>
+          <div>
+            <h3 className="text-sm font-semibold" style={{ color: "#e4e6ea" }}>Organization profile</h3>
+            <p className="text-xs mt-0.5" style={{ color: "#7d8590" }}>Firm identity and contact information.</p>
+          </div>
+          <EditControls
+            editing={editing}
+            isDirty={isDirty}
+            saving={saving}
+            message={message}
+            onEdit={() => { setEditing(true); setMessage(null); }}
+            onCancel={handleCancel}
+            saveLabel="Save organization"
+          />
+        </div>
+        <div className="p-6 space-y-4">
+          <div className="grid grid-cols-2 gap-4">
+            <Field label="Firm display name">
+              <input type="text" value={form.name} onChange={(e) => set("name", e.target.value)} readOnly={!editing} required className={inputCls} style={textStyle} />
+            </Field>
+            <Field label="Legal business name">
+              <input type="text" value={form.legalName} onChange={(e) => set("legalName", e.target.value)} readOnly={!editing} className={inputCls} style={textStyle} />
+            </Field>
+            <Field label="Tax ID (EIN)">
+              <input type="text" value={form.taxId} onChange={(e) => set("taxId", e.target.value)} readOnly={!editing} placeholder="12-3456789" className={inputCls} style={textStyle} />
+            </Field>
+            <Field label="Website">
+              <input type="url" value={form.websiteUrl} onChange={(e) => set("websiteUrl", e.target.value)} readOnly={!editing} placeholder="https://example.com" className={inputCls} style={textStyle} />
+            </Field>
+            <Field label="Support email">
+              <input type="email" value={form.supportEmail} onChange={(e) => set("supportEmail", e.target.value)} readOnly={!editing} className={inputCls} style={textStyle} />
+            </Field>
+            <Field label="Support phone">
+              <input type="tel" value={form.supportPhone} onChange={(e) => set("supportPhone", e.target.value)} readOnly={!editing} className={inputCls} style={textStyle} />
+            </Field>
+          </div>
+          <Field label="Business address">
+            <textarea value={form.businessAddress} onChange={(e) => set("businessAddress", e.target.value)} readOnly={!editing} rows={3} className={inputCls} style={textStyle} />
+          </Field>
+        </div>
+      </form>
+    </div>
+  );
+}
+
+/* ─── Operating States (Admin) ───────────────────────────────────────────── */
+
+function OperatingStatesSection({ initial }: { initial: FirmSettings }) {
+  const [states, setStates] = useState<string[]>(initial.operatingStates ?? []);
+  const [saving, setSaving] = useState(false);
+  const [message, setMessage] = useState<{ type: "success" | "error"; text: string } | null>(null);
+
+  function toggle(code: string) {
+    setStates((prev) => (prev.includes(code) ? prev.filter((s) => s !== code) : [...prev, code].sort()));
+  }
+
+  async function handleSave(e: React.FormEvent) {
+    e.preventDefault();
+    setSaving(true);
+    setMessage(null);
+    const res = await fetch("/api/firm/settings", {
+      method: "PATCH",
+      headers: { "Content-Type": "application/json" },
+      body: JSON.stringify({ operatingStates: states }),
+    });
+    setSaving(false);
+    if (res.ok) setMessage({ type: "success", text: "Operating states saved." });
     else {
       const data = await res.json();
       setMessage({ type: "error", text: data.error ?? "Failed to save." });
@@ -794,31 +928,37 @@ function OrganizationSection({ initial }: { initial: Firm }) {
   return (
     <div style={CARD_STYLE} className="p-6">
       <form onSubmit={handleSave} className="space-y-4">
-        <div className="grid grid-cols-2 gap-4">
-          <Field label="Firm display name">
-            <input type="text" value={form.name} onChange={(e) => set("name", e.target.value)} required className={inputCls} style={INPUT_STYLE} />
-          </Field>
-          <Field label="Legal business name">
-            <input type="text" value={form.legalName} onChange={(e) => set("legalName", e.target.value)} className={inputCls} style={INPUT_STYLE} />
-          </Field>
-          <Field label="Tax ID (EIN)">
-            <input type="text" value={form.taxId} onChange={(e) => set("taxId", e.target.value)} placeholder="12-3456789" className={inputCls} style={INPUT_STYLE} />
-          </Field>
-          <Field label="Website">
-            <input type="url" value={form.websiteUrl} onChange={(e) => set("websiteUrl", e.target.value)} placeholder="https://example.com" className={inputCls} style={INPUT_STYLE} />
-          </Field>
-          <Field label="Support email">
-            <input type="email" value={form.supportEmail} onChange={(e) => set("supportEmail", e.target.value)} className={inputCls} style={INPUT_STYLE} />
-          </Field>
-          <Field label="Support phone">
-            <input type="tel" value={form.supportPhone} onChange={(e) => set("supportPhone", e.target.value)} className={inputCls} style={INPUT_STYLE} />
-          </Field>
+        <div>
+          <Legend>Operating states</Legend>
+          <p className="text-xs mt-1 mb-3" style={{ color: "#7d8590" }}>
+            Select the U.S. states your firm operates in. Mailing routes will automatically use the correct custodian address for your region.
+          </p>
         </div>
-        <Field label="Business address">
-          <textarea value={form.businessAddress} onChange={(e) => set("businessAddress", e.target.value)} rows={3} className={inputCls} style={INPUT_STYLE} />
-        </Field>
+        <div className="grid grid-cols-8 gap-2">
+          {US_STATES.map((code) => {
+            const on = states.includes(code);
+            return (
+              <button
+                key={code}
+                type="button"
+                onClick={() => toggle(code)}
+                className="px-2 py-1.5 text-xs font-mono rounded transition-colors"
+                style={{
+                  background: on ? "#1f6feb" : "#0d1117",
+                  border: `1px solid ${on ? "#1f6feb" : "#30363d"}`,
+                  color: on ? "#ffffff" : "#c9d1d9",
+                }}
+              >
+                {code}
+              </button>
+            );
+          })}
+        </div>
+        <div className="text-xs" style={{ color: "#7d8590" }}>
+          {states.length === 0 ? "No states selected." : `${states.length} state${states.length === 1 ? "" : "s"} selected.`}
+        </div>
         <div className="flex items-center justify-end pt-2">
-          <SaveBar saving={saving} message={message} label="Save organization" />
+          <SaveBar saving={saving} message={message} label="Save states" />
         </div>
       </form>
     </div>
@@ -1492,6 +1632,69 @@ function SaveBar({
       >
         {saving ? (savingLabel ?? "Saving…") : label}
       </button>
+    </div>
+  );
+}
+
+function EditControls({
+  editing,
+  isDirty,
+  saving,
+  message,
+  onEdit,
+  onCancel,
+  saveLabel,
+  savingLabel,
+}: {
+  editing: boolean;
+  isDirty: boolean;
+  saving: boolean;
+  message: { type: "success" | "error"; text: string } | null;
+  onEdit: () => void;
+  onCancel: () => void;
+  saveLabel: string;
+  savingLabel?: string;
+}) {
+  return (
+    <div className="flex items-center gap-3 flex-shrink-0">
+      {message && (
+        <span className="text-xs" style={{ color: message.type === "success" ? "#3fb950" : "#f87171" }}>
+          {message.text}
+        </span>
+      )}
+      {editing && isDirty && !message && (
+        <span className="text-xs" style={{ color: "#7d8590" }}>Unsaved changes</span>
+      )}
+      {!editing ? (
+        <button
+          type="button"
+          onClick={onEdit}
+          className="rounded-lg px-4 py-2 text-sm font-medium transition-colors"
+          style={{ background: "#21262d", color: "#c9d1d9", border: "1px solid #30363d" }}
+        >
+          Edit
+        </button>
+      ) : (
+        <>
+          <button
+            type="button"
+            onClick={onCancel}
+            disabled={saving}
+            className="rounded-lg px-4 py-2 text-sm font-medium transition-colors disabled:opacity-50"
+            style={{ background: "transparent", color: "#c9d1d9", border: "1px solid #30363d" }}
+          >
+            Cancel
+          </button>
+          <button
+            type="submit"
+            disabled={saving || !isDirty}
+            className="rounded-lg px-4 py-2 text-sm font-medium text-white transition-colors disabled:opacity-50 disabled:cursor-not-allowed"
+            style={{ background: "#2563eb" }}
+          >
+            {saving ? (savingLabel ?? "Saving…") : saveLabel}
+          </button>
+        </>
+      )}
     </div>
   );
 }

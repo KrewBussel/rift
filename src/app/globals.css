@@ -174,3 +174,29 @@ button:focus-visible {
 /* Dashboard widget content: internal scroll with hidden scrollbars */
 .widget-scroll { scrollbar-width: none; }
 .widget-scroll::-webkit-scrollbar { display: none; }
+
+/* Pointer cursor on all interactive elements */
+button:not(:disabled),
+a[href],
+[role="button"]:not([aria-disabled="true"]),
+[role="link"],
+[role="tab"],
+[role="menuitem"],
+[role="option"],
+summary,
+label[for],
+select:not(:disabled),
+input[type="button"]:not(:disabled),
+input[type="submit"]:not(:disabled),
+input[type="reset"]:not(:disabled),
+input[type="checkbox"]:not(:disabled),
+input[type="radio"]:not(:disabled),
+input[type="file"]:not(:disabled) {
+  cursor: pointer;
+}
+
+button:disabled,
+[role="button"][aria-disabled="true"],
+[disabled] {
+  cursor: not-allowed;
+}

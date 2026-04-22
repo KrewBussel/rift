@@ -5,6 +5,8 @@ import { prisma } from "@/lib/prisma";
 import { parseBody } from "@/lib/validation";
 import { z } from "zod";
 
+const STATE_CODE = z.string().trim().regex(/^[A-Z]{2}$/);
+
 const NotificationUpdateSchema = z
   .object({
     remindersEnabled: z.boolean().optional(),
@@ -12,6 +14,7 @@ const NotificationUpdateSchema = z
     overdueTaskReminders: z.boolean().optional(),
     stalledCaseReminders: z.boolean().optional(),
     missingDocsReminders: z.boolean().optional(),
+    operatingStates: z.array(STATE_CODE).max(51).optional(),
   })
   .strict();
 
