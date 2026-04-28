@@ -11,6 +11,8 @@ import AdminDashboard, {
   type ActivityItem,
   type TeamMember,
 } from "@/components/AdminDashboard";
+import OnboardingChecklist from "@/components/OnboardingChecklist";
+import { computeOnboardingChecklist } from "@/lib/onboarding";
 import { getFirmUsageSummary } from "@/lib/aiUsage";
 import { getOrCreateFirmSettings } from "@/lib/reminders";
 
@@ -68,12 +70,13 @@ export default async function DashboardPage({
 
   const userRecord = await prisma.user.findUnique({
     where: { id: userId },
-    select: { preferences: true },
+    select: { preferences: true, bio: true, emailSignature: true },
   });
   const prefs: Record<string, unknown> =
     userRecord?.preferences !== null && typeof userRecord?.preferences === "object" && !Array.isArray(userRecord?.preferences)
       ? (userRecord.preferences as Record<string, unknown>)
       : {};
+  const onboardingHidden = prefs.onboardingHidden === true;
 
   const userName = session.user?.name?.split(" ")[0] ?? "Your";
 
@@ -106,7 +109,15 @@ export default async function DashboardPage({
       completedLastMonth,
       recentlyCompleted,
     ] = await Promise.all([
-        prisma.firm.findUnique({ where: { id: firmId }, select: { name: true } }),
+        prisma.firm.findUnique({
+          where: { id: firmId },
+          select: {
+            name: true,
+            logoUrl: true,
+            supportEmail: true,
+            businessAddress: true,
+          },
+        }),
         prisma.rolloverCase.findMany({
           where: { firmId },
           select: { status: true },
@@ -287,6 +298,27 @@ export default async function DashboardPage({
       },
     };
 
+    const onboarding = onboardingHidden
+      ? null
+      : computeOnboardingChecklist({
+          role,
+          user: {
+            bio: userRecord?.bio ?? null,
+            emailSignature: userRecord?.emailSignature ?? null,
+          },
+          prefs,
+          hasAnyCase: allCases.length > 0,
+          firm: firm
+            ? {
+                logoUrl: firm.logoUrl,
+                supportEmail: firm.supportEmail,
+                businessAddress: firm.businessAddress,
+              }
+            : { logoUrl: null, supportEmail: null, businessAddress: null },
+          crmConnected: !!crmConnection,
+          teamMemberCount: teamUsers.length,
+        });
+
     return (
       <>
         <div className="mb-6 flex items-start justify-between gap-6">
@@ -305,6 +337,7 @@ export default async function DashboardPage({
             </p>
           </div>
         </div>
+        {onboarding && <OnboardingChecklist {...onboarding} />}
         <AdminDashboard data={data} initialLayout={savedLayout as never} />
       </>
     );
@@ -426,6 +459,18 @@ export default async function DashboardPage({
     ),
   }));
 
+  const onboarding = onboardingHidden
+    ? null
+    : computeOnboardingChecklist({
+        role,
+        user: {
+          bio: userRecord?.bio ?? null,
+          emailSignature: userRecord?.emailSignature ?? null,
+        },
+        prefs,
+        hasAnyCase: cases.length > 0,
+      });
+
   return (
     <>
       <div className="mb-6">
@@ -449,6 +494,7 @@ export default async function DashboardPage({
           Welcome back. Here&rsquo;s an overview of your active cases and tasks.
         </p>
       </div>
+      {onboarding && <OnboardingChecklist {...onboarding} />}
       {showWidgets && (
         <DashboardWidgets
           myTasks={serializedTasks}

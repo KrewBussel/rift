@@ -10,7 +10,7 @@
     "lint": "eslint",
     "test": "vitest",
     "test:run": "vitest run",
-    "seed:firm2": "npx tsx prisma/seed-firm2.ts"
+    "seed:custodians": "npx tsx prisma/seed-custodians.ts"
   },
   "dependencies": {
     "@anthropic-ai/sdk": "^0.90.0",
