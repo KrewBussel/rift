@@ -17,23 +17,23 @@ import { getFirmUsageSummary } from "@/lib/aiUsage";
 import { getOrCreateFirmSettings } from "@/lib/reminders";
 
 const STATUS_LABELS: Record<string, string> = {
-  INTAKE: "Intake",
+  PROPOSAL_ACCEPTED: "Proposal Accepted",
   AWAITING_CLIENT_ACTION: "Awaiting Client Action",
   READY_TO_SUBMIT: "Ready to Submit",
   SUBMITTED: "Submitted",
   PROCESSING: "Processing",
   IN_TRANSIT: "In Transit",
-  COMPLETED: "Completed",
+  WON: "Won",
 };
 
 const STATUS_COLORS: Record<string, string> = {
-  INTAKE: "#6e7681",
+  PROPOSAL_ACCEPTED: "#6e7681",
   AWAITING_CLIENT_ACTION: "#d29922",
   READY_TO_SUBMIT: "#388bfd",
   SUBMITTED: "#a78bfa",
   PROCESSING: "#fb923c",
   IN_TRANSIT: "#818cf8",
-  COMPLETED: "#3fb950",
+  WON: "#3fb950",
 };
 
 function describeEvent(type: string): string {
@@ -125,7 +125,7 @@ export default async function DashboardPage({
         prisma.rolloverCase.findMany({
           where: {
             firmId,
-            status: { not: "COMPLETED" },
+            status: { not: "WON" },
             updatedAt: { lt: stalledThreshold },
           },
           select: {
@@ -186,8 +186,8 @@ export default async function DashboardPage({
             id: true, firstName: true, lastName: true, role: true,
             _count: {
               select: {
-                assignedCases: { where: { status: { not: "COMPLETED" } } },
-                ownedCases: { where: { status: { not: "COMPLETED" } } },
+                assignedCases: { where: { status: { not: "WON" } } },
+                ownedCases: { where: { status: { not: "WON" } } },
               },
             },
           },
@@ -197,16 +197,16 @@ export default async function DashboardPage({
           where: { firmId, createdAt: { gte: thisMonthStart } },
         }),
         prisma.rolloverCase.count({
-          where: { firmId, status: "COMPLETED", statusUpdatedAt: { gte: thisMonthStart } },
+          where: { firmId, status: "WON", statusUpdatedAt: { gte: thisMonthStart } },
         }),
         prisma.rolloverCase.count({
           where: { firmId, createdAt: { gte: lastMonthStart, lt: thisMonthStart } },
         }),
         prisma.rolloverCase.count({
-          where: { firmId, status: "COMPLETED", statusUpdatedAt: { gte: lastMonthStart, lt: thisMonthStart } },
+          where: { firmId, status: "WON", statusUpdatedAt: { gte: lastMonthStart, lt: thisMonthStart } },
         }),
         prisma.rolloverCase.findMany({
-          where: { firmId, status: "COMPLETED", statusUpdatedAt: { gte: thirtyDaysAgo } },
+          where: { firmId, status: "WON", statusUpdatedAt: { gte: thirtyDaysAgo } },
           select: { createdAt: true, statusUpdatedAt: true },
         }),
       ]);
@@ -397,7 +397,7 @@ export default async function DashboardPage({
       where: {
         firmId,
         ...roleVisibilityFilter,
-        status: { not: "COMPLETED" },
+        status: { not: "WON" },
         updatedAt: { lt: staleThreshold },
       },
       orderBy: { updatedAt: "asc" },
@@ -421,10 +421,10 @@ export default async function DashboardPage({
     return acc;
   }, {} as Record<string, number>);
 
-  const totalActive = cases.filter((c) => c.status !== "COMPLETED").length;
-  const totalCompleted = cases.filter((c) => c.status === "COMPLETED").length;
+  const totalActive = cases.filter((c) => c.status !== "WON").length;
+  const totalCompleted = cases.filter((c) => c.status === "WON").length;
   const completedThisMonth = cases.filter(
-    (c) => c.status === "COMPLETED" && c.updatedAt >= startOfMonth
+    (c) => c.status === "WON" && c.updatedAt >= startOfMonth
   ).length;
 
   const taskBreakdown = {

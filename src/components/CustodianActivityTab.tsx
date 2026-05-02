@@ -23,23 +23,23 @@ export type CustodianActivity = {
 };
 
 const STATUS_COLOR: Record<string, string> = {
-  INTAKE: "#6e7681",
+  PROPOSAL_ACCEPTED: "#6e7681",
   AWAITING_CLIENT_ACTION: "#d29922",
   READY_TO_SUBMIT: "#388bfd",
   SUBMITTED: "#a78bfa",
   PROCESSING: "#fb923c",
   IN_TRANSIT: "#818cf8",
-  COMPLETED: "#3fb950",
+  WON: "#3fb950",
 };
 
 const STATUS_LABEL: Record<string, string> = {
-  INTAKE: "Intake",
+  PROPOSAL_ACCEPTED: "Proposal Accepted",
   AWAITING_CLIENT_ACTION: "Awaiting client",
   READY_TO_SUBMIT: "Ready to submit",
   SUBMITTED: "Submitted",
   PROCESSING: "Processing",
   IN_TRANSIT: "In transit",
-  COMPLETED: "Completed",
+  WON: "Won",
 };
 
 export default function CustodianActivityTab({

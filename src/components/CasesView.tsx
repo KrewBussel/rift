@@ -24,6 +24,8 @@ export type CasesViewCase = {
   accountType: string;
   status: string;
   highPriority: boolean;
+  needsReview: boolean;
+  reviewReason: string | null;
   statusUpdatedAt: string;
   updatedAt: string;
   assignedAdvisor: { id: string; firstName: string; lastName: string } | null;
@@ -36,23 +38,23 @@ type Role = "ADMIN" | "ADVISOR" | "OPS";
 
 const STATUSES: Array<{ value: string; label: string }> = [
   { value: "", label: "All" },
-  { value: "INTAKE", label: "Intake" },
+  { value: "PROPOSAL_ACCEPTED", label: "Proposal Accepted" },
   { value: "AWAITING_CLIENT_ACTION", label: "Awaiting client" },
   { value: "READY_TO_SUBMIT", label: "Ready to submit" },
   { value: "SUBMITTED", label: "Submitted" },
   { value: "PROCESSING", label: "Processing" },
   { value: "IN_TRANSIT", label: "In transit" },
-  { value: "COMPLETED", label: "Completed" },
+  { value: "WON", label: "Won" },
 ];
 
 const STATUS_COLORS: Record<string, { bg: string; text: string; dot: string }> = {
-  INTAKE:                 { bg: "#21262d", text: "#8b949e", dot: "#6e7681" },
+  PROPOSAL_ACCEPTED:      { bg: "#21262d", text: "#8b949e", dot: "#6e7681" },
   AWAITING_CLIENT_ACTION: { bg: "#2d2208", text: "#e09937", dot: "#d29922" },
   READY_TO_SUBMIT:        { bg: "#0d1f38", text: "#79c0ff", dot: "#388bfd" },
   SUBMITTED:              { bg: "#1d1535", text: "#c4b5fd", dot: "#a78bfa" },
   PROCESSING:             { bg: "#2d1f0e", text: "#fdba74", dot: "#fb923c" },
   IN_TRANSIT:             { bg: "#0d1535", text: "#a5b4fc", dot: "#818cf8" },
-  COMPLETED:              { bg: "#0d2318", text: "#6ee7b7", dot: "#3fb950" },
+  WON:                    { bg: "#0d2318", text: "#6ee7b7", dot: "#3fb950" },
 };
 
 const ACCOUNT_TYPE_LABELS: Record<string, string> = {
@@ -520,6 +522,20 @@ function CaseRow({ rolloverCase: c, isLast }: { rolloverCase: CasesViewCase; isL
               >
                 <span className="w-1 h-1 rounded-full" style={{ background: "#f87171" }} />
                 Priority
+              </span>
+            )}
+            {c.needsReview && (
+              <span
+                title={c.reviewReason ?? "Auto-created from Wealthbox with missing fields"}
+                className="inline-flex items-center gap-1 text-[10px] uppercase tracking-widest px-1.5 py-0.5 rounded flex-shrink-0"
+                style={{
+                  background: "#2d2208",
+                  color: "#e09937",
+                  border: "1px solid #5c4419",
+                }}
+              >
+                <span className="w-1 h-1 rounded-full" style={{ background: "#e09937" }} />
+                Needs review
               </span>
             )}
           </div>

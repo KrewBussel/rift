@@ -30,11 +30,31 @@ export interface OpportunityDetail {
   stageId: string | null; // provider-native key that matches CrmStageMapping.crmStageId
 }
 
+/**
+ * Hydrated opportunity used by inbound case creation: includes the linked
+ * primary contact's name + email and any custom-field values keyed by name.
+ * `customFields` is case-insensitive at lookup time — see readField().
+ */
+export interface OpportunityHydrated extends OpportunityDetail {
+  contact: { id: string; firstName: string | null; lastName: string | null; email: string | null } | null;
+  customFields: Record<string, string>;
+}
+
+export interface OpportunityListPage {
+  opportunities: OpportunitySummary[];
+  /** Provider-native pagination cursor; null when exhausted. */
+  nextCursor: string | null;
+}
+
 export interface CrmProviderClient {
   provider: "WEALTHBOX" | "SALESFORCE";
   getStages(): Promise<Stage[]>;
   searchOpportunities(query?: string): Promise<OpportunitySummary[]>;
   getOpportunity(id: string): Promise<OpportunityDetail>;
+  /** Hydrated read used by inbound polling. Includes contact + custom fields. */
+  getOpportunityHydrated(id: string): Promise<OpportunityHydrated>;
+  /** List opportunities at a specific stage. Used by the inbound poller. */
+  listOpportunitiesByStage(stageId: string): Promise<OpportunitySummary[]>;
   updateOpportunityStage(id: string, stageId: string, stageName: string): Promise<void>;
   createOpportunity(opts: { name: string; stageId?: string; stageName?: string }): Promise<OpportunityDetail>;
 }
@@ -73,6 +93,57 @@ export async function getProviderClient(connection: CrmConnection): Promise<CrmP
           stage: stage.name,
           stageId: stage.id != null ? String(stage.id) : null,
         };
+      },
+      async getOpportunityHydrated(id) {
+        const o = await wb.getOpportunity(token, id);
+        const stage = wb.pickStage(o);
+        const customFields: Record<string, string> = {};
+        for (const cf of o.custom_fields ?? []) {
+          if (cf.name && cf.value !== null && cf.value !== undefined) {
+            customFields[cf.name.trim().toLowerCase()] = String(cf.value).trim();
+          }
+        }
+        const contactLink = (o.linked_to ?? []).find((l) => l.type === "Contact");
+        let contact: OpportunityHydrated["contact"] = null;
+        if (contactLink) {
+          try {
+            const c = await wb.getContact(token, contactLink.id);
+            contact = {
+              id: String(c.id),
+              firstName: c.first_name?.trim() || null,
+              lastName: c.last_name?.trim() || null,
+              email: wb.pickPrimaryEmail(c),
+            };
+          } catch {
+            // Contact lookup failure shouldn't poison the hydrate; leave contact null
+            // and let the caller surface a needs-review case.
+            contact = null;
+          }
+        }
+        return {
+          id: String(o.id),
+          name: o.name,
+          stage: stage.name,
+          stageId: stage.id != null ? String(stage.id) : null,
+          contact,
+          customFields,
+        };
+      },
+      async listOpportunitiesByStage(stageId) {
+        // Wealthbox doesn't expose a stage filter, so we fetch a generous page
+        // and filter client-side. For most firms this is fine — typical
+        // pipelines have <500 active opportunities.
+        const list = await wb.searchOpportunities(token, { limit: 500 });
+        const target = String(stageId);
+        return list.opportunities
+          .filter((o) => {
+            const s = wb.pickStage(o);
+            return s.id != null && String(s.id) === target;
+          })
+          .map((o) => {
+            const s = wb.pickStage(o);
+            return { id: String(o.id), name: o.name, stage: s.name };
+          });
       },
       async updateOpportunityStage(id, stageId) {
         await wb.updateOpportunityStage(token, id, stageId);
@@ -141,6 +212,26 @@ export async function getProviderClient(connection: CrmConnection): Promise<CrmP
           // For Salesforce the mapping key is the StageName itself
           stageId: o.StageName ?? null,
         };
+      },
+      async getOpportunityHydrated(id) {
+        // Salesforce inbound polling isn't built yet; return the basic detail
+        // with empty contact + custom fields so callers can still surface a
+        // needs-review case if the provider matters at all.
+        const o = await callWithRetry((t) => sf.getOpportunity(instanceUrl, t, id));
+        return {
+          id: o.Id,
+          name: o.Name,
+          stage: o.StageName ?? null,
+          stageId: o.StageName ?? null,
+          contact: null,
+          customFields: {},
+        };
+      },
+      async listOpportunitiesByStage(stageId) {
+        const list = await callWithRetry((t) => sf.searchOpportunities(instanceUrl, t, { limit: 500 }));
+        return list
+          .filter((o) => (o.StageName ?? null) === stageId)
+          .map((o) => ({ id: o.Id, name: o.Name, stage: o.StageName ?? null }));
       },
       async updateOpportunityStage(id, _stageId, stageName) {
         await callWithRetry((t) => sf.updateOpportunityStage(instanceUrl, t, id, stageName));

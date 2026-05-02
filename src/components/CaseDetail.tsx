@@ -14,19 +14,19 @@ interface User { id: string; firstName: string; lastName: string; role: string; 
 interface Note { id: string; body: string; createdAt: string; fromClient: boolean; author: { id: string; firstName: string; lastName: string } | null; }
 interface ActivityEvent { id: string; eventType: string; eventDetails: string | null; createdAt: string; clientSessionId: string | null; actor: { id: string; firstName: string; lastName: string } | null; }
 interface Task { id: string; title: string; description: string | null; status: "OPEN" | "COMPLETED" | "BLOCKED"; dueDate: string | null; assignee: { id: string; firstName: string; lastName: string } | null; createdBy: { id: string; firstName: string; lastName: string }; createdAt: string; }
-interface RolloverCase { id: string; clientFirstName: string; clientLastName: string; clientEmail: string; sourceProvider: string; destinationCustodian: string; accountType: string; status: string; highPriority: boolean; internalNotes: string | null; statusUpdatedAt: string; createdAt: string; updatedAt: string; wealthboxOpportunityId: string | null; wealthboxLinkedAt: string | null; wealthboxLastSyncedAt: string | null; wealthboxLastSyncError: string | null; assignedAdvisor: { id: string; firstName: string; lastName: string } | null; assignedOps: { id: string; firstName: string; lastName: string } | null; notes: Note[]; activityEvents: ActivityEvent[]; tasks: Task[]; }
+interface RolloverCase { id: string; clientFirstName: string; clientLastName: string; clientEmail: string; sourceProvider: string; destinationCustodian: string; accountType: string; status: string; highPriority: boolean; needsReview: boolean; reviewReason: string | null; internalNotes: string | null; statusUpdatedAt: string; createdAt: string; updatedAt: string; wealthboxOpportunityId: string | null; wealthboxLinkedAt: string | null; wealthboxLastSyncedAt: string | null; wealthboxLastSyncError: string | null; assignedAdvisor: { id: string; firstName: string; lastName: string } | null; assignedOps: { id: string; firstName: string; lastName: string } | null; notes: Note[]; activityEvents: ActivityEvent[]; tasks: Task[]; }
 interface ChecklistDocument { id: string; name: string; fileType: string; fileSize: number; createdAt: string; uploadedBy: { id: string; firstName: string; lastName: string }; checklistItem: { id: string; name: string } | null; }
 type ChecklistStatus = "NOT_STARTED" | "REQUESTED" | "RECEIVED" | "REVIEWED" | "COMPLETE";
 interface ChecklistItem { id: string; name: string; required: boolean; status: ChecklistStatus; notes: string | null; sortOrder: number; documents: ChecklistDocument[]; }
 
 const STATUSES = [
-  { value: "INTAKE", label: "Intake" },
+  { value: "PROPOSAL_ACCEPTED", label: "Proposal Accepted" },
   { value: "AWAITING_CLIENT_ACTION", label: "Awaiting Client Action" },
   { value: "READY_TO_SUBMIT", label: "Ready to Submit" },
   { value: "SUBMITTED", label: "Submitted" },
   { value: "PROCESSING", label: "Processing" },
   { value: "IN_TRANSIT", label: "In Transit" },
-  { value: "COMPLETED", label: "Completed" },
+  { value: "WON", label: "Won" },
 ];
 
 const ACCOUNT_TYPES: Record<string, string> = {
@@ -37,13 +37,13 @@ const ACCOUNT_TYPES: Record<string, string> = {
 };
 
 const STATUS_COLORS: Record<string, { bg: string; text: string; dot: string }> = {
-  INTAKE:                 { bg: "#21262d",         text: "#8b949e",   dot: "#6e7681"   },
+  PROPOSAL_ACCEPTED:      { bg: "#21262d",         text: "#8b949e",   dot: "#6e7681"   },
   AWAITING_CLIENT_ACTION: { bg: "#2d2208",         text: "#e09937",   dot: "#d29922"   },
   READY_TO_SUBMIT:        { bg: "#0d1f38",         text: "#79c0ff",   dot: "#388bfd"   },
   SUBMITTED:              { bg: "#1d1535",         text: "#c4b5fd",   dot: "#a78bfa"   },
   PROCESSING:             { bg: "#2d1f0e",         text: "#fdba74",   dot: "#fb923c"   },
   IN_TRANSIT:             { bg: "#0d1535",         text: "#a5b4fc",   dot: "#818cf8"   },
-  COMPLETED:              { bg: "#0d2318",         text: "#6ee7b7",   dot: "#3fb950"   },
+  WON:                    { bg: "#0d2318",         text: "#6ee7b7",   dot: "#3fb950"   },
 };
 
 const EVENT_LABELS: Record<string, string> = {
@@ -238,7 +238,7 @@ export default function CaseDetail({ rolloverCase: initial, users, currentUserId
 
   const advisors = users.filter((u) => u.role === "ADVISOR" || u.role === "ADMIN");
   const ops = users.filter((u) => u.role === "OPS" || u.role === "ADMIN");
-  const statusColors = STATUS_COLORS[rolloverCase.status] ?? STATUS_COLORS["INTAKE"];
+  const statusColors = STATUS_COLORS[rolloverCase.status] ?? STATUS_COLORS["PROPOSAL_ACCEPTED"];
 
   return (
     <div>
@@ -250,6 +250,26 @@ export default function CaseDetail({ rolloverCase: initial, users, currentUserId
         </svg>
         <span style={{ color: "#c9d1d9" }}>{rolloverCase.clientFirstName} {rolloverCase.clientLastName}</span>
       </div>
+
+      {rolloverCase.needsReview && (
+        <div className="mb-5 rounded-lg p-3" style={{ background: "#2d2208", border: "1px solid #5c4419" }}>
+          <p className="text-sm font-semibold" style={{ color: "#e09937" }}>Auto-created from Wealthbox — needs review</p>
+          {rolloverCase.reviewReason && (
+            <p className="text-xs mt-1" style={{ color: "#d4a05c" }}>{rolloverCase.reviewReason}</p>
+          )}
+          <p className="text-xs mt-2" style={{ color: "#9d7c3a" }}>
+            Fill in the missing case details below, then click <em>Mark as reviewed</em>.
+          </p>
+          <button
+            type="button"
+            onClick={() => patchCase({ needsReview: false, reviewReason: null })}
+            className="mt-2 text-xs px-3 py-1 rounded-md"
+            style={{ background: "#3a2d12", color: "#e09937", border: "1px solid #5c4419" }}
+          >
+            Mark as reviewed
+          </button>
+        </div>
+      )}
 
       {/* Header */}
       <div className="flex items-start justify-between mb-6">

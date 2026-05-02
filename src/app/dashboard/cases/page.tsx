@@ -54,6 +54,8 @@ export default async function CasesPage({
     accountType: c.accountType,
     status: c.status,
     highPriority: c.highPriority,
+    needsReview: c.needsReview,
+    reviewReason: c.reviewReason,
     statusUpdatedAt: c.statusUpdatedAt.toISOString(),
     updatedAt: c.updatedAt.toISOString(),
     assignedAdvisor: c.assignedAdvisor,

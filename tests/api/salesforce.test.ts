@@ -247,7 +247,7 @@ describe("syncOpportunityStage via Salesforce provider", () => {
     await prisma.crmStageMapping.create({
       data: {
         firmId: world.a.firmId,
-        riftStatus: "INTAKE",
+        riftStatus: "PROPOSAL_ACCEPTED",
         crmStageId: "Prospecting",
         crmStageName: "Prospecting",
       },

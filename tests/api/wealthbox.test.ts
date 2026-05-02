@@ -111,7 +111,7 @@ describe("DELETE /api/integrations/wealthbox (disconnect)", () => {
         encryptedToken: "x", tokenIv: "x", tokenTag: "x" },
     });
     await prisma.crmStageMapping.create({
-      data: { firmId: world.a.firmId, riftStatus: "INTAKE", crmStageId: "1", crmStageName: "New" },
+      data: { firmId: world.a.firmId, riftStatus: "PROPOSAL_ACCEPTED", crmStageId: "1", crmStageName: "New" },
     });
     await prisma.rolloverCase.update({
       where: { id: world.a.caseId },
@@ -138,7 +138,7 @@ describe("PUT /api/integrations/wealthbox/mapping", () => {
         encryptedToken: "x", tokenIv: "x", tokenTag: "x" },
     });
     await prisma.crmStageMapping.create({
-      data: { firmId: world.a.firmId, riftStatus: "INTAKE", crmStageId: "1", crmStageName: "Old" },
+      data: { firmId: world.a.firmId, riftStatus: "PROPOSAL_ACCEPTED", crmStageId: "1", crmStageName: "Old" },
     });
     mockSession(sessionFor(world.a.admin));
     const { PUT } = await import("@/app/api/integrations/crm/mapping/route");
@@ -146,8 +146,8 @@ describe("PUT /api/integrations/wealthbox/mapping", () => {
       method: "PUT",
       body: {
         mappings: [
-          { riftStatus: "INTAKE", crmStageId: "2", crmStageName: "Discovery" },
-          { riftStatus: "COMPLETED", crmStageId: "9", crmStageName: "Won" },
+          { riftStatus: "PROPOSAL_ACCEPTED", crmStageId: "2", crmStageName: "Proposal Accepted" },
+          { riftStatus: "WON", crmStageId: "9", crmStageName: "Won" },
         ],
       },
     }) as never);
@@ -163,7 +163,7 @@ describe("PUT /api/integrations/wealthbox/mapping", () => {
     const { PUT } = await import("@/app/api/integrations/crm/mapping/route");
     const res = await PUT(buildRequest("http://t/x", {
       method: "PUT",
-      body: { mappings: [{ riftStatus: "INTAKE", crmStageId: "1", crmStageName: "Discovery" }] },
+      body: { mappings: [{ riftStatus: "PROPOSAL_ACCEPTED", crmStageId: "1", crmStageName: "Discovery" }] },
     }) as never);
     expect(res.status).toBe(400);
   });
@@ -272,7 +272,7 @@ describe("syncOpportunityStage", () => {
       data: { firmId: world.a.firmId, provider: "WEALTHBOX", ...sealedTokenFields("t") },
     });
     await prisma.crmStageMapping.create({
-      data: { firmId: world.a.firmId, riftStatus: "INTAKE", crmStageId: "5", crmStageName: "Discovery" },
+      data: { firmId: world.a.firmId, riftStatus: "PROPOSAL_ACCEPTED", crmStageId: "5", crmStageName: "Discovery" },
     });
     await prisma.rolloverCase.update({
       where: { id: world.a.caseId },
@@ -292,7 +292,7 @@ describe("syncOpportunityStage", () => {
       data: { firmId: world.a.firmId, provider: "WEALTHBOX", ...sealedTokenFields("t") },
     });
     await prisma.crmStageMapping.create({
-      data: { firmId: world.a.firmId, riftStatus: "INTAKE", crmStageId: "5", crmStageName: "Discovery" },
+      data: { firmId: world.a.firmId, riftStatus: "PROPOSAL_ACCEPTED", crmStageId: "5", crmStageName: "Discovery" },
     });
     await prisma.rolloverCase.update({
       where: { id: world.a.caseId },

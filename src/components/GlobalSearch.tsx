@@ -373,24 +373,26 @@ function PageIcon() {
 
 function statusDot(status: string): string {
   return {
-    INTAKE: "#6e7681",
+    PROPOSAL_ACCEPTED: "#6e7681",
     AWAITING_CLIENT_ACTION: "#d29922",
     READY_TO_SUBMIT: "#388bfd",
     SUBMITTED: "#a78bfa",
     PROCESSING: "#fb923c",
     IN_TRANSIT: "#818cf8",
+    WON: "#3fb950",
     COMPLETED: "#3fb950",
   }[status] ?? "#6e7681";
 }
 
 function statusLabel(status: string): string {
   return {
-    INTAKE: "Intake",
+    PROPOSAL_ACCEPTED: "Proposal Accepted",
     AWAITING_CLIENT_ACTION: "Awaiting client",
     READY_TO_SUBMIT: "Ready to submit",
     SUBMITTED: "Submitted",
     PROCESSING: "Processing",
     IN_TRANSIT: "In transit",
+    WON: "Won",
     COMPLETED: "Completed",
     OPEN: "Open",
     BLOCKED: "Blocked",

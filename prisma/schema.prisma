@@ -108,7 +108,7 @@ model RolloverCase {
   sourceProvider       String
   destinationCustodian String
   accountType          AccountType
-  status               CaseStatus      @default(INTAKE)
+  status               CaseStatus      @default(PROPOSAL_ACCEPTED)
   highPriority         Boolean         @default(false)
   internalNotes        String?
   assignedAdvisorId    String?
@@ -121,6 +121,11 @@ model RolloverCase {
   wealthboxLinkedAt      DateTime?
   wealthboxLastSyncedAt  DateTime?
   wealthboxLastSyncError String?
+  // Set to true when a case is auto-created from Wealthbox but is missing
+  // one of the required custom fields (sourceProvider, destinationCustodian,
+  // accountType). The user fills the gap, then clears the flag.
+  needsReview            Boolean         @default(false)
+  reviewReason           String?
   activityEvents       ActivityEvent[]
   checklistItems       ChecklistItem[]
   clientAccessTokens   ClientAccessToken[]
@@ -419,13 +424,13 @@ enum Role {
 }
 
 enum CaseStatus {
-  INTAKE
+  PROPOSAL_ACCEPTED
   AWAITING_CLIENT_ACTION
   READY_TO_SUBMIT
   SUBMITTED
   PROCESSING
   IN_TRANSIT
-  COMPLETED
+  WON
 }
 
 enum AccountType {

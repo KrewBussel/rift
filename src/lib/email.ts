@@ -145,7 +145,7 @@ export function buildStalledCasesEmail(
   const subject = `${count} case${count !== 1 ? "s" : ""} stalled for ${thresholdDays}+ days`;
 
   const STATUS_LABELS: Record<string, string> = {
-    INTAKE: "Intake",
+    PROPOSAL_ACCEPTED: "Proposal Accepted",
     AWAITING_CLIENT_ACTION: "Awaiting Client Action",
     READY_TO_SUBMIT: "Ready to Submit",
     SUBMITTED: "Submitted",

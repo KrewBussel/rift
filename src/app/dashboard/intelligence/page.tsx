@@ -54,7 +54,7 @@ export default async function IntelligencePage() {
 
     const asDest = firmCases.filter((c) => aliases.has(norm(c.destinationCustodian)));
     const asSource = firmCases.filter((c) => aliases.has(norm(c.sourceProvider)));
-    const completed = asDest.filter((c) => c.status === "COMPLETED");
+    const completed = asDest.filter((c) => c.status === "WON");
 
     let avgDays: number | null = null;
     let medianDays: number | null = null;

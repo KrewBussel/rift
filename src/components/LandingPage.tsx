@@ -892,7 +892,7 @@ export default function LandingPage() {
       { k: "submit",  name: "SUBMITTED",  lbl: "Submitted",  color: "var(--status-submit)",  step: 3 },
       { k: "proc",    name: "PROCESSING", lbl: "Processing", color: "var(--status-proc)",    step: 4 },
       { k: "transit", name: "IN TRANSIT", lbl: "Transit",    color: "var(--status-transit)", step: 5 },
-      { k: "done",    name: "COMPLETED",  lbl: "Complete",   color: "var(--status-done)",    step: 6 },
+      { k: "done",    name: "WON",        lbl: "Won",        color: "var(--status-done)",    step: 6 },
     ];
 
     function setStage(i: number) {
@@ -1335,7 +1335,7 @@ export default function LandingPage() {
                           <div className="status-menu-item" data-stage="2"><span className="mdot" style={{ background: "var(--status-submit)" }} /><span className="mname">SUBMITTED</span><svg className="mcheck" viewBox="0 0 10 10" fill="none"><path d="M2 5l2 2 4-5" stroke="currentColor" strokeWidth="1.8" strokeLinecap="round" strokeLinejoin="round"/></svg></div>
                           <div className="status-menu-item" data-stage="3"><span className="mdot" style={{ background: "var(--status-proc)" }} /><span className="mname">PROCESSING</span><svg className="mcheck" viewBox="0 0 10 10" fill="none"><path d="M2 5l2 2 4-5" stroke="currentColor" strokeWidth="1.8" strokeLinecap="round" strokeLinejoin="round"/></svg></div>
                           <div className="status-menu-item" data-stage="4"><span className="mdot" style={{ background: "var(--status-transit)" }} /><span className="mname">IN TRANSIT</span><svg className="mcheck" viewBox="0 0 10 10" fill="none"><path d="M2 5l2 2 4-5" stroke="currentColor" strokeWidth="1.8" strokeLinecap="round" strokeLinejoin="round"/></svg></div>
-                          <div className="status-menu-item" data-stage="5"><span className="mdot" style={{ background: "var(--status-done)" }} /><span className="mname">COMPLETED</span><svg className="mcheck" viewBox="0 0 10 10" fill="none"><path d="M2 5l2 2 4-5" stroke="currentColor" strokeWidth="1.8" strokeLinecap="round" strokeLinejoin="round"/></svg></div>
+                          <div className="status-menu-item" data-stage="5"><span className="mdot" style={{ background: "var(--status-done)" }} /><span className="mname">WON</span><svg className="mcheck" viewBox="0 0 10 10" fill="none"><path d="M2 5l2 2 4-5" stroke="currentColor" strokeWidth="1.8" strokeLinecap="round" strokeLinejoin="round"/></svg></div>
                         </div>
                       </div>
                     </div>

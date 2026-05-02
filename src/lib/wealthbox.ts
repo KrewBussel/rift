@@ -56,6 +56,14 @@ export interface WealthboxStage {
  * because Wealthbox's response shape isn't fully documented — the stage may come
  * back as a number (id) or an object, and we normalize via `pickStage` below.
  */
+export interface WealthboxCustomField {
+  id: number;
+  name: string;
+  value: string | number | boolean | null;
+  document_type?: string;
+  field_type?: string;
+}
+
 export interface WealthboxOpportunity {
   id: number;
   name: string;
@@ -66,6 +74,7 @@ export interface WealthboxOpportunity {
   amounts?: Array<{ amount: number; currency: string; kind?: string }>;
   target_close?: string | null;
   linked_to?: Array<{ id: number; name?: string; type?: string }>;
+  custom_fields?: WealthboxCustomField[];
   created_at?: string;
   updated_at?: string;
 }
@@ -117,6 +126,46 @@ export async function searchOpportunities(token: string, opts: { query?: string;
 
 export async function getOpportunity(token: string, id: number | string): Promise<WealthboxOpportunity> {
   return request<WealthboxOpportunity>(token, `/opportunities/${id}`);
+}
+
+/**
+ * Read a single custom field from an opportunity by its display name.
+ * Wealthbox custom-field names are case-sensitive in the dashboard but
+ * users sometimes type them inconsistently — match case-insensitively.
+ */
+export function readCustomField(opp: WealthboxOpportunity, name: string): string | null {
+  const target = name.trim().toLowerCase();
+  const cf = opp.custom_fields?.find((f) => (f.name ?? "").trim().toLowerCase() === target);
+  if (!cf) return null;
+  if (cf.value === null || cf.value === undefined) return null;
+  const s = String(cf.value).trim();
+  return s.length > 0 ? s : null;
+}
+
+export interface WealthboxEmailAddress {
+  id?: number;
+  address: string;
+  principal?: boolean;
+  kind?: string;
+}
+
+export interface WealthboxContact {
+  id: number;
+  first_name?: string | null;
+  last_name?: string | null;
+  email_addresses?: WealthboxEmailAddress[];
+}
+
+export async function getContact(token: string, id: number | string): Promise<WealthboxContact> {
+  return request<WealthboxContact>(token, `/contacts/${id}`);
+}
+
+/** Pick the principal email if marked, else the first one, else null. */
+export function pickPrimaryEmail(contact: WealthboxContact): string | null {
+  const emails = contact.email_addresses ?? [];
+  if (emails.length === 0) return null;
+  const principal = emails.find((e) => e.principal);
+  return (principal ?? emails[0]).address ?? null;
 }
 
 /** Wealthbox minimum payload for POST /opportunities and PUT /opportunities/:id. */

@@ -6,13 +6,13 @@ import { syncOpportunityStage } from "@/lib/crmSync";
 import { z } from "zod";
 
 const CaseStatusSchema = z.enum([
-  "INTAKE",
+  "PROPOSAL_ACCEPTED",
   "AWAITING_CLIENT_ACTION",
   "READY_TO_SUBMIT",
   "SUBMITTED",
   "PROCESSING",
   "IN_TRANSIT",
-  "COMPLETED",
+  "WON",
 ]);
 
 const AccountTypeSchema = z.enum(["TRADITIONAL_IRA_401K", "ROTH_IRA_401K", "IRA_403B", "OTHER"]);
@@ -30,6 +30,8 @@ const UpdateCaseSchema = z
     assignedAdvisorId: z.string().nullable().optional(),
     assignedOpsId: z.string().nullable().optional(),
     status: CaseStatusSchema.optional(),
+    needsReview: z.boolean().optional(),
+    reviewReason: z.string().max(2000).nullable().optional(),
   })
   .strict();
 

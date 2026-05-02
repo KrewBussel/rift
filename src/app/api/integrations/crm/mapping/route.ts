@@ -5,22 +5,18 @@ import { prisma } from "@/lib/prisma";
 import { parseBody } from "@/lib/validation";
 import { recordAudit, extractRequestMeta } from "@/lib/audit";
 
-const STATUSES = [
-  "INTAKE",
-  "AWAITING_CLIENT_ACTION",
-  "READY_TO_SUBMIT",
-  "SUBMITTED",
-  "PROCESSING",
-  "IN_TRANSIT",
-  "COMPLETED",
-] as const;
+// Only the bookend stages map to CRM. Intermediate Rift-only stages
+// (AWAITING_CLIENT_ACTION, READY_TO_SUBMIT, SUBMITTED, PROCESSING, IN_TRANSIT)
+// are not synced — PROPOSAL_ACCEPTED is the inbound entry point and WON is the
+// outbound close trigger.
+const MAPPABLE_STATUSES = ["PROPOSAL_ACCEPTED", "WON"] as const;
 
 const MappingSchema = z.object({
   mappings: z.array(z.object({
-    riftStatus: z.enum(STATUSES),
+    riftStatus: z.enum(MAPPABLE_STATUSES),
     crmStageId: z.string().trim().min(1).max(200),
     crmStageName: z.string().trim().min(1).max(200),
-  })).max(20),
+  })).max(2),
 }).strict();
 
 export async function PUT(req: NextRequest) {

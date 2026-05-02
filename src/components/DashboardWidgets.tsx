@@ -46,13 +46,13 @@ interface Props {
 }
 
 const STATUS_CONFIG: Record<string, { label: string; color: string }> = {
-  INTAKE: { label: "Intake", color: "#58a6ff" },
+  PROPOSAL_ACCEPTED: { label: "Proposal Accepted", color: "#58a6ff" },
   AWAITING_CLIENT_ACTION: { label: "Awaiting Client", color: "#e3b341" },
   READY_TO_SUBMIT: { label: "Ready to Submit", color: "#a5a0ff" },
   SUBMITTED: { label: "Submitted", color: "#f0883e" },
   PROCESSING: { label: "Processing", color: "#79c0ff" },
   IN_TRANSIT: { label: "In Transit", color: "#56d364" },
-  COMPLETED: { label: "Completed", color: "#3fb950" },
+  WON: { label: "Won", color: "#3fb950" },
 };
 
 const ACCOUNT_CONFIG: Record<string, { label: string; color: string }> = {
@@ -75,7 +75,7 @@ export default function DashboardWidgets({
   const totalCases = totalActive + totalCompleted;
 
   const activeStatusData = Object.entries(STATUS_CONFIG)
-    .filter(([key]) => key !== "COMPLETED")
+    .filter(([key]) => key !== "WON")
     .map(([key, cfg]) => ({ key, ...cfg, count: statusCounts[key] ?? 0 }));
   const pipelineTotal = activeStatusData.reduce((s, x) => s + x.count, 0);
 

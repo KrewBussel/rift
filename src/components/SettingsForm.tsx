@@ -96,13 +96,13 @@ const ROLE_LABELS: Record<string, string> = {
 
 const STATUS_OPTIONS = [
   { value: "", label: "All statuses" },
-  { value: "INTAKE", label: "Intake" },
+  { value: "PROPOSAL_ACCEPTED", label: "Proposal Accepted" },
   { value: "AWAITING_CLIENT_ACTION", label: "Awaiting Client Action" },
   { value: "READY_TO_SUBMIT", label: "Ready to Submit" },
   { value: "SUBMITTED", label: "Submitted" },
   { value: "PROCESSING", label: "Processing" },
   { value: "IN_TRANSIT", label: "In Transit" },
-  { value: "COMPLETED", label: "Completed" },
+  { value: "WON", label: "Won" },
 ];
 
 const TIMEZONES = [
@@ -1701,14 +1701,12 @@ function EditControls({
 
 /* ─── Integrations ────────────────────────────────────────────────────────── */
 
+// Only the bookend stages are mappable to CRM. Intermediate Rift-only stages
+// are not synced — Proposal Accepted is the inbound entry point and Won is the
+// outbound close trigger.
 const RIFT_STATUSES = [
-  { value: "INTAKE",                 label: "Intake" },
-  { value: "AWAITING_CLIENT_ACTION", label: "Awaiting Client Action" },
-  { value: "READY_TO_SUBMIT",        label: "Ready to Submit" },
-  { value: "SUBMITTED",              label: "Submitted" },
-  { value: "PROCESSING",             label: "Processing" },
-  { value: "IN_TRANSIT",             label: "In Transit" },
-  { value: "COMPLETED",              label: "Completed" },
+  { value: "PROPOSAL_ACCEPTED", label: "Proposal Accepted" },
+  { value: "WON",               label: "Won" },
 ] as const;
 
 type CrmProvider = "WEALTHBOX" | "SALESFORCE";
@@ -1744,6 +1742,9 @@ function IntegrationsSection() {
   const [draft, setDraft] = useState<Record<string, string>>({});
   const [savingMap, setSavingMap] = useState(false);
   const [mapMsg, setMapMsg] = useState<string | null>(null);
+  const [syncing, setSyncing] = useState(false);
+  const [syncResult, setSyncResult] = useState<{ created: number; scanned: number; skipped: number; errors: Array<{ opportunityId: string; message: string }> } | null>(null);
+  const [syncErr, setSyncErr] = useState<string | null>(null);
 
   async function loadState() {
     setLoading(true);
@@ -1835,6 +1836,21 @@ function IntegrationsSection() {
     } else {
       setMapMsg("Failed to save mappings.");
     }
+  }
+
+  async function syncFromCrm() {
+    setSyncing(true);
+    setSyncErr(null);
+    setSyncResult(null);
+    const res = await fetch("/api/integrations/wealthbox/poll", { method: "POST" });
+    setSyncing(false);
+    if (!res.ok) {
+      const body = await res.json().catch(() => ({}));
+      setSyncErr(body.error ?? `Sync failed (HTTP ${res.status})`);
+      return;
+    }
+    const body = await res.json();
+    setSyncResult(body.result ?? null);
   }
 
   if (loading) {
@@ -1996,6 +2012,39 @@ function IntegrationsSection() {
                 )}
               </div>
             </div>
+          )}
+        </div>
+      )}
+
+      {connection && connection.provider === "WEALTHBOX" && (
+        <div style={CARD_STYLE} className="p-5">
+          <h3 className="text-sm font-semibold" style={{ color: "#e4e6ea" }}>Sync from Wealthbox</h3>
+          <p className="text-xs mt-1" style={{ color: "#9ca3af" }}>
+            Pulls every Wealthbox opportunity at the stage you mapped to <em>Proposal Accepted</em> and creates a Rift case for any not yet linked. Cases with missing custom fields (<code>Source Provider</code>, <code>Destination Custodian</code>, <code>Account Type</code>) are flagged for review.
+          </p>
+          <div className="mt-4 flex items-center gap-3">
+            <button
+              onClick={syncFromCrm}
+              disabled={syncing}
+              className="text-sm px-4 py-2 rounded-md disabled:opacity-50"
+              style={{ background: "#2563eb", color: "#fff" }}
+            >
+              {syncing ? "Syncing…" : "Sync now"}
+            </button>
+            {syncResult && (
+              <span className="text-xs" style={{ color: "#7d8590" }}>
+                Scanned {syncResult.scanned} · Created {syncResult.created} · Skipped {syncResult.skipped}
+                {syncResult.errors.length > 0 ? ` · ${syncResult.errors.length} error${syncResult.errors.length === 1 ? "" : "s"}` : ""}
+              </span>
+            )}
+            {syncErr && <span className="text-xs" style={{ color: "#f87171" }}>{syncErr}</span>}
+          </div>
+          {syncResult && syncResult.errors.length > 0 && (
+            <ul className="mt-3 space-y-1 text-xs" style={{ color: "#f87171" }}>
+              {syncResult.errors.slice(0, 5).map((e, i) => (
+                <li key={i}>Opportunity {e.opportunityId}: {e.message}</li>
+              ))}
+            </ul>
           )}
         </div>
       )}

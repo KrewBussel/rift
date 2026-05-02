@@ -6,13 +6,13 @@ import { parseBody, parseQuery } from "@/lib/validation";
 import { z } from "zod";
 
 const CaseStatusSchema = z.enum([
-  "INTAKE",
+  "PROPOSAL_ACCEPTED",
   "AWAITING_CLIENT_ACTION",
   "READY_TO_SUBMIT",
   "SUBMITTED",
   "PROCESSING",
   "IN_TRANSIT",
-  "COMPLETED",
+  "WON",
 ]);
 
 const AccountTypeSchema = z.enum(["TRADITIONAL_IRA_401K", "ROTH_IRA_401K", "IRA_403B", "OTHER"]);
@@ -94,7 +94,7 @@ export async function POST(request: NextRequest) {
       sourceProvider: body.sourceProvider,
       destinationCustodian: body.destinationCustodian,
       accountType: body.accountType,
-      status: "INTAKE",
+      status: "PROPOSAL_ACCEPTED",
       highPriority: body.highPriority ?? false,
       internalNotes: body.internalNotes ?? null,
       assignedAdvisorId: body.assignedAdvisorId || null,

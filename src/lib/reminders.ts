@@ -150,7 +150,7 @@ async function sendStalledCaseReminders(
   const stalledCases = await prisma.rolloverCase.findMany({
     where: {
       firmId,
-      status: { not: "COMPLETED" },
+      status: { not: "WON" },
       updatedAt: { lt: threshold },
     },
     include: {
@@ -215,11 +215,11 @@ async function sendMissingDocReminders(
   firmId: string,
   dryRun: boolean
 ): Promise<{ sent: number; previews: MissingDocPreview[] }> {
-  // Find active cases (past INTAKE) with required checklist items not yet received
+  // Find active cases (past PROPOSAL_ACCEPTED) with required checklist items not yet received
   const cases = await prisma.rolloverCase.findMany({
     where: {
       firmId,
-      status: { notIn: ["INTAKE", "COMPLETED"] },
+      status: { notIn: ["PROPOSAL_ACCEPTED", "WON"] },
     },
     include: {
       checklistItems: {

@@ -4,13 +4,13 @@ import { getClientSessionFromCookie } from "@/lib/client-auth";
 import ClientPortal from "@/components/ClientPortal";
 
 const STATUS_LABELS: Record<string, string> = {
-  INTAKE: "Intake",
+  PROPOSAL_ACCEPTED: "Proposal accepted",
   AWAITING_CLIENT_ACTION: "Awaiting your input",
   READY_TO_SUBMIT: "Ready to submit",
   SUBMITTED: "Submitted to custodian",
   PROCESSING: "Processing",
   IN_TRANSIT: "In transit",
-  COMPLETED: "Completed",
+  WON: "Completed",
 };
 
 export default async function ClientHomePage() {
