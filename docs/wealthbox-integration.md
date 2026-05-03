@@ -112,40 +112,47 @@ In Wealthbox dashboard:
 
 ### 2. External cron pinger (Vercel Hobby tier won't run sub-daily crons)
 
-The `/api/integrations/wealthbox/poll` route exists and works on demand,
-but nothing pings it on a schedule. User is on **Vercel Hobby**, which
-caps cron jobs at once-per-day — useless for this. Pick one:
+The `/api/integrations/wealthbox/poll` route works on demand. Vercel Hobby
+caps cron jobs at once-per-day, which is useless for this. Two options
+shipped — pick one:
 
-**Option A — cron-job.org (recommended, free, fastest setup)**
+**Option A — GitHub Actions (in this repo, already wired)**
+File: `.github/workflows/wealthbox-poll.yml`, schedule `*/5 * * * *`
+(every 5 min — GH Actions doesn't honor sub-5-min). To activate:
+1. In GitHub repo settings → Secrets and variables → Actions, add:
+   - `CRON_SECRET` — same value as the Vercel env var
+   - `RIFT_BASE_URL` — e.g. `https://rift.vercel.app` (no trailing slash)
+2. The workflow runs automatically on its schedule. Use the
+   "Run workflow" button on the Actions tab to trigger ad-hoc.
+3. GH Actions is best-effort on free tier — runs may be skipped under
+   load. For tighter cadence, use Option B.
+
+**Option B — cron-job.org (free, sub-minute granularity)**
 1. Create a free account at cron-job.org
 2. New cronjob:
    - URL: `https://<your-vercel-app>.vercel.app/api/integrations/wealthbox/poll`
    - Method: `POST`
-   - Header: `Authorization: Bearer <CRON_SECRET>` (the value already in
-     the Vercel env vars)
-   - Schedule: every 1, 2, or 5 minutes (user hasn't picked yet)
+   - Header: `Authorization: Bearer <CRON_SECRET>`
+   - Schedule: every 1, 2, or 5 minutes
 
-**Option B — GitHub Actions**
-Workflow file would live at `.github/workflows/wealthbox-poll.yml`,
-schedule: `cron: '*/5 * * * *'` (every 5 min — GH Actions doesn't
-guarantee sub-5-min). POSTs to the same URL with the same auth header
-stored in repo secrets.
-
-Until either is set up, the **"Sync now"** button in Settings →
-Integrations does the same thing on demand.
+The **"Sync now"** button in Settings → Integrations always works as a
+manual fallback regardless of which (if any) cron is configured.
 
 ### 3. Optional polish (not on the critical path)
 
-- **Pagination in `listOpportunitiesByStage`**: `crmClient.ts` currently
-  fetches `limit: 500` and filters client-side because Wealthbox's API
-  doesn't expose a stage filter. If a firm has >500 active opportunities,
-  newer ones could be missed. Add cursor/offset pagination.
-- **Tests**: no isolation test for `pollFirmForNewOpportunities` yet.
-  Pattern: seed two firms with Wealthbox connections, mock the wb API,
-  assert firm A's poll never creates a case in firm B.
+- **Pagination in `listOpportunitiesByStage`** — done. `crmClient.ts`
+  walks pages of 100 up to 50 pages (5,000 opportunities scanned per
+  poll). Wealthbox doesn't expose a server-side stage filter, so
+  client-side filtering is unavoidable.
+- **Isolation test for `pollFirmForNewOpportunities`** — done. See
+  `tests/api/wealthbox-poll-isolation.test.ts`. Asserts: firm A's poll
+  never lands a case in firm B; only firm A's token ever appears on
+  outbound requests; second run is idempotent; missing custom fields
+  flag `needsReview`; missing mapping is a silent no-op.
 - **Activity event for inbound creation** is generic
   (`"Auto-created from Wealthbox opportunity \"X\""`). Could add a
-  dedicated `EventType.CASE_AUTO_CREATED` for filtering.
+  dedicated `EventType.CASE_AUTO_CREATED` for filtering — needs a
+  schema migration on dev + test DBs, so deferred.
 - **Salesforce inbound**: `getOpportunityHydrated` for Salesforce returns
   empty `contact` + `customFields`. If Salesforce ever needs inbound
   polling, the Salesforce branch in `crmClient.ts` needs the equivalent

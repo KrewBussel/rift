@@ -116,10 +116,11 @@ export async function getOpportunityStages(token: string): Promise<WealthboxStag
   return [];
 }
 
-export async function searchOpportunities(token: string, opts: { query?: string; limit?: number } = {}): Promise<WealthboxOpportunityList> {
+export async function searchOpportunities(token: string, opts: { query?: string; limit?: number; page?: number } = {}): Promise<WealthboxOpportunityList> {
   const qs = new URLSearchParams();
   if (opts.query) qs.set("name", opts.query);
   if (opts.limit) qs.set("per_page", String(opts.limit));
+  if (opts.page && opts.page > 1) qs.set("page", String(opts.page));
   const suffix = qs.toString() ? `?${qs.toString()}` : "";
   return request<WealthboxOpportunityList>(token, `/opportunities${suffix}`);
 }

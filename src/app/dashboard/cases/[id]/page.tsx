@@ -3,6 +3,7 @@ import { redirect, notFound } from "next/navigation";
 import { prisma } from "@/lib/prisma";
 import CaseDetail from "@/components/CaseDetail";
 import CaseViewTracker from "@/components/CaseViewTracker";
+import { getFirmStageConfig } from "@/lib/stageConfig";
 
 export default async function CaseDetailPage({ params }: { params: Promise<{ id: string }> }) {
   const session = await auth();
@@ -71,10 +72,13 @@ export default async function CaseDetailPage({ params }: { params: Promise<{ id:
 
   if (!rolloverCase) notFound();
 
-  const crmConnection = await prisma.crmConnection.findUnique({
-    where: { firmId },
-    select: { id: true, provider: true, connectedUserName: true },
-  });
+  const [crmConnection, stageConfig] = await Promise.all([
+    prisma.crmConnection.findUnique({
+      where: { firmId },
+      select: { id: true, provider: true, connectedUserName: true },
+    }),
+    getFirmStageConfig(firmId),
+  ]);
   const crmProviderLabel = crmConnection
     ? crmConnection.provider === "SALESFORCE" ? "Salesforce" : "Wealthbox"
     : null;
@@ -121,6 +125,7 @@ export default async function CaseDetailPage({ params }: { params: Promise<{ id:
         initialDocuments={serializedDocuments}
         crmConnected={!!crmConnection}
         crmProviderLabel={crmProviderLabel}
+        stageConfig={stageConfig}
       />
     </>
   );

@@ -130,20 +130,27 @@ export async function getProviderClient(connection: CrmConnection): Promise<CrmP
         };
       },
       async listOpportunitiesByStage(stageId) {
-        // Wealthbox doesn't expose a stage filter, so we fetch a generous page
-        // and filter client-side. For most firms this is fine — typical
-        // pipelines have <500 active opportunities.
-        const list = await wb.searchOpportunities(token, { limit: 500 });
+        // Wealthbox doesn't expose a server-side stage filter, so we walk pages
+        // and filter client-side. Hard cap on pages so a runaway pipeline can't
+        // wedge the poller — at 100/page that's 5,000 opportunities scanned.
+        const PER_PAGE = 100;
+        const MAX_PAGES = 50;
         const target = String(stageId);
-        return list.opportunities
-          .filter((o) => {
+        const matches: OpportunitySummary[] = [];
+        for (let page = 1; page <= MAX_PAGES; page++) {
+          const list = await wb.searchOpportunities(token, { limit: PER_PAGE, page });
+          for (const o of list.opportunities) {
             const s = wb.pickStage(o);
-            return s.id != null && String(s.id) === target;
-          })
-          .map((o) => {
-            const s = wb.pickStage(o);
-            return { id: String(o.id), name: o.name, stage: s.name };
-          });
+            if (s.id != null && String(s.id) === target) {
+              matches.push({ id: String(o.id), name: o.name, stage: s.name });
+            }
+          }
+          // Last page is anything shorter than a full page (Wealthbox doesn't
+          // return a reliable nextCursor; meta.total_entries isn't trustworthy
+          // either).
+          if (list.opportunities.length < PER_PAGE) break;
+        }
+        return matches;
       },
       async updateOpportunityStage(id, stageId) {
         await wb.updateOpportunityStage(token, id, stageId);

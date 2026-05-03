@@ -28,6 +28,7 @@ export default async function SettingsPage() {
         bio: true,
         emailSignature: true,
         createdAt: true,
+        twoFactorEnabled: true,
       },
     }),
     isAdmin ? getOrCreateFirmSettings(firmId) : null,
@@ -60,6 +61,9 @@ export default async function SettingsPage() {
   const seatsUsed = isAdmin
     ? await prisma.user.count({ where: { firmId, deactivatedAt: null } })
     : 0;
+  const pendingSeats = isAdmin
+    ? await prisma.user.count({ where: { firmId, deactivatedAt: null, lastLoginAt: null } })
+    : 0;
 
   return (
     <SettingsForm
@@ -81,6 +85,7 @@ export default async function SettingsPage() {
           : null
       }
       seatsUsed={seatsUsed}
+      pendingSeats={pendingSeats}
       aiUsage={{
         planName: aiUsage.planName,
         percentUsed: aiUsage.percentUsed,

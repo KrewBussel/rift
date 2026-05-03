@@ -9,6 +9,11 @@ import ChecklistPanel from "./ChecklistPanel";
 import DocumentsPanel from "./DocumentsPanel";
 import DarkSelect from "./DarkSelect";
 import Avatar from "./Avatar";
+import {
+  resolveEnabledStages,
+  resolveStageLabel,
+  type StageConfigRow,
+} from "./casesDesignTokens";
 
 interface User { id: string; firstName: string; lastName: string; role: string; }
 interface Note { id: string; body: string; createdAt: string; fromClient: boolean; author: { id: string; firstName: string; lastName: string } | null; }
@@ -18,16 +23,6 @@ interface RolloverCase { id: string; clientFirstName: string; clientLastName: st
 interface ChecklistDocument { id: string; name: string; fileType: string; fileSize: number; createdAt: string; uploadedBy: { id: string; firstName: string; lastName: string }; checklistItem: { id: string; name: string } | null; }
 type ChecklistStatus = "NOT_STARTED" | "REQUESTED" | "RECEIVED" | "REVIEWED" | "COMPLETE";
 interface ChecklistItem { id: string; name: string; required: boolean; status: ChecklistStatus; notes: string | null; sortOrder: number; documents: ChecklistDocument[]; }
-
-const STATUSES = [
-  { value: "PROPOSAL_ACCEPTED", label: "Proposal Accepted" },
-  { value: "AWAITING_CLIENT_ACTION", label: "Awaiting Client Action" },
-  { value: "READY_TO_SUBMIT", label: "Ready to Submit" },
-  { value: "SUBMITTED", label: "Submitted" },
-  { value: "PROCESSING", label: "Processing" },
-  { value: "IN_TRANSIT", label: "In Transit" },
-  { value: "WON", label: "Won" },
-];
 
 const ACCOUNT_TYPES: Record<string, string> = {
   TRADITIONAL_IRA_401K: "401(k) to Traditional IRA",
@@ -61,9 +56,20 @@ const CARD = { background: "#161b22", border: "1px solid #21262d" };
 const CARD_HEADER_BORDER = { borderBottom: "1px solid #21262d" };
 const ICON_BOX = { background: "#21262d", width: 28, height: 28, borderRadius: 8, display: "flex", alignItems: "center", justifyContent: "center", flexShrink: 0 as const };
 
-export default function CaseDetail({ rolloverCase: initial, users, currentUserId, userRole, initialChecklist, initialDocuments, crmConnected = false, crmProviderLabel = null }: {
-  rolloverCase: RolloverCase; users: User[]; currentUserId: string; userRole: string; initialChecklist: ChecklistItem[]; initialDocuments: ChecklistDocument[]; crmConnected?: boolean; crmProviderLabel?: string | null;
+export default function CaseDetail({ rolloverCase: initial, users, currentUserId, userRole, initialChecklist, initialDocuments, crmConnected = false, crmProviderLabel = null, stageConfig = null }: {
+  rolloverCase: RolloverCase; users: User[]; currentUserId: string; userRole: string; initialChecklist: ChecklistItem[]; initialDocuments: ChecklistDocument[]; crmConnected?: boolean; crmProviderLabel?: string | null; stageConfig?: StageConfigRow[] | null;
 }) {
+  // Visible options in the status dropdown: enabled stages from the firm's
+  // overlay, with custom labels swapped in. If the case is currently sitting
+  // on a now-disabled stage, we still include it (with its canonical label) so
+  // the dropdown can show "current" without an empty cell.
+  const enabledStages = resolveEnabledStages(stageConfig);
+  const statusOptions = enabledStages.some((s) => s.value === initial.status)
+    ? enabledStages
+    : [
+        ...enabledStages,
+        { value: initial.status, label: resolveStageLabel(initial.status, stageConfig), short: "", hue: "slate" as const },
+      ];
   const [docRefreshKey, setDocRefreshKey] = useState(0);
   const router = useRouter();
   const [rolloverCase, setRolloverCase] = useState(initial);
@@ -329,7 +335,7 @@ export default function CaseDetail({ rolloverCase: initial, users, currentUserId
           <DarkSelect
             value={rolloverCase.status}
             onChange={handleStatusChange}
-            options={STATUSES}
+            options={statusOptions.map((s) => ({ value: s.value, label: s.label }))}
             renderTrigger={(selected) => (
               <span className="inline-flex items-center gap-1.5">
                 <span className="w-1.5 h-1.5 rounded-full flex-shrink-0" style={{ background: statusColors.dot }} />

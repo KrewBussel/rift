@@ -15,8 +15,10 @@ import OnboardingChecklist from "@/components/OnboardingChecklist";
 import { computeOnboardingChecklist } from "@/lib/onboarding";
 import { getFirmUsageSummary } from "@/lib/aiUsage";
 import { getOrCreateFirmSettings } from "@/lib/reminders";
+import { getFirmStageConfig } from "@/lib/stageConfig";
+import { STATUSES, resolveStageLabel } from "@/components/casesDesignTokens";
 
-const STATUS_LABELS: Record<string, string> = {
+const DEFAULT_STATUS_LABELS: Record<string, string> = {
   PROPOSAL_ACCEPTED: "Proposal Accepted",
   AWAITING_CLIENT_ACTION: "Awaiting Client Action",
   READY_TO_SUBMIT: "Ready to Submit",
@@ -87,6 +89,10 @@ export default async function DashboardPage({
       : null;
 
     const firmSettings = await getOrCreateFirmSettings(firmId);
+    const stageConfig = await getFirmStageConfig(firmId);
+    const STATUS_LABELS: Record<string, string> = Object.fromEntries(
+      STATUSES.map((s) => [s.value, resolveStageLabel(s.value, stageConfig) || DEFAULT_STATUS_LABELS[s.value]]),
+    );
     const stalledThreshold = new Date(Date.now() - firmSettings.stalledCaseDays * 24 * 60 * 60 * 1000);
     const now = new Date();
     const thisMonthStart = new Date(now.getFullYear(), now.getMonth(), 1);
@@ -404,6 +410,11 @@ export default async function DashboardPage({
     }),
     prisma.firm.findUnique({ where: { id: firmId }, select: { name: true } }),
   ]);
+
+  const stageConfig = await getFirmStageConfig(firmId);
+  const STATUS_LABELS: Record<string, string> = Object.fromEntries(
+    STATUSES.map((s) => [s.value, resolveStageLabel(s.value, stageConfig) || DEFAULT_STATUS_LABELS[s.value]]),
+  );
 
   // Compute dashboard stats before serialization (dates are still Date objects here)
   const now = new Date();

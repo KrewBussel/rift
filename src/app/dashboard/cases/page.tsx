@@ -2,6 +2,8 @@ import { auth } from "@/lib/auth";
 import { redirect } from "next/navigation";
 import { prisma } from "@/lib/prisma";
 import CasesView, { type CasesViewCase, type CasesViewUser } from "@/components/CasesView";
+import { getFirmStageConfig } from "@/lib/stageConfig";
+import WealthboxSyncButton from "@/components/WealthboxSyncButton";
 
 export default async function CasesPage({
   searchParams,
@@ -25,7 +27,7 @@ export default async function CasesPage({
       ? { assignedOpsId: userId }
       : {};
 
-  const [cases, users] = await Promise.all([
+  const [cases, users, stageConfig, crmConn] = await Promise.all([
     prisma.rolloverCase.findMany({
       where: { firmId, ...roleVisibilityFilter },
       include: {
@@ -42,7 +44,12 @@ export default async function CasesPage({
           orderBy: [{ role: "asc" }, { firstName: "asc" }],
         })
       : Promise.resolve([] as CasesViewUser[]),
+    getFirmStageConfig(firmId),
+    role === "ADMIN"
+      ? prisma.crmConnection.findUnique({ where: { firmId }, select: { provider: true } })
+      : Promise.resolve(null),
   ]);
+  const wealthboxConnected = crmConn?.provider === "WEALTHBOX";
 
   const serialized: CasesViewCase[] = cases.map((c) => ({
     id: c.id,
@@ -58,27 +65,32 @@ export default async function CasesPage({
     reviewReason: c.reviewReason,
     statusUpdatedAt: c.statusUpdatedAt.toISOString(),
     updatedAt: c.updatedAt.toISOString(),
+    createdAt: c.createdAt.toISOString(),
     assignedAdvisor: c.assignedAdvisor,
     assignedOps: c.assignedOps,
   }));
 
   return (
     <>
-      <div className="mb-6">
-        <h1 className="text-2xl font-semibold tracking-tight" style={{ color: "#e4e6ea" }}>
-          {role === "ADMIN" ? "All cases" : "Your cases"}
-        </h1>
-        <p className="text-sm mt-1" style={{ color: "#7d8590" }}>
-          {role === "ADMIN"
-            ? "Every rollover case across your firm."
-            : "Rollover cases assigned to you."}
-        </p>
+      <div className="mb-6 flex items-start justify-between gap-4">
+        <div>
+          <h1 className="text-2xl font-semibold tracking-tight" style={{ color: "#e4e6ea" }}>
+            {role === "ADMIN" ? "All cases" : "Your cases"}
+          </h1>
+          <p className="text-sm mt-1" style={{ color: "#7d8590" }}>
+            {role === "ADMIN"
+              ? "Every rollover case across your firm."
+              : "Rollover cases assigned to you."}
+          </p>
+        </div>
+        {role === "ADMIN" && wealthboxConnected && <WealthboxSyncButton />}
       </div>
       <CasesView
         cases={serialized}
         users={users}
         userRole={role}
         initialStatus={params.status ?? ""}
+        stageConfig={stageConfig}
       />
     </>
   );

@@ -183,6 +183,8 @@ export interface PollResult {
   scanned: number;
   created: number;
   skipped: number;
+  /** Cases auto-closed because their linked opportunity reached the Won stage in the CRM. */
+  closed: number;
   errors: Array<{ opportunityId: string; message: string }>;
 }
 
@@ -198,19 +200,26 @@ export interface PollResult {
  * and don't abort the run.
  */
 export async function pollFirmForNewOpportunities(firmId: string): Promise<PollResult> {
-  const result: PollResult = { firmId, scanned: 0, created: 0, skipped: 0, errors: [] };
+  const result: PollResult = { firmId, scanned: 0, created: 0, skipped: 0, closed: 0, errors: [] };
 
   const connection = await prisma.crmConnection.findUnique({ where: { firmId } });
   if (!connection) return result;
 
-  const proposalMapping = await prisma.crmStageMapping.findUnique({
-    where: { firmId_riftStatus: { firmId, riftStatus: "PROPOSAL_ACCEPTED" } },
-  });
+  const [proposalMapping, wonMapping] = await Promise.all([
+    prisma.crmStageMapping.findUnique({
+      where: { firmId_riftStatus: { firmId, riftStatus: "PROPOSAL_ACCEPTED" } },
+    }),
+    prisma.crmStageMapping.findUnique({
+      where: { firmId_riftStatus: { firmId, riftStatus: "WON" } },
+    }),
+  ]);
   if (!proposalMapping) return result;
 
-  let summaries;
+  const client = await getProviderClient(connection);
+
+  /* Inbound trigger: scan the Proposal Accepted stage. */
+  let summaries: Array<{ id: string; name: string; stage: string | null }>;
   try {
-    const client = await getProviderClient(connection);
     summaries = await client.listOpportunitiesByStage(proposalMapping.crmStageId);
   } catch (err) {
     const message = err instanceof Error ? err.message : "Unknown error";
@@ -223,36 +232,77 @@ export async function pollFirmForNewOpportunities(firmId: string): Promise<PollR
   }
 
   result.scanned = summaries.length;
-  if (summaries.length === 0) {
-    await prisma.crmConnection.update({
-      where: { firmId },
-      data: { lastHealthCheckAt: new Date(), lastHealthOk: true, lastHealthError: null },
+
+  if (summaries.length > 0) {
+    // Skip opportunities already linked to a Rift case (idempotency).
+    const existing = await prisma.rolloverCase.findMany({
+      where: { firmId, wealthboxOpportunityId: { in: summaries.map((s) => s.id) } },
+      select: { wealthboxOpportunityId: true },
     });
-    return result;
+    const linked = new Set(existing.map((c) => c.wealthboxOpportunityId).filter(Boolean) as string[]);
+
+    for (const summary of summaries) {
+      if (linked.has(summary.id)) {
+        result.skipped += 1;
+        continue;
+      }
+      try {
+        const hydrated = await client.getOpportunityHydrated(summary.id);
+        const created = await createCaseFromOpportunity(firmId, hydrated);
+        if (created) result.created += 1;
+        else result.skipped += 1;
+      } catch (err) {
+        const message = err instanceof Error ? err.message : "Unknown error";
+        result.errors.push({ opportunityId: summary.id, message });
+      }
+    }
   }
 
-  // Skip opportunities already linked to a Rift case (idempotency).
-  const existing = await prisma.rolloverCase.findMany({
-    where: { firmId, wealthboxOpportunityId: { in: summaries.map((s) => s.id) } },
-    select: { wealthboxOpportunityId: true },
-  });
-  const linked = new Set(existing.map((c) => c.wealthboxOpportunityId).filter(Boolean) as string[]);
-
-  const client = await getProviderClient(connection);
-
-  for (const summary of summaries) {
-    if (linked.has(summary.id)) {
-      result.skipped += 1;
-      continue;
-    }
+  /* Reverse Won bookend: scan the Won stage and close any linked Rift case
+   * that isn't already on WON. This mirrors the outbound push (WON → Wealthbox)
+   * so the integration is bidirectional on both bookends. */
+  if (wonMapping) {
     try {
-      const hydrated = await client.getOpportunityHydrated(summary.id);
-      const created = await createCaseFromOpportunity(firmId, hydrated);
-      if (created) result.created += 1;
-      else result.skipped += 1;
+      const wonOpps = await client.listOpportunitiesByStage(wonMapping.crmStageId);
+      if (wonOpps.length > 0) {
+        const linkedToWon = await prisma.rolloverCase.findMany({
+          where: {
+            firmId,
+            wealthboxOpportunityId: { in: wonOpps.map((o) => o.id) },
+            status: { not: "WON" },
+          },
+          select: { id: true, wealthboxOpportunityId: true, status: true },
+        });
+        for (const c of linkedToWon) {
+          try {
+            await prisma.rolloverCase.update({
+              where: { id: c.id },
+              data: {
+                status: "WON",
+                statusUpdatedAt: new Date(),
+                wealthboxLastSyncedAt: new Date(),
+                wealthboxLastSyncError: null,
+              },
+            });
+            await prisma.activityEvent.create({
+              data: {
+                caseId: c.id,
+                eventType: "STATUS_CHANGED",
+                eventDetails: `Status changed from ${c.status} to WON (pulled from Wealthbox)`,
+              },
+            });
+            result.closed += 1;
+          } catch (err) {
+            const message = err instanceof Error ? err.message : "Unknown error";
+            result.errors.push({ opportunityId: c.wealthboxOpportunityId ?? "*", message });
+          }
+        }
+      }
     } catch (err) {
       const message = err instanceof Error ? err.message : "Unknown error";
-      result.errors.push({ opportunityId: summary.id, message });
+      // Don't poison health on reverse-Won errors — the inbound side already
+      // succeeded if we got here. Just record the issue.
+      result.errors.push({ opportunityId: "won-stage", message });
     }
   }
 

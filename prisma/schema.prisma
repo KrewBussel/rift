@@ -25,6 +25,9 @@ model Firm {
   stripeCustomerId    String?
   aiMonthlyTokenLimit Int                 @default(500000)
   aiPlanName          String              @default("Starter")
+  // null until the admin finishes the onboarding wizard. While null, the
+  // dashboard redirects to /onboarding for ADMIN users.
+  onboardedAt         DateTime?
   aiUsageLogs         AIUsageLog[]
   auditLogs           AuditLog[]
   clientAccessTokens  ClientAccessToken[]
@@ -36,6 +39,7 @@ model Firm {
   users               User[]
   crmConnection       CrmConnection?
   crmStageMappings    CrmStageMapping[]
+  stageConfigs        CaseStageConfig[]
 }
 
 model FirmSettings {
@@ -404,6 +408,24 @@ model CrmStageMapping {
   firm         Firm       @relation(fields: [firmId], references: [id], onDelete: Cascade)
 
   @@unique([firmId, riftStatus])
+}
+
+// Per-firm overlay on the canonical CaseStatus enum: lets a firm rename a
+// stage as it appears in Rift and turn intermediate stages on/off. The two
+// bookends (PROPOSAL_ACCEPTED, WON) are always isEnabled=true regardless of
+// what's stored — the API enforces it.
+model CaseStageConfig {
+  id          String     @id @default(cuid())
+  firmId      String
+  status      CaseStatus
+  customLabel String?
+  isEnabled   Boolean    @default(true)
+  sortOrder   Int
+  updatedAt   DateTime   @updatedAt
+  firm        Firm       @relation(fields: [firmId], references: [id], onDelete: Cascade)
+
+  @@unique([firmId, status])
+  @@index([firmId, sortOrder])
 }
 
 enum CrmProvider {

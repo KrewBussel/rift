@@ -1,0 +1,40 @@
+name: Wealthbox poll
+
+# Vercel Hobby caps cron jobs at once-per-day, which is useless for inbound CRM
+# polling. This workflow pings /api/integrations/wealthbox/poll every 5 minutes
+# (the GitHub Actions minimum granularity — sub-5-min schedules aren't honored).
+#
+# Required repo secrets:
+#   CRON_SECRET    — same value as the Vercel env var; the route accepts it as
+#                    `Authorization: Bearer <CRON_SECRET>` to poll all firms.
+#   RIFT_BASE_URL  — the deployed app's origin, e.g. https://rift.vercel.app
+#                    (no trailing slash).
+
+on:
+  schedule:
+    - cron: '*/5 * * * *'
+  workflow_dispatch:
+
+concurrency:
+  group: wealthbox-poll
+  cancel-in-progress: false
+
+jobs:
+  poll:
+    runs-on: ubuntu-latest
+    timeout-minutes: 5
+    steps:
+      - name: POST poll endpoint
+        env:
+          CRON_SECRET: ${{ secrets.CRON_SECRET }}
+          RIFT_BASE_URL: ${{ secrets.RIFT_BASE_URL }}
+        run: |
+          if [ -z "$CRON_SECRET" ] || [ -z "$RIFT_BASE_URL" ]; then
+            echo "Missing CRON_SECRET or RIFT_BASE_URL secret" >&2
+            exit 1
+          fi
+          curl --fail-with-body --show-error --silent \
+               --max-time 120 \
+               --request POST \
+               --header "Authorization: Bearer ${CRON_SECRET}" \
+               "${RIFT_BASE_URL%/}/api/integrations/wealthbox/poll"

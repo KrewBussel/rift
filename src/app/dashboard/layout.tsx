@@ -15,9 +15,26 @@ export default async function DashboardLayout({ children }: { children: React.Re
     }),
     prisma.firm.findUnique({
       where: { id: session.user.firmId },
-      select: { name: true },
+      select: { name: true, onboardedAt: true },
     }),
   ]);
+
+  // Firm hasn't completed the onboarding wizard yet. ADMIN gets redirected to
+  // the wizard; non-admins see a locked-out screen since only the admin can
+  // finish setup.
+  if (firm && !firm.onboardedAt) {
+    if (session.user.role === "ADMIN") redirect("/onboarding");
+    return (
+      <div className="flex h-screen items-center justify-center" style={{ background: "#0a0d12" }}>
+        <div className="max-w-md text-center px-6">
+          <h1 className="text-lg font-semibold mb-2" style={{ color: "#e4e6ea" }}>Setup in progress</h1>
+          <p className="text-sm" style={{ color: "#9ca3af" }}>
+            Your firm&rsquo;s admin needs to finish onboarding before Rift is available. Reach out to them and check back shortly.
+          </p>
+        </div>
+      </div>
+    );
+  }
 
   return (
     <div className="flex h-screen overflow-hidden" style={{ background: "#0a0d12" }}>
