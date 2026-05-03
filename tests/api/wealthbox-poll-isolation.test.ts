@@ -80,6 +80,28 @@ describe("pollFirmForNewOpportunities — tenant isolation", () => {
     expect(inB).toBeNull();
   });
 
+  it("populates opportunity metadata + client phone on case creation", async () => {
+    stubWealthboxFetch({
+      opportunityId: 9300,
+      contactId: 4400,
+      stageId: Number(STAGE_ID),
+    });
+
+    const { pollFirmForNewOpportunities } = await import("@/lib/crmSync");
+    await pollFirmForNewOpportunities(world.a.firmId);
+
+    const created = await prisma.rolloverCase.findFirst({
+      where: { firmId: world.a.firmId, wealthboxOpportunityId: "9300" },
+    });
+    expect(created).not.toBeNull();
+    expect(created!.wealthboxOpportunityName).toBe("Test rollover opp");
+    expect(created!.wealthboxAmount).toBe(250000);
+    expect(created!.wealthboxAmountCurrency).toBe("USD");
+    expect(created!.wealthboxProbability).toBe(75);
+    expect(created!.wealthboxTargetClose).not.toBeNull();
+    expect(created!.clientPhone).toBe("555-0123");
+  });
+
   it("uses the polled firm's token, never the other firm's", async () => {
     const seenTokens = new Set<string>();
     vi.stubGlobal(
@@ -343,6 +365,10 @@ function mockWealthboxResponse(input: RequestInfo | URL, opts: MockOpts): Respon
       stage: { id: opts.stageId, name: "Proposal Accepted" },
       stage_id: opts.stageId,
       stage_name: "Proposal Accepted",
+      probability: 75,
+      target_close: "2026-08-01 00:00:00 +0000",
+      amounts: [{ amount: 250000, currency: "USD", kind: "Fee" }],
+      created_at: "2026-01-15T10:30:00Z",
       linked_to: [{ id: opts.contactId, type: "Contact", name: "Test Client" }],
       custom_fields: [
         { id: 1, name: "Source Provider", value: "Fidelity" },
@@ -358,6 +384,7 @@ function mockWealthboxResponse(input: RequestInfo | URL, opts: MockOpts): Respon
       first_name: "Polled",
       last_name: "Client",
       email_addresses: [{ address: "polled.client@test.local", principal: true }],
+      phone_numbers: [{ address: "555-0123", kind: "Mobile", principal: true }],
     });
   }
 

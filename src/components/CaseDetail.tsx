@@ -19,7 +19,39 @@ interface User { id: string; firstName: string; lastName: string; role: string; 
 interface Note { id: string; body: string; createdAt: string; fromClient: boolean; author: { id: string; firstName: string; lastName: string } | null; }
 interface ActivityEvent { id: string; eventType: string; eventDetails: string | null; createdAt: string; clientSessionId: string | null; actor: { id: string; firstName: string; lastName: string } | null; }
 interface Task { id: string; title: string; description: string | null; status: "OPEN" | "COMPLETED" | "BLOCKED"; dueDate: string | null; assignee: { id: string; firstName: string; lastName: string } | null; createdBy: { id: string; firstName: string; lastName: string }; createdAt: string; }
-interface RolloverCase { id: string; clientFirstName: string; clientLastName: string; clientEmail: string; sourceProvider: string; destinationCustodian: string; accountType: string; status: string; highPriority: boolean; needsReview: boolean; reviewReason: string | null; internalNotes: string | null; statusUpdatedAt: string; createdAt: string; updatedAt: string; wealthboxOpportunityId: string | null; wealthboxLinkedAt: string | null; wealthboxLastSyncedAt: string | null; wealthboxLastSyncError: string | null; assignedAdvisor: { id: string; firstName: string; lastName: string } | null; assignedOps: { id: string; firstName: string; lastName: string } | null; notes: Note[]; activityEvents: ActivityEvent[]; tasks: Task[]; }
+interface RolloverCase {
+  id: string;
+  clientFirstName: string;
+  clientLastName: string;
+  clientEmail: string;
+  clientPhone: string | null;
+  sourceProvider: string;
+  destinationCustodian: string;
+  accountType: string;
+  status: string;
+  highPriority: boolean;
+  needsReview: boolean;
+  reviewReason: string | null;
+  internalNotes: string | null;
+  statusUpdatedAt: string;
+  createdAt: string;
+  updatedAt: string;
+  wealthboxOpportunityId: string | null;
+  wealthboxOpportunityName: string | null;
+  wealthboxAmount: number | null;
+  wealthboxAmountCurrency: string | null;
+  wealthboxTargetClose: string | null;
+  wealthboxProbability: number | null;
+  wealthboxOppCreatedAt: string | null;
+  wealthboxLinkedAt: string | null;
+  wealthboxLastSyncedAt: string | null;
+  wealthboxLastSyncError: string | null;
+  assignedAdvisor: { id: string; firstName: string; lastName: string } | null;
+  assignedOps: { id: string; firstName: string; lastName: string } | null;
+  notes: Note[];
+  activityEvents: ActivityEvent[];
+  tasks: Task[];
+}
 interface ChecklistDocument { id: string; name: string; fileType: string; fileSize: number; createdAt: string; uploadedBy: { id: string; firstName: string; lastName: string }; checklistItem: { id: string; name: string } | null; }
 type ChecklistStatus = "NOT_STARTED" | "REQUESTED" | "RECEIVED" | "REVIEWED" | "COMPLETE";
 interface ChecklistItem { id: string; name: string; required: boolean; status: ChecklistStatus; notes: string | null; sortOrder: number; documents: ChecklistDocument[]; }
@@ -292,6 +324,18 @@ export default function CaseDetail({ rolloverCase: initial, users, currentUserId
           </div>
           <p className="text-sm mt-1" style={{ color: "#7d8590" }}>
             {rolloverCase.clientEmail}
+            {rolloverCase.clientPhone && (
+              <>
+                <span className="mx-1.5" style={{ color: "#30363d" }}>·</span>
+                <a
+                  href={`tel:${rolloverCase.clientPhone.replace(/[^+0-9x]/gi, "")}`}
+                  style={{ color: "#7d8590" }}
+                  className="hover:underline"
+                >
+                  {rolloverCase.clientPhone}
+                </a>
+              </>
+            )}
             <span className="mx-1.5" style={{ color: "#30363d" }}>·</span>
             Opened {formatDate(rolloverCase.createdAt)}
           </p>
@@ -449,8 +493,41 @@ export default function CaseDetail({ rolloverCase: initial, users, currentUserId
                 {rolloverCase.wealthboxOpportunityId ? (
                   <>
                     <p className="text-sm" style={{ color: "#c9d1d9" }}>
-                      Linked to opportunity <span style={{ fontFamily: "monospace", color: "#79c0ff" }}>#{rolloverCase.wealthboxOpportunityId}</span>
+                      Linked to opportunity{" "}
+                      {rolloverCase.wealthboxOpportunityName ? (
+                        <span style={{ color: "#c9d1d9" }}>
+                          &ldquo;{rolloverCase.wealthboxOpportunityName}&rdquo;
+                        </span>
+                      ) : null}{" "}
+                      <span style={{ fontFamily: "monospace", color: "#79c0ff" }}>#{rolloverCase.wealthboxOpportunityId}</span>
                     </p>
+
+                    {(rolloverCase.wealthboxAmount !== null
+                      || rolloverCase.wealthboxTargetClose
+                      || rolloverCase.wealthboxProbability !== null
+                      || rolloverCase.wealthboxOppCreatedAt) && (
+                      <dl
+                        className="grid grid-cols-2 gap-x-4 gap-y-2 text-xs rounded-md p-3"
+                        style={{ background: "#0d1117", border: "1px solid #21262d" }}
+                      >
+                        {rolloverCase.wealthboxAmount !== null && (
+                          <CrmFact
+                            label="Amount"
+                            value={formatCurrency(rolloverCase.wealthboxAmount, rolloverCase.wealthboxAmountCurrency ?? "USD")}
+                          />
+                        )}
+                        {rolloverCase.wealthboxProbability !== null && (
+                          <CrmFact label="Probability" value={`${rolloverCase.wealthboxProbability}%`} />
+                        )}
+                        {rolloverCase.wealthboxTargetClose && (
+                          <CrmFact label="Target close" value={formatDate(rolloverCase.wealthboxTargetClose)} />
+                        )}
+                        {rolloverCase.wealthboxOppCreatedAt && (
+                          <CrmFact label="Opp created" value={formatDate(rolloverCase.wealthboxOppCreatedAt)} />
+                        )}
+                      </dl>
+                    )}
+
                     {rolloverCase.wealthboxLastSyncError && (
                       <p className="text-xs" style={{ color: "#f87171" }}>{rolloverCase.wealthboxLastSyncError}</p>
                     )}
@@ -655,4 +732,25 @@ function EditRow({ label, children }: { label: string; children: React.ReactNode
       {children}
     </div>
   );
+}
+
+function CrmFact({ label, value }: { label: string; value: string }) {
+  return (
+    <div>
+      <dt className="text-[10px] uppercase tracking-wide" style={{ color: "#7d8590" }}>{label}</dt>
+      <dd className="text-sm mt-0.5" style={{ color: "#c9d1d9" }}>{value}</dd>
+    </div>
+  );
+}
+
+function formatCurrency(amount: number, currency: string): string {
+  try {
+    return new Intl.NumberFormat("en-US", {
+      style: "currency",
+      currency,
+      maximumFractionDigits: amount % 1 === 0 ? 0 : 2,
+    }).format(amount);
+  } catch {
+    return `${currency} ${amount.toLocaleString()}`;
+  }
 }

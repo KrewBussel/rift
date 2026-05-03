@@ -92,6 +92,8 @@ export async function PATCH(request: NextRequest, { params }: { params: Promise<
       ...(body.assignedAdvisorId !== undefined && { assignedAdvisorId: body.assignedAdvisorId || null }),
       ...(body.assignedOpsId !== undefined && { assignedOpsId: body.assignedOpsId || null }),
       ...(body.status !== undefined && { status: body.status, statusUpdatedAt: new Date() }),
+      ...(body.needsReview !== undefined && { needsReview: body.needsReview }),
+      ...(body.reviewReason !== undefined && { reviewReason: body.reviewReason }),
     },
   });
 

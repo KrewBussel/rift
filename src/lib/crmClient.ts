@@ -32,12 +32,24 @@ export interface OpportunityDetail {
 
 /**
  * Hydrated opportunity used by inbound case creation: includes the linked
- * primary contact's name + email and any custom-field values keyed by name.
- * `customFields` is case-insensitive at lookup time — see readField().
+ * primary contact's name/email/phone, the opportunity's metadata (amount,
+ * target close date, probability, opp name, createdAt), and any custom-field
+ * values keyed by name. `customFields` is case-insensitive at lookup time.
  */
 export interface OpportunityHydrated extends OpportunityDetail {
-  contact: { id: string; firstName: string | null; lastName: string | null; email: string | null } | null;
+  contact: {
+    id: string;
+    firstName: string | null;
+    lastName: string | null;
+    email: string | null;
+    phone: string | null;
+  } | null;
   customFields: Record<string, string>;
+  amount: number | null;
+  amountCurrency: string | null;
+  targetClose: Date | null;
+  probability: number | null;
+  oppCreatedAt: Date | null;
 }
 
 export interface OpportunityListPage {
@@ -113,6 +125,7 @@ export async function getProviderClient(connection: CrmConnection): Promise<CrmP
               firstName: c.first_name?.trim() || null,
               lastName: c.last_name?.trim() || null,
               email: wb.pickPrimaryEmail(c),
+              phone: wb.pickPrimaryPhone(c),
             };
           } catch {
             // Contact lookup failure shouldn't poison the hydrate; leave contact null
@@ -120,6 +133,7 @@ export async function getProviderClient(connection: CrmConnection): Promise<CrmP
             contact = null;
           }
         }
+        const amt = wb.pickOpportunityAmount(o);
         return {
           id: String(o.id),
           name: o.name,
@@ -127,6 +141,11 @@ export async function getProviderClient(connection: CrmConnection): Promise<CrmP
           stageId: stage.id != null ? String(stage.id) : null,
           contact,
           customFields,
+          amount: amt?.amount ?? null,
+          amountCurrency: amt?.currency ?? null,
+          targetClose: o.target_close ? safeParseDate(o.target_close) : null,
+          probability: typeof o.probability === "number" ? o.probability : null,
+          oppCreatedAt: o.created_at ? safeParseDate(o.created_at) : null,
         };
       },
       async listOpportunitiesByStage(stageId) {
@@ -232,6 +251,11 @@ export async function getProviderClient(connection: CrmConnection): Promise<CrmP
           stageId: o.StageName ?? null,
           contact: null,
           customFields: {},
+          amount: null,
+          amountCurrency: null,
+          targetClose: null,
+          probability: null,
+          oppCreatedAt: null,
         };
       },
       async listOpportunitiesByStage(stageId) {
@@ -297,4 +321,16 @@ function defaultCloseDate(): string {
   const d = new Date();
   d.setMonth(d.getMonth() + 1);
   return d.toISOString().slice(0, 10); // YYYY-MM-DD
+}
+
+/**
+ * Parse a Wealthbox date string defensively. Wealthbox returns ISO 8601
+ * timestamps for `created_at` and `YYYY-MM-DD HH:MM:SS +0000` for
+ * `target_close`. Both parse cleanly via Date(); we just return null on
+ * anything we can't make sense of so the caller doesn't have to handle
+ * NaN dates.
+ */
+function safeParseDate(s: string): Date | null {
+  const d = new Date(s);
+  return Number.isFinite(d.getTime()) ? d : null;
 }

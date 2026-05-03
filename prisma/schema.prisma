@@ -130,6 +130,20 @@ model RolloverCase {
   // accountType). The user fills the gap, then clears the flag.
   needsReview            Boolean         @default(false)
   reviewReason           String?
+  // Client phone, pulled from the Wealthbox contact's primary phone number on
+  // case creation / refresh. Stored on the case so users don't bounce back to
+  // the CRM to call a client.
+  clientPhone            String?
+  // Wealthbox-shadowed opportunity metadata. These are kept on the case as a
+  // local snapshot — they're updated on case creation and on user-triggered
+  // "Refresh from CRM", but never written back to Wealthbox. The opportunity
+  // there remains the source of truth.
+  wealthboxOpportunityName String?
+  wealthboxAmount        Float?
+  wealthboxAmountCurrency String?
+  wealthboxTargetClose   DateTime?
+  wealthboxProbability   Int?
+  wealthboxOppCreatedAt  DateTime?
   activityEvents       ActivityEvent[]
   checklistItems       ChecklistItem[]
   clientAccessTokens   ClientAccessToken[]

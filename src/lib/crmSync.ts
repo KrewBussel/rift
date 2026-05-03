@@ -124,10 +124,13 @@ export async function refreshCaseFromCrm(caseId: string, actorUserId: string): P
   const connection = await prisma.crmConnection.findUnique({ where: { firmId: rolloverCase.firmId } });
   if (!connection) return { ok: false, reason: "no_connection" };
 
-  let opp;
+  // Hydrate the opp so we can pull metadata + contact details, not just stage.
+  // This is what makes the manual "Refresh from CRM" actually update the
+  // amount, target close, client phone, etc. when they change in Wealthbox.
+  let hydrated;
   try {
     const client = await getProviderClient(connection);
-    opp = await client.getOpportunity(rolloverCase.wealthboxOpportunityId);
+    hydrated = await client.getOpportunityHydrated(rolloverCase.wealthboxOpportunityId);
   } catch (err) {
     const message = err instanceof Error ? err.message : "Unknown error";
     await prisma.rolloverCase.update({
@@ -137,27 +140,48 @@ export async function refreshCaseFromCrm(caseId: string, actorUserId: string): P
     return { ok: false, reason: "api_error", error: message };
   }
 
-  if (!opp.stageId) return { ok: false, reason: "opp_no_stage" };
+  if (!hydrated.stageId) return { ok: false, reason: "opp_no_stage" };
 
   const mapping = await prisma.crmStageMapping.findFirst({
-    where: { firmId: rolloverCase.firmId, crmStageId: opp.stageId },
+    where: { firmId: rolloverCase.firmId, crmStageId: hydrated.stageId },
   });
   if (!mapping) return { ok: false, reason: "no_mapping" };
 
   const oldStatus = rolloverCase.status;
   const newStatus = mapping.riftStatus;
 
+  // Always refresh the Wealthbox-shadowed fields. We deliberately don't touch
+  // user-mutable fields (sourceProvider, destinationCustodian, accountType,
+  // clientFirstName/LastName/Email) on refresh — once the user edits them in
+  // Rift, we treat Rift as the source of truth for case data.
+  const refreshedFields = {
+    wealthboxOpportunityName: hydrated.name,
+    wealthboxAmount: hydrated.amount,
+    wealthboxAmountCurrency: hydrated.amountCurrency,
+    wealthboxTargetClose: hydrated.targetClose,
+    wealthboxProbability: hydrated.probability,
+    wealthboxOppCreatedAt: hydrated.oppCreatedAt,
+    // Phone is the one client-data field we re-pull, since it changes more
+    // often than name/email and isn't typically edited in Rift.
+    ...(hydrated.contact?.phone !== undefined && { clientPhone: hydrated.contact.phone }),
+  };
+
   if (oldStatus === newStatus) {
     await prisma.rolloverCase.update({
       where: { id: caseId },
-      data: { wealthboxLastSyncedAt: new Date(), wealthboxLastSyncError: null },
+      data: {
+        ...refreshedFields,
+        wealthboxLastSyncedAt: new Date(),
+        wealthboxLastSyncError: null,
+      },
     });
-    return { ok: true, changed: false, oldStatus, newStatus, stageName: opp.stage ?? undefined };
+    return { ok: true, changed: false, oldStatus, newStatus, stageName: hydrated.stage ?? undefined };
   }
 
   await prisma.rolloverCase.update({
     where: { id: caseId },
     data: {
+      ...refreshedFields,
       status: newStatus,
       statusUpdatedAt: new Date(),
       wealthboxLastSyncedAt: new Date(),
@@ -173,7 +197,7 @@ export async function refreshCaseFromCrm(caseId: string, actorUserId: string): P
     },
   });
 
-  return { ok: true, changed: true, oldStatus, newStatus, stageName: opp.stage ?? undefined };
+  return { ok: true, changed: true, oldStatus, newStatus, stageName: hydrated.stage ?? undefined };
 }
 
 export type RiftStatus = CaseStatus;
@@ -357,12 +381,19 @@ async function createCaseFromOpportunity(
       clientFirstName: firstName ?? "Unknown",
       clientLastName: lastName ?? "Unknown",
       clientEmail: email ?? "",
+      clientPhone: opp.contact?.phone ?? null,
       sourceProvider: sourceProviderRaw ?? "",
       destinationCustodian: destinationRaw ?? "",
       accountType: accountType ?? "OTHER",
       status: "PROPOSAL_ACCEPTED",
       firmId,
       wealthboxOpportunityId: opp.id,
+      wealthboxOpportunityName: opp.name ?? null,
+      wealthboxAmount: opp.amount,
+      wealthboxAmountCurrency: opp.amountCurrency,
+      wealthboxTargetClose: opp.targetClose,
+      wealthboxProbability: opp.probability,
+      wealthboxOppCreatedAt: opp.oppCreatedAt,
       wealthboxLinkedAt: new Date(),
       wealthboxLastSyncedAt: new Date(),
       needsReview: reasons.length > 0,

@@ -150,11 +150,20 @@ export interface WealthboxEmailAddress {
   kind?: string;
 }
 
+export interface WealthboxPhoneNumber {
+  id?: number;
+  address: string;     // Wealthbox uses `address` for the phone number string
+  principal?: boolean;
+  kind?: string;       // "Mobile", "Work", "Home", etc.
+  extension?: string | null;
+}
+
 export interface WealthboxContact {
   id: number;
   first_name?: string | null;
   last_name?: string | null;
   email_addresses?: WealthboxEmailAddress[];
+  phone_numbers?: WealthboxPhoneNumber[];
 }
 
 export async function getContact(token: string, id: number | string): Promise<WealthboxContact> {
@@ -167,6 +176,31 @@ export function pickPrimaryEmail(contact: WealthboxContact): string | null {
   if (emails.length === 0) return null;
   const principal = emails.find((e) => e.principal);
   return (principal ?? emails[0]).address ?? null;
+}
+
+/** Pick the principal phone if marked, else the first one, else null. */
+export function pickPrimaryPhone(contact: WealthboxContact): string | null {
+  const phones = contact.phone_numbers ?? [];
+  if (phones.length === 0) return null;
+  const principal = phones.find((p) => p.principal);
+  const chosen = principal ?? phones[0];
+  if (!chosen?.address) return null;
+  const ext = chosen.extension?.trim();
+  return ext ? `${chosen.address} x${ext}` : chosen.address;
+}
+
+/** Sum opportunity amounts across the (often single-entry) `amounts` array. */
+export function pickOpportunityAmount(opp: WealthboxOpportunity): { amount: number; currency: string } | null {
+  const amounts = opp.amounts ?? [];
+  if (amounts.length === 0) return null;
+  // Wealthbox supports multiple currency rows on one opp; in practice it's one
+  // entry. If we ever see mixed currencies, we keep the first row's currency
+  // and total only the matching ones to avoid silently mixing units.
+  const currency = amounts[0].currency || "USD";
+  const total = amounts
+    .filter((a) => (a.currency || "USD") === currency)
+    .reduce((sum, a) => sum + (typeof a.amount === "number" ? a.amount : 0), 0);
+  return { amount: total, currency };
 }
 
 /** Wealthbox minimum payload for POST /opportunities and PUT /opportunities/:id. */

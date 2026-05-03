@@ -91,6 +91,8 @@ export default async function CaseDetailPage({ params }: { params: Promise<{ id:
     updatedAt: rolloverCase.updatedAt.toISOString(),
     wealthboxLinkedAt: rolloverCase.wealthboxLinkedAt?.toISOString() ?? null,
     wealthboxLastSyncedAt: rolloverCase.wealthboxLastSyncedAt?.toISOString() ?? null,
+    wealthboxTargetClose: rolloverCase.wealthboxTargetClose?.toISOString() ?? null,
+    wealthboxOppCreatedAt: rolloverCase.wealthboxOppCreatedAt?.toISOString() ?? null,
     notes: rolloverCase.notes.map((n) => ({ ...n, createdAt: n.createdAt.toISOString() })),
     activityEvents: rolloverCase.activityEvents.map((e) => ({ ...e, createdAt: e.createdAt.toISOString() })),
     tasks: rolloverCase.tasks.map((t) => ({
