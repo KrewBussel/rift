@@ -202,6 +202,52 @@ export async function refreshCaseFromCrm(caseId: string, actorUserId: string): P
 
 export type RiftStatus = CaseStatus;
 
+/**
+ * Page-load auto-sync: trigger a Wealthbox poll if (a) the firm has a CRM
+ * connection, (b) the last sync was more than PAGE_LOAD_THROTTLE_MS ago, and
+ * (c) the poll completes within PAGE_LOAD_TIMEOUT_MS. Designed to be awaited
+ * from a server component so newly-created cases appear in the same render.
+ *
+ * Throttling matters: every refresh would otherwise hit the Wealthbox API.
+ * The cron pings the same endpoint every minute, so the throttle just has to
+ * cover bursts of manual refreshes — 10s is plenty.
+ *
+ * Timeout matters: a slow Wealthbox response would block the page from
+ * rendering. We race against a hard deadline so the page always loads,
+ * even if it means missing the latest sync result.
+ *
+ * Always non-throwing — failure is silent so it can never break a page load.
+ */
+const PAGE_LOAD_THROTTLE_MS = 10_000;
+const PAGE_LOAD_TIMEOUT_MS = 2_500;
+
+export async function maybePollOnPageLoad(firmId: string): Promise<void> {
+  try {
+    const connection = await prisma.crmConnection.findUnique({
+      where: { firmId },
+      select: { provider: true, lastHealthCheckAt: true },
+    });
+    // Salesforce inbound polling isn't built yet, so skip there even if
+    // connected. Wealthbox is the only supported provider for this path.
+    if (!connection || connection.provider !== "WEALTHBOX") return;
+
+    if (
+      connection.lastHealthCheckAt &&
+      Date.now() - connection.lastHealthCheckAt.getTime() < PAGE_LOAD_THROTTLE_MS
+    ) {
+      return;
+    }
+
+    await Promise.race([
+      pollFirmForNewOpportunities(firmId).catch(() => undefined),
+      new Promise<void>((resolve) => setTimeout(resolve, PAGE_LOAD_TIMEOUT_MS)),
+    ]);
+  } catch {
+    // Page load auto-sync is best-effort. Any failure (DB error, etc.) is
+    // silently swallowed so the page always renders.
+  }
+}
+
 export interface PollResult {
   firmId: string;
   scanned: number;

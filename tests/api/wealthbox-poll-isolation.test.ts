@@ -295,6 +295,47 @@ describe("pollFirmForNewOpportunities — reverse Won bookend", () => {
     expect(result.closed).toBe(0);
   });
 
+  it("maybePollOnPageLoad skips when last sync was within the throttle window", async () => {
+    // Within the 10-second throttle window — should not invoke fetch.
+    await prisma.crmConnection.update({
+      where: { firmId: world.a.firmId },
+      data: { lastHealthCheckAt: new Date(Date.now() - 1000) },
+    });
+
+    const fetchSpy = vi.fn(async () => new Response("{}", { status: 200 }));
+    vi.stubGlobal("fetch", fetchSpy);
+
+    const { maybePollOnPageLoad } = await import("@/lib/crmSync");
+    await maybePollOnPageLoad(world.a.firmId);
+
+    expect(fetchSpy).not.toHaveBeenCalled();
+  });
+
+  it("maybePollOnPageLoad runs when last sync was outside the throttle window", async () => {
+    await prisma.crmConnection.update({
+      where: { firmId: world.a.firmId },
+      data: { lastHealthCheckAt: new Date(Date.now() - 60_000) },
+    });
+
+    vi.stubGlobal(
+      "fetch",
+      vi.fn(async (input: RequestInfo | URL) => {
+        const url = typeof input === "string" ? input : input.toString();
+        if (url.includes("/opportunities") && !url.match(/\/opportunities\/\d+/)) {
+          return new Response(JSON.stringify({ opportunities: [] }), { status: 200 });
+        }
+        return new Response("not stubbed", { status: 404 });
+      }),
+    );
+
+    const { maybePollOnPageLoad } = await import("@/lib/crmSync");
+    await maybePollOnPageLoad(world.a.firmId);
+
+    // Connection was updated by the inner pollFirmForNewOpportunities call.
+    const conn = await prisma.crmConnection.findUnique({ where: { firmId: world.a.firmId } });
+    expect(conn!.lastHealthCheckAt!.getTime()).toBeGreaterThan(Date.now() - 5_000);
+  });
+
   it("never closes a case in firm B when polling firm A", async () => {
     // Link firm B's case to a different opp; ensure firm B's mapping doesn't
     // exist for Won so its case stays untouched even if firm A's poll ran first.

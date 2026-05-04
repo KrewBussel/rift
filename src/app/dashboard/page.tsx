@@ -16,6 +16,7 @@ import { computeOnboardingChecklist } from "@/lib/onboarding";
 import { getFirmUsageSummary } from "@/lib/aiUsage";
 import { getOrCreateFirmSettings } from "@/lib/reminders";
 import { getFirmStageConfig } from "@/lib/stageConfig";
+import { maybePollOnPageLoad } from "@/lib/crmSync";
 import { STATUSES, resolveStageLabel } from "@/components/casesDesignTokens";
 
 const DEFAULT_STATUS_LABELS: Record<string, string> = {
@@ -69,6 +70,11 @@ export default async function DashboardPage({
   const firmId = session.user.firmId;
   const userId = session.user.id;
   const role = session.user.role as "ADMIN" | "ADVISOR" | "OPS";
+
+  // Auto-pull from Wealthbox on dashboard load — same throttled, time-boxed
+  // helper used by the cases list page. Newly-created cases land in the
+  // pipeline counts and "needs attention" lists in this same render.
+  await maybePollOnPageLoad(firmId);
 
   const userRecord = await prisma.user.findUnique({
     where: { id: userId },

@@ -111,6 +111,12 @@ export default function TeamSection({
         right={<Btn primary onClick={() => setInviteOpen(true)}><Icon name="plus" size={14} /> Invite member</Btn>}
       />
       <div style={{ padding: "24px 40px 120px", maxWidth: 1100 }}>
+        <CrmTeamImportPanel
+          seatsRemaining={seatsRemaining}
+          onInvited={refresh}
+          onError={(msg) => setError(msg)}
+        />
+
         {tempCredential && (
           <div
             style={{
@@ -461,6 +467,413 @@ function Labeled({ label, children }: { label: string; children: React.ReactNode
         {label}
       </div>
       {children}
+    </div>
+  );
+}
+
+/* ─── CRM team import ──────────────────────────────────────────────────── */
+
+type CrmTeamRow = {
+  id: string;
+  firstName: string | null;
+  lastName: string | null;
+  email: string;
+  riftStatus: "available" | "in_firm" | "other_firm";
+  existingRole: "ADMIN" | "OPS" | "ADVISOR" | null;
+};
+
+type RoleSel = "ADVISOR" | "OPS" | "SKIP";
+
+/**
+ * Lazy-loadable panel that pulls the firm's Wealthbox account members and lets
+ * the admin invite them in bulk by picking a Rift role per row. Hidden until
+ * the admin clicks "Import from Wealthbox" so we don't hit the CRM API on
+ * every settings page load.
+ */
+function CrmTeamImportPanel({
+  seatsRemaining,
+  onInvited,
+  onError,
+}: {
+  seatsRemaining: number;
+  onInvited: () => Promise<void> | void;
+  onError: (msg: string) => void;
+}) {
+  const [open, setOpen] = useState(false);
+  const [users, setUsers] = useState<CrmTeamRow[] | null>(null);
+  const [loading, setLoading] = useState(false);
+  const [err, setErr] = useState<string | null>(null);
+  const [selections, setSelections] = useState<Record<string, RoleSel>>({});
+  const [outcomes, setOutcomes] = useState<Record<string, "ok" | "pending" | "error">>({});
+  const [inviting, setInviting] = useState(false);
+  const [hasCrm, setHasCrm] = useState<boolean | null>(null);
+
+  // Light precheck on mount: don't show the panel at all if no CRM is connected.
+  useEffect(() => {
+    void (async () => {
+      const res = await fetch("/api/integrations/crm");
+      if (!res.ok) {
+        setHasCrm(false);
+        return;
+      }
+      const body = (await res.json().catch(() => ({}))) as { connection?: unknown };
+      setHasCrm(!!body.connection);
+    })();
+  }, []);
+
+  async function load() {
+    setLoading(true);
+    setErr(null);
+    const res = await fetch("/api/integrations/crm/users");
+    setLoading(false);
+    if (!res.ok) {
+      const body = (await res.json().catch(() => ({}))) as { error?: string };
+      setErr(body.error ?? `Couldn't load (HTTP ${res.status})`);
+      return;
+    }
+    const body = (await res.json()) as { users: CrmTeamRow[] };
+    setUsers(body.users ?? []);
+    const defaults: Record<string, RoleSel> = {};
+    for (const u of body.users ?? []) defaults[u.id] = "SKIP";
+    setSelections(defaults);
+  }
+
+  async function inviteSelected() {
+    if (!users) return;
+    setInviting(true);
+    const next: Record<string, "ok" | "pending" | "error"> = {};
+    for (const u of users) {
+      const role = selections[u.id] ?? "SKIP";
+      if (role === "SKIP" || u.riftStatus !== "available") continue;
+      const fallback = u.email.split("@")[0]?.replace(/[._-]+/g, " ").trim() || "Teammate";
+      const firstName = u.firstName ?? fallback.split(/\s+/)[0] ?? "Teammate";
+      const lastName = u.lastName ?? fallback.split(/\s+/).slice(1).join(" ") ?? "(unknown)";
+      next[u.id] = "pending";
+      setOutcomes({ ...next });
+      try {
+        const res = await fetch("/api/firm/team", {
+          method: "POST",
+          headers: { "Content-Type": "application/json" },
+          body: JSON.stringify({ firstName, lastName: lastName || "(unknown)", email: u.email, role }),
+        });
+        if (res.ok) {
+          next[u.id] = "ok";
+        } else {
+          const body = (await res.json().catch(() => ({}))) as { error?: string };
+          next[u.id] = "error";
+          onError(body.error ?? `Invite for ${u.email} failed (HTTP ${res.status})`);
+        }
+      } catch (e) {
+        next[u.id] = "error";
+        onError(e instanceof Error ? e.message : "Network error");
+      }
+      setOutcomes({ ...next });
+    }
+    setInviting(false);
+    await onInvited();
+  }
+
+  if (hasCrm === false || hasCrm === null) return null;
+
+  const visibleUsers = users ?? [];
+  const availableCount = visibleUsers.filter((u) => u.riftStatus === "available").length;
+  const pickedCount = visibleUsers.filter(
+    (u) => u.riftStatus === "available" && (selections[u.id] === "ADVISOR" || selections[u.id] === "OPS"),
+  ).length;
+  const overSeatLimit = pickedCount > seatsRemaining;
+  const finishedCount = Object.values(outcomes).filter((o) => o === "ok").length;
+
+  return (
+    <Card style={{ marginBottom: 16 }}>
+      <div style={{ padding: "20px 24px" }}>
+        {/* Header row */}
+        <div style={{ display: "flex", alignItems: "center", gap: 14 }}>
+            <WealthboxBadge />
+            <div style={{ flex: 1, minWidth: 0 }}>
+              <div style={{ display: "flex", alignItems: "center", gap: 8 }}>
+                <div style={{ fontSize: 14, fontWeight: 600, color: T.text }}>
+                  Import from Wealthbox
+                </div>
+                {users && users.length > 0 && (
+                  <span
+                    style={{
+                      fontSize: 11,
+                      color: T.textSecondary,
+                      padding: "2px 8px",
+                      borderRadius: 999,
+                      background: T.page,
+                      border: `1px solid ${T.border}`,
+                    }}
+                  >
+                    {availableCount} eligible · {visibleUsers.length} total
+                  </span>
+                )}
+              </div>
+              <div style={{ fontSize: 12, color: T.textSecondary, marginTop: 4, lineHeight: 1.5 }}>
+                Pull your Wealthbox team and invite them in bulk. You pick the Rift role for each — Wealthbox doesn&rsquo;t track that distinction.
+              </div>
+            </div>
+            <Btn
+              small
+              onClick={() => {
+                setOpen((v) => !v);
+                if (!users && !open) void load();
+              }}
+            >
+              {open ? "Hide" : users ? "Show list" : "Load list"}
+            </Btn>
+          </div>
+
+          {/* Loaded body */}
+          {open && (
+            <div style={{ marginTop: 16 }}>
+              {loading ? (
+                <div
+                  style={{
+                    fontSize: 12,
+                    color: T.textSecondary,
+                    padding: "16px 12px",
+                    textAlign: "center",
+                    background: T.page,
+                    border: `1px solid ${T.border}`,
+                    borderRadius: 6,
+                  }}
+                >
+                  Loading your Wealthbox team…
+                </div>
+              ) : err ? (
+                <div
+                  style={{
+                    fontSize: 12,
+                    color: T.danger,
+                    padding: "10px 12px",
+                    background: "#2d1515",
+                    border: "1px solid #5a2020",
+                    borderRadius: 6,
+                  }}
+                >
+                  {err}
+                </div>
+              ) : visibleUsers.length === 0 ? (
+                <div
+                  style={{
+                    fontSize: 12,
+                    color: T.textSecondary,
+                    padding: "16px 12px",
+                    textAlign: "center",
+                    background: T.page,
+                    border: `1px dashed ${T.border}`,
+                    borderRadius: 6,
+                  }}
+                >
+                  No additional users found on your Wealthbox account.
+                </div>
+              ) : (
+                <>
+                  {/* Column header */}
+                  <div
+                    style={{
+                      display: "grid",
+                      gridTemplateColumns: "1fr 140px 100px",
+                      gap: 12,
+                      padding: "0 12px 6px",
+                      fontSize: 10,
+                      fontWeight: 600,
+                      color: T.textSecondary,
+                      textTransform: "uppercase",
+                      letterSpacing: 0.5,
+                    }}
+                  >
+                    <span>Wealthbox member</span>
+                    <span>Rift role</span>
+                    <span style={{ textAlign: "right" }}>Status</span>
+                  </div>
+
+                  <div
+                    style={{
+                      display: "flex",
+                      flexDirection: "column",
+                      background: T.page,
+                      border: `1px solid ${T.border}`,
+                      borderRadius: 8,
+                      overflow: "hidden",
+                    }}
+                  >
+                    {visibleUsers.map((u, i) => {
+                      const role = selections[u.id] ?? "SKIP";
+                      const outcome = outcomes[u.id];
+                      const displayName = u.firstName || u.lastName
+                        ? `${u.firstName ?? ""} ${u.lastName ?? ""}`.trim()
+                        : u.email.split("@")[0];
+                      return (
+                        <div
+                          key={u.id}
+                          style={{
+                            display: "grid",
+                            gridTemplateColumns: "1fr 140px 100px",
+                            gap: 12,
+                            alignItems: "center",
+                            padding: "10px 12px",
+                            borderTop: i === 0 ? "none" : `1px solid ${T.border}`,
+                          }}
+                        >
+                          <div style={{ display: "flex", alignItems: "center", gap: 10, minWidth: 0 }}>
+                            <InitialsAvatar
+                              firstName={u.firstName ?? displayName.charAt(0)}
+                              lastName={u.lastName ?? ""}
+                              size={26}
+                              color={u.riftStatus === "in_firm" ? "#3fb950" : T.accent}
+                            />
+                            <div style={{ minWidth: 0 }}>
+                              <div
+                                style={{
+                                  fontSize: 13,
+                                  color: T.text,
+                                  fontWeight: 500,
+                                  overflow: "hidden",
+                                  textOverflow: "ellipsis",
+                                  whiteSpace: "nowrap",
+                                }}
+                              >
+                                {displayName}
+                              </div>
+                              <div
+                                style={{
+                                  fontSize: 11,
+                                  color: T.textSecondary,
+                                  overflow: "hidden",
+                                  textOverflow: "ellipsis",
+                                  whiteSpace: "nowrap",
+                                }}
+                              >
+                                {u.email}
+                              </div>
+                            </div>
+                          </div>
+
+                          <div>
+                            {u.riftStatus === "in_firm" ? (
+                              <Pill hue="green">On team · {u.existingRole?.toLowerCase()}</Pill>
+                            ) : u.riftStatus === "other_firm" ? (
+                              <Pill hue="red">Other firm</Pill>
+                            ) : (
+                              <select
+                                value={role}
+                                onChange={(e) =>
+                                  setSelections({ ...selections, [u.id]: e.target.value as RoleSel })
+                                }
+                                disabled={inviting || outcome === "ok"}
+                                style={{
+                                  width: "100%",
+                                  background: T.input,
+                                  border: `1px solid ${T.border}`,
+                                  color: T.text,
+                                  borderRadius: 6,
+                                  padding: "6px 8px",
+                                  fontSize: 12,
+                                  cursor: outcome === "ok" ? "not-allowed" : "pointer",
+                                }}
+                              >
+                                <option value="SKIP">Skip</option>
+                                <option value="ADVISOR">Advisor</option>
+                                <option value="OPS">Ops</option>
+                              </select>
+                            )}
+                          </div>
+
+                          <div style={{ fontSize: 11, textAlign: "right" }}>
+                            {outcome === "ok" ? (
+                              <span style={{ color: "#6ee7b7" }}>✓ Invited</span>
+                            ) : outcome === "pending" ? (
+                              <span style={{ color: T.textSecondary }}>Sending…</span>
+                            ) : outcome === "error" ? (
+                              <span style={{ color: T.danger }}>Error</span>
+                            ) : u.riftStatus === "available" && role !== "SKIP" ? (
+                              <span style={{ color: T.accent }}>Ready</span>
+                            ) : (
+                              <span style={{ color: T.textSecondary }}>—</span>
+                            )}
+                          </div>
+                        </div>
+                      );
+                    })}
+                  </div>
+
+                  {/* Footer action row */}
+                  <div
+                    style={{
+                      display: "flex",
+                      alignItems: "center",
+                      gap: 12,
+                      marginTop: 14,
+                      flexWrap: "wrap",
+                    }}
+                  >
+                    <Btn
+                      primary
+                      small
+                      onClick={inviteSelected}
+                      disabled={inviting || pickedCount === 0 || overSeatLimit}
+                    >
+                      {inviting
+                        ? "Sending invites…"
+                        : pickedCount === 0
+                        ? "Pick a role to begin"
+                        : `Send ${pickedCount} invite${pickedCount === 1 ? "" : "s"}`}
+                    </Btn>
+
+                    {overSeatLimit && (
+                      <span style={{ fontSize: 12, color: T.danger }}>
+                        Over seat limit — only {seatsRemaining} seat{seatsRemaining === 1 ? "" : "s"} remaining.
+                      </span>
+                    )}
+
+                    {!overSeatLimit && pickedCount > 0 && !inviting && (
+                      <span style={{ fontSize: 11, color: T.textSecondary }}>
+                        {pickedCount} of {seatsRemaining} remaining seat{seatsRemaining === 1 ? "" : "s"} selected
+                      </span>
+                    )}
+
+                    {finishedCount > 0 && !inviting && (
+                      <span style={{ fontSize: 11, color: "#6ee7b7" }}>
+                        {finishedCount} invited successfully
+                      </span>
+                    )}
+                  </div>
+                </>
+              )}
+            </div>
+          )}
+      </div>
+    </Card>
+  );
+}
+
+/**
+ * A small Wealthbox-branded badge — replaces the bare plus icon that was
+ * floating at the left of the panel header without any visual weight.
+ */
+function WealthboxBadge() {
+  return (
+    <div
+      style={{
+        width: 36,
+        height: 36,
+        borderRadius: 8,
+        background: "#152130",
+        border: `1px solid ${T.border}`,
+        color: "#5b8def",
+        display: "flex",
+        alignItems: "center",
+        justifyContent: "center",
+        flexShrink: 0,
+        fontSize: 12,
+        fontWeight: 700,
+        letterSpacing: 0.4,
+      }}
+      aria-hidden
+    >
+      WB
     </div>
   );
 }

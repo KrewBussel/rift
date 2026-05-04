@@ -6,9 +6,9 @@ import { STATUSES, type StageConfigRow } from "./casesDesignTokens";
 
 type CrmStage = { id: string; name: string };
 
-type WizardStep = "crm" | "connect" | "trigger" | "won" | "stages" | "done";
+type WizardStep = "crm" | "connect" | "trigger" | "won" | "stages" | "team" | "done";
 
-const STEP_ORDER: WizardStep[] = ["crm", "connect", "trigger", "won", "stages", "done"];
+const STEP_ORDER: WizardStep[] = ["crm", "connect", "trigger", "won", "stages", "team", "done"];
 
 const STEP_LABEL: Record<WizardStep, string> = {
   crm: "Choose CRM",
@@ -16,8 +16,26 @@ const STEP_LABEL: Record<WizardStep, string> = {
   trigger: "Trigger stage",
   won: "Won stage",
   stages: "Rift stages",
+  team: "Invite team",
   done: "Finish",
 };
+
+type CrmTeamRow = {
+  id: string;
+  firstName: string | null;
+  lastName: string | null;
+  email: string;
+  riftStatus: "available" | "in_firm" | "other_firm";
+  existingRole: "ADMIN" | "OPS" | "ADVISOR" | null;
+};
+
+type RiftRoleSelection = "ADVISOR" | "OPS" | "SKIP";
+
+type InviteOutcome =
+  | { kind: "pending" }
+  | { kind: "ok" }
+  | { kind: "skipped"; reason: string }
+  | { kind: "error"; message: string };
 
 export default function OnboardingWizard({
   firmName,
@@ -58,6 +76,14 @@ export default function OnboardingWizard({
   );
   const [savingStages, setSavingStages] = useState(false);
   const [stagesSaveErr, setStagesSaveErr] = useState<string | null>(null);
+
+  // Team invite from CRM
+  const [crmTeam, setCrmTeam] = useState<CrmTeamRow[]>([]);
+  const [crmTeamLoading, setCrmTeamLoading] = useState(false);
+  const [crmTeamErr, setCrmTeamErr] = useState<string | null>(null);
+  const [teamSelections, setTeamSelections] = useState<Record<string, RiftRoleSelection>>({});
+  const [teamOutcomes, setTeamOutcomes] = useState<Record<string, InviteOutcome>>({});
+  const [invitingTeam, setInvitingTeam] = useState(false);
 
   // Final completion
   const [finishing, setFinishing] = useState(false);
@@ -118,6 +144,71 @@ export default function OnboardingWizard({
     // eslint-disable-next-line react-hooks/set-state-in-effect
     void loadStages();
   }, [connection]);
+
+  async function loadCrmTeam() {
+    setCrmTeamLoading(true);
+    setCrmTeamErr(null);
+    const res = await fetch("/api/integrations/crm/users");
+    setCrmTeamLoading(false);
+    if (!res.ok) {
+      const body = (await res.json().catch(() => ({}))) as { error?: string };
+      setCrmTeamErr(body.error ?? `Couldn't load Wealthbox team (HTTP ${res.status}).`);
+      return;
+    }
+    const body = (await res.json()) as { users: CrmTeamRow[] };
+    setCrmTeam(body.users ?? []);
+    // Default selection: SKIP for everyone (admin opts in explicitly).
+    // Already-imported and other-firm rows are locked to skip server-side too.
+    const defaults: Record<string, RiftRoleSelection> = {};
+    for (const u of body.users ?? []) defaults[u.id] = "SKIP";
+    setTeamSelections((prev) => ({ ...defaults, ...prev }));
+  }
+
+  // Lazy-load the CRM team list when the admin first hits the team step.
+  useEffect(() => {
+    if (step !== "team") return;
+    if (crmTeam.length > 0 || crmTeamLoading || crmTeamErr) return;
+    // eslint-disable-next-line react-hooks/set-state-in-effect
+    void loadCrmTeam();
+  }, [step, crmTeam.length, crmTeamLoading, crmTeamErr]);
+
+  async function inviteSelectedTeam() {
+    setInvitingTeam(true);
+    const outcomes: Record<string, InviteOutcome> = {};
+    for (const u of crmTeam) {
+      const role = teamSelections[u.id] ?? "SKIP";
+      if (role === "SKIP") continue;
+      if (u.riftStatus !== "available") {
+        outcomes[u.id] = { kind: "skipped", reason: u.riftStatus === "in_firm" ? "already on team" : "email belongs to a different firm" };
+        continue;
+      }
+      // Wealthbox doesn't always give us first/last; fall back to local part of email.
+      const fallback = u.email.split("@")[0]?.replace(/[._-]+/g, " ").trim() || "Teammate";
+      const firstName = u.firstName ?? fallback.split(/\s+/)[0] ?? "Teammate";
+      const lastName = u.lastName ?? fallback.split(/\s+/).slice(1).join(" ") ?? "";
+
+      outcomes[u.id] = { kind: "pending" };
+      setTeamOutcomes({ ...outcomes });
+
+      try {
+        const res = await fetch("/api/firm/team", {
+          method: "POST",
+          headers: { "Content-Type": "application/json" },
+          body: JSON.stringify({ firstName, lastName: lastName || "(unknown)", email: u.email, role }),
+        });
+        if (res.ok) {
+          outcomes[u.id] = { kind: "ok" };
+        } else {
+          const body = (await res.json().catch(() => ({}))) as { error?: string };
+          outcomes[u.id] = { kind: "error", message: body.error ?? `HTTP ${res.status}` };
+        }
+      } catch (err) {
+        outcomes[u.id] = { kind: "error", message: err instanceof Error ? err.message : "Network error" };
+      }
+      setTeamOutcomes({ ...outcomes });
+    }
+    setInvitingTeam(false);
+  }
 
   async function handleConnect(e: React.FormEvent) {
     e.preventDefault();
@@ -308,9 +399,25 @@ export default function OnboardingWizard({
             error={stagesSaveErr}
             onContinue={async () => {
               const ok = await saveStageConfig();
-              if (ok) setStep("done");
+              if (ok) setStep("team");
             }}
             onBack={() => setStep("won")}
+          />
+        )}
+
+        {step === "team" && (
+          <StepTeam
+            adminEmail={connection?.connectedUserEmail ?? null}
+            users={crmTeam}
+            loading={crmTeamLoading}
+            error={crmTeamErr}
+            selections={teamSelections}
+            setSelections={setTeamSelections}
+            outcomes={teamOutcomes}
+            inviting={invitingTeam}
+            onSendInvites={inviteSelectedTeam}
+            onContinue={() => setStep("done")}
+            onBack={() => setStep("stages")}
           />
         )}
 
@@ -321,7 +428,7 @@ export default function OnboardingWizard({
             finishing={finishing}
             error={finishErr}
             onFinish={finishOnboarding}
-            onBack={() => setStep("stages")}
+            onBack={() => setStep("team")}
           />
         )}
       </div>
@@ -710,6 +817,201 @@ function StepStages({
         onPrimary={onContinue}
       />
     </Card>
+  );
+}
+
+/* ───────────────────────── Step: invite team from CRM ───────────────────────── */
+
+function StepTeam({
+  adminEmail,
+  users,
+  loading,
+  error,
+  selections,
+  setSelections,
+  outcomes,
+  inviting,
+  onSendInvites,
+  onContinue,
+  onBack,
+}: {
+  adminEmail: string | null;
+  users: CrmTeamRow[];
+  loading: boolean;
+  error: string | null;
+  selections: Record<string, RiftRoleSelection>;
+  setSelections: (next: Record<string, RiftRoleSelection>) => void;
+  outcomes: Record<string, InviteOutcome>;
+  inviting: boolean;
+  onSendInvites: () => void;
+  onContinue: () => void;
+  onBack: () => void;
+}) {
+  // Don't show the admin themselves in the import list — they're already on
+  // the team. Compare case-insensitively against the connection's email.
+  const filteredUsers = useMemo(() => {
+    if (!adminEmail) return users;
+    const a = adminEmail.trim().toLowerCase();
+    return users.filter((u) => u.email.toLowerCase() !== a);
+  }, [users, adminEmail]);
+
+  const selectedCount = filteredUsers.filter(
+    (u) => u.riftStatus === "available" && (selections[u.id] === "ADVISOR" || selections[u.id] === "OPS"),
+  ).length;
+  const allDone = filteredUsers.length > 0 && filteredUsers.every((u) => {
+    const o = outcomes[u.id];
+    return !o || o.kind === "ok" || o.kind === "skipped";
+  });
+
+  function update(id: string, role: RiftRoleSelection) {
+    setSelections({ ...selections, [id]: role });
+  }
+
+  return (
+    <Card>
+      <CardTitle>Invite your team from Wealthbox</CardTitle>
+      <CardLead>
+        We pulled the users on your Wealthbox account. Pick who should join Rift
+        and what role each one needs. Anyone you skip can still be invited later
+        from <em>Settings → Team</em>.
+      </CardLead>
+
+      <div
+        className="mt-4 rounded-lg p-3 text-xs"
+        style={{ background: "#0f131b", border: "1px solid #1d2330", color: "#9ca3af" }}
+      >
+        <p className="font-medium mb-1" style={{ color: "#c9d1d9" }}>How Rift roles map</p>
+        <ul className="space-y-1">
+          <li>
+            <span className="font-semibold" style={{ color: "#5b8def" }}>Advisor</span> —
+            client-facing. Sees their own assigned cases.
+          </li>
+          <li>
+            <span className="font-semibold" style={{ color: "#a78bfa" }}>Ops</span> —
+            handles paperwork &amp; custodian work. Sees their own assigned cases.
+          </li>
+        </ul>
+        <p className="mt-2 text-[11px]" style={{ color: "#7d8590" }}>
+          Wealthbox doesn&rsquo;t track this distinction, so you decide. Admins can be
+          added later from <em>Settings → Team</em>.
+        </p>
+      </div>
+
+      {loading ? (
+        <p className="text-sm mt-4" style={{ color: "#7d8590" }}>Loading your Wealthbox team…</p>
+      ) : error ? (
+        <p className="text-sm mt-4" style={{ color: "#f87171" }}>{error}</p>
+      ) : filteredUsers.length === 0 ? (
+        <p className="text-sm mt-4" style={{ color: "#9ca3af" }}>
+          No additional users on your Wealthbox account. You can invite teammates manually
+          later from <em>Settings → Team</em>.
+        </p>
+      ) : (
+        <div className="mt-5 space-y-2">
+          {filteredUsers.map((u) => {
+            const role = selections[u.id] ?? "SKIP";
+            const outcome = outcomes[u.id];
+            const locked = u.riftStatus !== "available";
+            return (
+              <div
+                key={u.id}
+                className="grid grid-cols-[1fr_auto_auto] gap-3 items-center rounded-lg p-3"
+                style={{ background: "#0f131b", border: "1px solid #1d2330" }}
+              >
+                <div className="min-w-0">
+                  <p className="text-sm font-medium truncate" style={{ color: "#e4e6ea" }}>
+                    {u.firstName || u.lastName ? `${u.firstName ?? ""} ${u.lastName ?? ""}`.trim() : u.email.split("@")[0]}
+                  </p>
+                  <p className="text-xs truncate" style={{ color: "#7d8590" }}>{u.email}</p>
+                </div>
+
+                {u.riftStatus === "in_firm" ? (
+                  <span
+                    className="text-[10px] uppercase tracking-wide px-2 py-0.5 rounded-full"
+                    style={{ background: "#0d2318", color: "#6ee7b7" }}
+                  >
+                    On team ({u.existingRole?.toLowerCase()})
+                  </span>
+                ) : u.riftStatus === "other_firm" ? (
+                  <span
+                    className="text-[10px] uppercase tracking-wide px-2 py-0.5 rounded-full"
+                    style={{ background: "#2d1515", color: "#f87171" }}
+                    title="This email belongs to a Rift user at a different firm. They cannot be invited here."
+                  >
+                    In another firm
+                  </span>
+                ) : (
+                  <RoleSelect value={role} onChange={(v) => update(u.id, v)} disabled={locked || inviting} />
+                )}
+
+                <span className="w-28 text-right text-[11px]" style={{ color: "#7d8590" }}>
+                  {outcome?.kind === "ok" && <span style={{ color: "#6ee7b7" }}>✓ Invited</span>}
+                  {outcome?.kind === "pending" && <span>Sending…</span>}
+                  {outcome?.kind === "skipped" && <span>Skipped</span>}
+                  {outcome?.kind === "error" && (
+                    <span style={{ color: "#f87171" }} title={outcome.message}>
+                      Error
+                    </span>
+                  )}
+                </span>
+              </div>
+            );
+          })}
+
+          <div className="flex items-center gap-3 pt-1">
+            <button
+              type="button"
+              onClick={onSendInvites}
+              disabled={inviting || selectedCount === 0}
+              className="text-sm px-4 py-2 rounded-md disabled:opacity-50"
+              style={{ background: "#2563eb", color: "#fff" }}
+            >
+              {inviting
+                ? "Sending invites…"
+                : selectedCount === 0
+                ? "Pick a role for at least one teammate"
+                : `Send ${selectedCount} invite${selectedCount === 1 ? "" : "s"}`}
+            </button>
+            {allDone && selectedCount > 0 && !inviting && (
+              <span className="text-xs" style={{ color: "#6ee7b7" }}>
+                All invites sent. You can continue.
+              </span>
+            )}
+          </div>
+        </div>
+      )}
+
+      <Footer
+        onBack={onBack}
+        primaryLabel={selectedCount === 0 ? "Skip for now" : "Continue"}
+        primaryDisabled={inviting}
+        onPrimary={onContinue}
+      />
+    </Card>
+  );
+}
+
+function RoleSelect({
+  value,
+  onChange,
+  disabled,
+}: {
+  value: RiftRoleSelection;
+  onChange: (v: RiftRoleSelection) => void;
+  disabled?: boolean;
+}) {
+  return (
+    <select
+      value={value}
+      onChange={(e) => onChange(e.target.value as RiftRoleSelection)}
+      disabled={disabled}
+      className="rounded-md px-2 py-1 text-xs focus:outline-none disabled:opacity-50"
+      style={{ background: "#0d1117", border: "1px solid #30363d", color: "#c9d1d9" }}
+    >
+      <option value="SKIP">Skip</option>
+      <option value="ADVISOR">Advisor</option>
+      <option value="OPS">Ops</option>
+    </select>
   );
 }
 

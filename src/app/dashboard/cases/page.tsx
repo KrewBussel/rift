@@ -3,6 +3,7 @@ import { redirect } from "next/navigation";
 import { prisma } from "@/lib/prisma";
 import CasesView, { type CasesViewCase, type CasesViewUser } from "@/components/CasesView";
 import { getFirmStageConfig } from "@/lib/stageConfig";
+import { maybePollOnPageLoad } from "@/lib/crmSync";
 import WealthboxSyncButton from "@/components/WealthboxSyncButton";
 
 export default async function CasesPage({
@@ -26,6 +27,12 @@ export default async function CasesPage({
       : role === "OPS"
       ? { assignedOpsId: userId }
       : {};
+
+  // Auto-pull from Wealthbox on page load. Throttled (10s) and timeboxed (2.5s)
+  // so a refresh during the cron's 1-minute gap can surface new opportunities
+  // immediately, without letting a slow CRM hang the page or letting a refresh
+  // spam burn API quota. Failure is swallowed; the page always renders.
+  await maybePollOnPageLoad(firmId);
 
   const [cases, users, stageConfig, crmConn] = await Promise.all([
     prisma.rolloverCase.findMany({

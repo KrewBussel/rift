@@ -282,7 +282,7 @@ export default function CaseDetail({ rolloverCase: initial, users, currentUserId
     <div>
       {/* Breadcrumb */}
       <div className="flex items-center gap-1.5 text-sm mb-5" style={{ color: "#7d8590" }}>
-        <Link href="/dashboard" className="transition-colors hover:text-[#c9d1d9]">Cases</Link>
+        <Link href="/dashboard/cases" className="transition-colors hover:text-[#c9d1d9]">Cases</Link>
         <svg width="12" height="12" viewBox="0 0 12 12" fill="none" style={{ color: "#484f58" }}>
           <path d="M4.5 2.5L8 6l-3.5 3.5" stroke="currentColor" strokeWidth="1.4" strokeLinecap="round" strokeLinejoin="round"/>
         </svg>

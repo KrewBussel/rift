@@ -98,6 +98,35 @@ export async function getMe(token: string): Promise<WealthboxMe> {
   return request<WealthboxMe>(token, "/me");
 }
 
+export interface WealthboxUser {
+  id: number;
+  name?: string;
+  /** Wealthbox sometimes returns first/last separately and other times a combined name. */
+  first_name?: string | null;
+  last_name?: string | null;
+  email: string;
+  account?: number;
+  excluded_from_assignments?: boolean;
+}
+
+/**
+ * List the users on the same Wealthbox account as the caller's token. The
+ * Wealthbox API returns the array under several possible wrapper keys
+ * depending on the endpoint version, so we accept all of them.
+ */
+export async function getOrgUsers(token: string): Promise<WealthboxUser[]> {
+  const res = await request<unknown>(token, "/users");
+  if (Array.isArray(res)) return res as WealthboxUser[];
+  if (res && typeof res === "object") {
+    const r = res as Record<string, unknown>;
+    for (const key of ["users", "data"]) {
+      const v = r[key];
+      if (Array.isArray(v)) return v as WealthboxUser[];
+    }
+  }
+  return [];
+}
+
 /**
  * Opportunity stages are a Customizable Category. The endpoint is plural
  * (`opportunity_stages`). Response shape isn't fully documented; we accept

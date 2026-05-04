@@ -58,6 +58,13 @@ export interface OpportunityListPage {
   nextCursor: string | null;
 }
 
+export interface CrmUser {
+  id: string;
+  firstName: string | null;
+  lastName: string | null;
+  email: string;
+}
+
 export interface CrmProviderClient {
   provider: "WEALTHBOX" | "SALESFORCE";
   getStages(): Promise<Stage[]>;
@@ -69,6 +76,8 @@ export interface CrmProviderClient {
   listOpportunitiesByStage(stageId: string): Promise<OpportunitySummary[]>;
   updateOpportunityStage(id: string, stageId: string, stageName: string): Promise<void>;
   createOpportunity(opts: { name: string; stageId?: string; stageName?: string }): Promise<OpportunityDetail>;
+  /** List members of the CRM account (firm). Used by the team-invite UI. */
+  getOrgUsers(): Promise<CrmUser[]>;
 }
 
 /**
@@ -184,6 +193,27 @@ export async function getProviderClient(connection: CrmConnection): Promise<CrmP
           stageId: stage.id != null ? String(stage.id) : null,
         };
       },
+      async getOrgUsers() {
+        const raw = await wb.getOrgUsers(token);
+        return raw
+          .filter((u) => u.email)
+          .map((u) => {
+            // Wealthbox sometimes returns combined `name`, sometimes split. Be defensive.
+            let firstName = u.first_name?.trim() || null;
+            let lastName = u.last_name?.trim() || null;
+            if (!firstName && !lastName && u.name) {
+              const parts = u.name.trim().split(/\s+/);
+              firstName = parts[0] || null;
+              lastName = parts.slice(1).join(" ") || null;
+            }
+            return {
+              id: String(u.id),
+              firstName,
+              lastName,
+              email: u.email.trim().toLowerCase(),
+            };
+          });
+      },
     };
   }
 
@@ -273,6 +303,12 @@ export async function getProviderClient(connection: CrmConnection): Promise<CrmP
         const res = await callWithRetry((t) => sf.createOpportunity(instanceUrl, t, { name, stageName, closeDate }));
         if (!res.success) throw new Error(`Salesforce create failed: ${JSON.stringify(res.errors)}`);
         return { id: res.id, name, stage: stageName, stageId: stageName };
+      },
+      async getOrgUsers() {
+        // Salesforce User API needs `View All Users` permission and a SOQL
+        // query against User. Not yet wired. Returning an empty list keeps the
+        // team-invite UI usable (admin can still add manually) for SF firms.
+        return [];
       },
     };
   }

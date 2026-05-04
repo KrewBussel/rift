@@ -132,6 +132,18 @@ export default function SettingsForm({
   // triggering loops.
   const registry = useRef<Map<SettingsSectionId, SaveEntry>>(new Map());
   const [registryVersion, setRegistryVersion] = useState(0);
+  // Tracks whether the component is currently mounted. Children call
+  // registerSave during their initial render (before mount), so a microtask
+  // scheduled then would fire after a strict-mode discarded render and try to
+  // setState on an unmounted component. Gating the bump on this ref avoids
+  // the warning.
+  const mountedRef = useRef(false);
+  useEffect(() => {
+    mountedRef.current = true;
+    return () => {
+      mountedRef.current = false;
+    };
+  }, []);
 
   function registerSave(
     id: string,
@@ -143,7 +155,13 @@ export default function SettingsForm({
     if (!prev || prev.dirty !== dirty) {
       registry.current.set(id as SettingsSectionId, { dirty, save, reset });
       // Trigger a save-bar refresh on the next tick to avoid mid-render setState.
-      queueMicrotask(() => setRegistryVersion((v) => v + 1));
+      // Only do this after mount — pre-mount registrations are already
+      // reflected in the ref and will be picked up on the natural first render.
+      if (mountedRef.current) {
+        queueMicrotask(() => {
+          if (mountedRef.current) setRegistryVersion((v) => v + 1);
+        });
+      }
     } else {
       // Keep callbacks fresh without re-rendering.
       registry.current.set(id as SettingsSectionId, { dirty, save, reset });
