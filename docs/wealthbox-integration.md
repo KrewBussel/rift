@@ -116,27 +116,27 @@ The `/api/integrations/wealthbox/poll` route works on demand. Vercel Hobby
 caps cron jobs at once-per-day, which is useless for this. Two options
 shipped — pick one:
 
-**Option A — GitHub Actions (in this repo, already wired)**
-File: `.github/workflows/wealthbox-poll.yml`, schedule `*/5 * * * *`
-(every 5 min — GH Actions doesn't honor sub-5-min). To activate:
-1. In GitHub repo settings → Secrets and variables → Actions, add:
-   - `CRON_SECRET` — same value as the Vercel env var
-   - `RIFT_BASE_URL` — e.g. `https://rift.vercel.app` (no trailing slash)
-2. The workflow runs automatically on its schedule. Use the
-   "Run workflow" button on the Actions tab to trigger ad-hoc.
-3. GH Actions is best-effort on free tier — runs may be skipped under
-   load. For tighter cadence, use Option B.
-
-**Option B — cron-job.org (free, sub-minute granularity)**
+**cron-job.org** is what's currently in use (free, sub-minute granularity):
 1. Create a free account at cron-job.org
 2. New cronjob:
    - URL: `https://<your-vercel-app>.vercel.app/api/integrations/wealthbox/poll`
    - Method: `POST`
-   - Header: `Authorization: Bearer <CRON_SECRET>`
+   - Header: `Authorization: Bearer <CRON_SECRET>` — value lives in
+     Vercel's env vars
    - Schedule: every 1, 2, or 5 minutes
 
-The **"Sync now"** button in Settings → Integrations always works as a
-manual fallback regardless of which (if any) cron is configured.
+A previous version of this repo also shipped a GitHub Actions workflow at
+`.github/workflows/wealthbox-poll.yml` as a redundant trigger. It was
+removed because running both crons just produces extra noise — the poll
+endpoint is idempotent so duplicate pings would do nothing useful, and
+without the GitHub-side secrets configured the workflow failed loudly on
+every scheduled run. If you ever want to switch back to GitHub Actions
+(e.g. to avoid relying on cron-job.org), restore the workflow from git
+history and add `CRON_SECRET` + `RIFT_BASE_URL` as repo secrets.
+
+The **"Sync now"** button in Settings → Integrations and the
+**"Sync Wealthbox"** button on the cases page always work as manual
+fallbacks regardless of which (if any) cron is configured.
 
 ### 3. Optional polish (not on the critical path)
 
