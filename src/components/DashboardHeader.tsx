@@ -18,8 +18,18 @@ export default function DashboardHeader({
   };
   firm: {
     name: string;
+    logoUrl?: string | null;
+    updatedAt?: Date | string | null;
   } | null;
 }) {
+  const logoSrc =
+    firm?.logoUrl
+      ? `/api/firm/logo?v=${
+          firm.updatedAt
+            ? new Date(firm.updatedAt).getTime()
+            : Date.now()
+        }`
+      : null;
   const initials = `${user.firstName[0] ?? ""}${user.lastName[0] ?? ""}`.toUpperCase() || "?";
   const fullName = `${user.firstName} ${user.lastName}`.trim() || user.email;
   const roleLabel = user.role === "ADMIN" ? "Admin" : user.role === "ADVISOR" ? "Advisor" : "Ops";
@@ -35,19 +45,31 @@ export default function DashboardHeader({
       <div className="max-w-7xl mx-auto px-6 lg:px-10 h-16 flex items-center gap-6">
         {/* Left: firm */}
         {firm && (
-          <div className="min-w-0 flex items-center gap-2.5 flex-shrink-0">
-            <span
-              aria-hidden
-              className="w-1 h-6 rounded-full flex-shrink-0"
-              style={{ background: "linear-gradient(180deg, #60a5fa 0%, #a78bfa 100%)" }}
-            />
+          <Link
+            href="/dashboard"
+            className="min-w-0 flex items-center gap-2.5 flex-shrink-0 rounded-lg px-2 py-1 -mx-2 transition-colors hover:bg-[#161b22]"
+          >
+            {logoSrc ? (
+              /* eslint-disable-next-line @next/next/no-img-element */
+              <img
+                src={logoSrc}
+                alt=""
+                className="h-8 w-auto max-w-[140px] object-contain flex-shrink-0"
+              />
+            ) : (
+              <span
+                aria-hidden
+                className="w-1 h-6 rounded-full flex-shrink-0"
+                style={{ background: "linear-gradient(180deg, #60a5fa 0%, #a78bfa 100%)" }}
+              />
+            )}
             <p
               className="text-xl font-bold truncate leading-tight font-[family-name:var(--font-inter-tight)]"
               style={{ color: "#e4e6ea", letterSpacing: "-0.015em" }}
             >
               {firm.name}
             </p>
-          </div>
+          </Link>
         )}
 
         {/* Middle: global search */}

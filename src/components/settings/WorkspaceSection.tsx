@@ -1,6 +1,7 @@
 "use client";
 
-import { useState } from "react";
+import { useRef, useState } from "react";
+import { useRouter } from "next/navigation";
 import {
   CardSection,
   FieldRow,
@@ -60,6 +61,53 @@ export default function WorkspaceSection({
   const [supportEmail, setSupportEmail] = useState(firm.supportEmail ?? "");
   const [supportPhone, setSupportPhone] = useState(firm.supportPhone ?? "");
   const [businessAddress, setBusinessAddress] = useState(firm.businessAddress ?? "");
+
+  // Logo upload state
+  const router = useRouter();
+  const fileInputRef = useRef<HTMLInputElement | null>(null);
+  const [logoUrl, setLogoUrl] = useState<string | null>(firm.logoUrl);
+  const [logoBust, setLogoBust] = useState<number>(() => Date.now());
+  const [logoBusy, setLogoBusy] = useState(false);
+  const [logoError, setLogoError] = useState<string | null>(null);
+
+  async function uploadLogo(file: File) {
+    setLogoBusy(true);
+    setLogoError(null);
+    try {
+      const fd = new FormData();
+      fd.append("file", file);
+      const r = await fetch("/api/firm/logo", { method: "POST", body: fd });
+      if (!r.ok) {
+        const data = await r.json().catch(() => ({}));
+        throw new Error(data.error ?? "Failed to upload logo.");
+      }
+      setLogoUrl("uploaded");
+      setLogoBust(Date.now());
+      router.refresh();
+    } catch (e) {
+      setLogoError(e instanceof Error ? e.message : "Failed to upload logo.");
+    } finally {
+      setLogoBusy(false);
+    }
+  }
+
+  async function removeLogo() {
+    setLogoBusy(true);
+    setLogoError(null);
+    try {
+      const r = await fetch("/api/firm/logo", { method: "DELETE" });
+      if (!r.ok) {
+        const data = await r.json().catch(() => ({}));
+        throw new Error(data.error ?? "Failed to remove logo.");
+      }
+      setLogoUrl(null);
+      router.refresh();
+    } catch (e) {
+      setLogoError(e instanceof Error ? e.message : "Failed to remove logo.");
+    } finally {
+      setLogoBusy(false);
+    }
+  }
 
   // Compliance + operating states
   const [complianceContactEmail, setComplianceContactEmail] = useState(firmSettings.complianceContactEmail ?? "");
@@ -169,25 +217,54 @@ export default function WorkspaceSection({
           <FieldRow label="Legal business name">
             <TextInput value={legalName} onChange={setLegalName} placeholder="Summit Wealth Partners, LLC" />
           </FieldRow>
-          <FieldRow label="Firm logo" hint="Square SVG or PNG. Shown on the dashboard header and in client emails.">
-            <div style={{ display: "flex", alignItems: "center", gap: 16 }}>
-              <div
-                style={{
-                  width: 48,
-                  height: 48,
-                  borderRadius: 8,
-                  background: T.accent,
-                  display: "grid",
-                  placeItems: "center",
-                  color: T.page,
-                  fontWeight: 800,
-                  fontSize: 22,
+          <FieldRow label="Firm logo" hint="Square SVG, PNG, JPEG, or WebP — max 2 MB. Shown on the dashboard header and in client emails.">
+            <div style={{ display: "flex", alignItems: "center", gap: 16, flexWrap: "wrap" }}>
+              {logoUrl ? (
+                /* eslint-disable-next-line @next/next/no-img-element */
+                <img
+                  src={`/api/firm/logo?v=${logoBust}`}
+                  alt=""
+                  style={{ height: 48, width: "auto", maxWidth: 200, objectFit: "contain" }}
+                />
+              ) : (
+                <div
+                  style={{
+                    width: 48,
+                    height: 48,
+                    borderRadius: 8,
+                    background: T.accent,
+                    display: "grid",
+                    placeItems: "center",
+                    color: T.page,
+                    fontWeight: 800,
+                    fontSize: 22,
+                  }}
+                >
+                  {name.charAt(0).toUpperCase() || "◆"}
+                </div>
+              )}
+              <input
+                ref={fileInputRef}
+                type="file"
+                accept="image/jpeg,image/png,image/webp,image/svg+xml"
+                style={{ display: "none" }}
+                onChange={(e) => {
+                  const f = e.target.files?.[0];
+                  if (f) uploadLogo(f);
+                  e.target.value = "";
                 }}
-              >
-                {name.charAt(0).toUpperCase() || "◆"}
-              </div>
-              <Btn>Replace logo</Btn>
-              <Btn ghost>Remove</Btn>
+              />
+              <Btn onClick={() => fileInputRef.current?.click()} disabled={logoBusy}>
+                {logoBusy ? "Uploading…" : logoUrl ? "Replace logo" : "Upload logo"}
+              </Btn>
+              {logoUrl && (
+                <Btn ghost onClick={removeLogo} disabled={logoBusy}>
+                  Remove
+                </Btn>
+              )}
+              {logoError && (
+                <span style={{ fontSize: 12, color: T.danger }}>{logoError}</span>
+              )}
             </div>
           </FieldRow>
           <FieldRow label="Website" isLast>

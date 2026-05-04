@@ -15,7 +15,7 @@ export default async function DashboardLayout({ children }: { children: React.Re
     }),
     prisma.firm.findUnique({
       where: { id: session.user.firmId },
-      select: { name: true, onboardedAt: true },
+      select: { name: true, logoUrl: true, updatedAt: true, onboardedAt: true },
     }),
   ]);
 

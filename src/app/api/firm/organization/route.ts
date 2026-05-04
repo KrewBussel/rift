@@ -37,7 +37,6 @@ const OrgUpdateSchema = z
       .nullable()
       .or(z.literal("").transform(() => null))
       .optional(),
-    logoUrl: toNullIfBlank(500),
   })
   .strict();
 

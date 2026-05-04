@@ -134,7 +134,7 @@ const WIDGETS: WidgetDef[] = [
     id: "activity",
     title: "Recent activity",
     description: "Latest actions across your firm.",
-    size: "large",
+    size: "medium",
     render: (d) => <ActivityWidget items={d.activity} />,
   },
   {
@@ -155,7 +155,7 @@ const WIDGETS: WidgetDef[] = [
     id: "team-workload",
     title: "Team workload",
     description: "Active cases per advisor and ops user.",
-    size: "large",
+    size: "medium",
     render: (d) => <TeamWorkloadWidget team={d.team} />,
   },
   {
@@ -629,9 +629,7 @@ function ActivityWidget({ items }: { items: ActivityItem[] }) {
   if (items.length === 0) {
     return <EmptyState title="No recent activity" hint="Activity will appear as your team works." />;
   }
-  // Cap at what fits cleanly in a Large card, then distribute vertically
-  // so spacing is balanced regardless of line-wrap.
-  const visible = items.slice(0, 10);
+  const visible = items.slice(0, 5);
   return (
     <ul className="flex flex-col justify-between h-full">
       {visible.map((e) => (
@@ -756,7 +754,7 @@ function TeamWorkloadWidget({ team }: { team: TeamMember[] }) {
         <p className="text-xs" style={{ color: MUTED }}>{team.length} people · {totalActive} active cases</p>
       </div>
       <ul className="flex flex-col justify-between flex-1 min-h-0 pr-1 -mr-1">
-        {team.slice(0, 10).map((m) => {
+        {team.slice(0, 5).map((m) => {
           const pct = (m.activeCases / max) * 100;
           const overloaded = m.activeCases >= Math.ceil(avg * 1.5) && totalActive >= 6;
           const barColor = overloaded ? "#f59e0b" : m.role === "ADVISOR" ? "#60a5fa" : "#a78bfa";
