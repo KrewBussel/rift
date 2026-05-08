@@ -28,6 +28,11 @@ const nextConfig: NextConfig = {
       },
     ];
   },
+  // Local dev uses lvh.me (and any *.lvh.me subdomain) to test the
+  // <slug>.<root> tenant routing — both `lvh.me` itself and tenant
+  // subdomains like `summit-wealth-partners.lvh.me` need to fetch
+  // /_next/* assets without being blocked as cross-origin.
+  allowedDevOrigins: ["lvh.me", "*.lvh.me"],
 };
 
 export default withSentryConfig(nextConfig, {

@@ -4,6 +4,7 @@ import type { Role } from "@prisma/client";
 export type SeededUser = {
   id: string;
   firmId: string;
+  firmSlug: string;
   email: string;
   role: Role;
 };
@@ -46,13 +47,20 @@ export async function seedTwoFirms(): Promise<SeededWorld> {
 
 async function seedFirm(label: string, custodianId: string): Promise<SeededFirm> {
   const firm = await prisma.firm.create({
-    data: { name: `Firm ${label}`, settings: { create: {} } },
+    data: {
+      name: `Firm ${label}`,
+      // Slug is the per-tenant subdomain; needs to be unique across the test DB.
+      // Lowercased label keeps it deterministic across A/B and matches the
+      // firmDomain validator (3-63 chars, [a-z0-9-]).
+      slug: `firm-${label.toLowerCase()}`,
+      settings: { create: {} },
+    },
   });
 
   const [admin, ops, advisor] = await Promise.all([
-    mkUser(firm.id, label, "ADMIN"),
-    mkUser(firm.id, label, "OPS"),
-    mkUser(firm.id, label, "ADVISOR"),
+    mkUser(firm.id, firm.slug, label, "ADMIN"),
+    mkUser(firm.id, firm.slug, label, "OPS"),
+    mkUser(firm.id, firm.slug, label, "ADVISOR"),
   ]);
 
   const rollover = await prisma.rolloverCase.create({
@@ -119,7 +127,7 @@ async function seedFirm(label: string, custodianId: string): Promise<SeededFirm>
   };
 }
 
-async function mkUser(firmId: string, firmLabel: string, role: Role): Promise<SeededUser> {
+async function mkUser(firmId: string, firmSlug: string, firmLabel: string, role: Role): Promise<SeededUser> {
   const user = await prisma.user.create({
     data: {
       firmId,
@@ -132,5 +140,5 @@ async function mkUser(firmId: string, firmLabel: string, role: Role): Promise<Se
       role,
     },
   });
-  return { id: user.id, firmId: user.firmId, email: user.email, role: user.role };
+  return { id: user.id, firmId: user.firmId, firmSlug, email: user.email, role: user.role };
 }

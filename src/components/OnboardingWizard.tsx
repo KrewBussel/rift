@@ -3,14 +3,16 @@
 import { useEffect, useMemo, useState } from "react";
 import { useRouter } from "next/navigation";
 import { STATUSES, type StageConfigRow } from "./casesDesignTokens";
+import { getRootDomain, slugify, validateSlug } from "@/lib/firmDomain";
 
 type CrmStage = { id: string; name: string };
 
-type WizardStep = "crm" | "connect" | "trigger" | "won" | "stages" | "team" | "done";
+type WizardStep = "workspace" | "crm" | "connect" | "trigger" | "won" | "stages" | "team" | "done";
 
-const STEP_ORDER: WizardStep[] = ["crm", "connect", "trigger", "won", "stages", "team", "done"];
+const STEP_ORDER: WizardStep[] = ["workspace", "crm", "connect", "trigger", "won", "stages", "team", "done"];
 
 const STEP_LABEL: Record<WizardStep, string> = {
+  workspace: "Workspace URL",
   crm: "Choose CRM",
   connect: "Connect",
   trigger: "Trigger stage",
@@ -45,8 +47,17 @@ export default function OnboardingWizard({
   adminName: string | null;
 }) {
   const router = useRouter();
-  const [step, setStep] = useState<WizardStep>("crm");
+  const [step, setStep] = useState<WizardStep>("workspace");
   const [provider, setProvider] = useState<"WEALTHBOX" | null>(null);
+
+  // Step "workspace" — firm picks the slug for <slug>.riftira.com.
+  // Pre-filled with the value the platform script auto-generated from
+  // the firm name; admin can edit before continuing.
+  const [slug, setSlug] = useState<string>(slugify(firmName));
+  const [slugLoaded, setSlugLoaded] = useState(false);
+  const [slugCheck, setSlugCheck] = useState<{ available: boolean; reason: string | null } | null>(null);
+  const [savingSlug, setSavingSlug] = useState(false);
+  const [slugSaveErr, setSlugSaveErr] = useState<string | null>(null);
 
   // Step "connect"
   const [token, setToken] = useState("");
@@ -93,6 +104,16 @@ export default function OnboardingWizard({
    * lands the admin back on the right step. */
   useEffect(() => {
     void (async () => {
+      // Pre-load the firm's current slug so the workspace step shows what's
+      // already on the row (the platform creation script auto-generates one
+      // before the wizard runs).
+      const slugRes = await fetch("/api/firm/slug");
+      if (slugRes.ok) {
+        const sb = (await slugRes.json()) as { slug: string | null };
+        if (sb.slug) setSlug(sb.slug);
+      }
+      setSlugLoaded(true);
+
       const res = await fetch("/api/firm/onboarding");
       if (!res.ok) return;
       const body = (await res.json()) as {
@@ -109,6 +130,7 @@ export default function OnboardingWizard({
         const won = body.mappings.find((m) => m.riftStatus === "WON");
         if (trigger) setTriggerStageId(trigger.crmStageId);
         if (won) setWonStageId(won.crmStageId);
+        // Already past workspace + crm steps if a connection exists.
         // Land on the first step that isn't yet done.
         if (!trigger) setStep("trigger");
         else if (!won) setStep("won");
@@ -121,6 +143,52 @@ export default function OnboardingWizard({
       }
     })();
   }, []);
+
+  // Live availability check on the slug input. Debounced to avoid hammering
+  // the API on every keystroke. Skipped before initial load to avoid flashing
+  // a "taken" warning against the firm's own current slug.
+  useEffect(() => {
+    if (!slugLoaded) return;
+    if (step !== "workspace") return;
+    const validation = validateSlug(slug);
+    if (!validation.ok) {
+      setSlugCheck({ available: false, reason: validation.reason });
+      return;
+    }
+    setSlugCheck(null);
+    const timer = setTimeout(() => {
+      void (async () => {
+        const res = await fetch(`/api/firm/slug?check=${encodeURIComponent(validation.slug)}`);
+        if (!res.ok) return;
+        const body = (await res.json()) as { available: boolean; reason: string | null };
+        setSlugCheck(body);
+      })();
+    }, 300);
+    return () => clearTimeout(timer);
+    // eslint-disable-next-line react-hooks/set-state-in-effect
+  }, [slug, slugLoaded, step]);
+
+  async function saveSlug(): Promise<boolean> {
+    setSlugSaveErr(null);
+    const validation = validateSlug(slug);
+    if (!validation.ok) {
+      setSlugSaveErr(validation.reason);
+      return false;
+    }
+    setSavingSlug(true);
+    const res = await fetch("/api/firm/slug", {
+      method: "PUT",
+      headers: { "Content-Type": "application/json" },
+      body: JSON.stringify({ slug: validation.slug }),
+    });
+    setSavingSlug(false);
+    if (!res.ok) {
+      const body = (await res.json().catch(() => ({}))) as { error?: string };
+      setSlugSaveErr(body.error ?? `Save failed (HTTP ${res.status}).`);
+      return false;
+    }
+    return true;
+  }
 
   async function loadStages() {
     setStagesLoading(true);
@@ -309,6 +377,21 @@ export default function OnboardingWizard({
       <div className="flex-1 max-w-3xl w-full mx-auto px-6 py-8">
         <Stepper current={step} />
 
+        {step === "workspace" && (
+          <StepWorkspace
+            slug={slug}
+            setSlug={setSlug}
+            check={slugCheck}
+            saving={savingSlug}
+            error={slugSaveErr}
+            rootDomain={getRootDomain()}
+            onContinue={async () => {
+              const ok = await saveSlug();
+              if (ok) setStep("crm");
+            }}
+          />
+        )}
+
         {step === "crm" && (
           <StepCrm
             provider={provider}
@@ -488,6 +571,76 @@ function Stepper({ current }: { current: WizardStep }) {
         );
       })}
     </div>
+  );
+}
+
+/* ───────────────────────── Step: workspace URL (slug) ───────────────────────── */
+
+function StepWorkspace({
+  slug,
+  setSlug,
+  check,
+  saving,
+  error,
+  rootDomain,
+  onContinue,
+}: {
+  slug: string;
+  setSlug: (s: string) => void;
+  check: { available: boolean; reason: string | null } | null;
+  saving: boolean;
+  error: string | null;
+  rootDomain: string;
+  onContinue: () => void | Promise<void>;
+}) {
+  // The slug becomes the firm's subdomain. Show a live preview of the URL the
+  // admin's team will see in their browser bar so the choice feels concrete.
+  const trimmed = slug.trim().toLowerCase();
+  const blocked = !!check && !check.available;
+  const message = error ?? (blocked ? check?.reason ?? null : null);
+
+  return (
+    <Card>
+      <CardTitle>Pick your workspace URL</CardTitle>
+      <CardLead>
+        Your team will sign in at this address. It shows up in everyone&rsquo;s
+        browser bar and on the magic-link emails you send to clients. You can
+        change it later in Settings, but every link you&rsquo;ve shared from the
+        old URL will stop working — pick something you&rsquo;re happy with.
+      </CardLead>
+
+      <div className="mt-6 flex items-stretch gap-0 rounded-lg overflow-hidden" style={{ border: "1px solid #1d2330" }}>
+        <input
+          value={slug}
+          onChange={(e) => setSlug(e.target.value.toLowerCase())}
+          autoComplete="off"
+          spellCheck={false}
+          placeholder="acme"
+          className="flex-1 bg-transparent px-3 py-2.5 text-sm focus:outline-none"
+          style={{ background: "#0a0d12", color: "#e4e6ea" }}
+        />
+        <span
+          className="px-3 py-2.5 text-sm flex items-center"
+          style={{ background: "#0f131b", color: "#7d8590", borderLeft: "1px solid #1d2330" }}
+        >
+          .{rootDomain}
+        </span>
+      </div>
+
+      <div className="mt-2 text-xs" style={{ color: blocked || error ? "#fca5a5" : "#7d8590" }}>
+        {message
+          ? message
+          : check?.available
+            ? `✓ ${trimmed}.${rootDomain} is available`
+            : "Lowercase letters, numbers, and hyphens. 3–63 characters."}
+      </div>
+
+      <Footer
+        primaryLabel={saving ? "Saving…" : "Continue"}
+        primaryDisabled={saving || blocked || !check?.available}
+        onPrimary={onContinue}
+      />
+    </Card>
   );
 }
 

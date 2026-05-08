@@ -7,6 +7,7 @@ import { issueClientAccessToken, LINK_TOKEN_TTL_DAYS } from "@/lib/client-auth";
 import { buildClientPortalInviteEmail, sendEmail } from "@/lib/email";
 import { recordAudit, extractRequestMeta } from "@/lib/audit";
 import { enforceRateLimit } from "@/lib/ratelimit";
+import { buildFirmUrl } from "@/lib/firmDomain";
 
 /**
  * Issue a client-portal magic link for this case. Firm-side; requires
@@ -44,7 +45,8 @@ export async function POST(
     where: { id: caseId, firmId },
     include: {
       assignedAdvisor: { select: { firstName: true, lastName: true } },
-      firm: { select: { name: true } },
+      // slug needed to build the firm-branded portal URL (<slug>.riftira.com).
+      firm: { select: { name: true, slug: true } },
     },
   });
   if (!rolloverCase) return NextResponse.json({ error: "Not found" }, { status: 404 });
@@ -56,8 +58,14 @@ export async function POST(
     scope: parsed.data.scope ?? "FULL",
   });
 
-  const appUrl = process.env.NEXT_PUBLIC_APP_URL ?? "http://localhost:3000";
-  const portalUrl = `${appUrl}/client/enter?token=${encodeURIComponent(plaintext)}`;
+  // Magic-link destination is the firm's tenant subdomain so the client sees a
+  // branded URL (e.g. acme.riftira.com/client/enter?token=...). The proxy
+  // serves /client/** on tenant subdomains; client-auth is independent of the
+  // firm-user session, so the cookie scope works on either origin.
+  const portalUrl = buildFirmUrl(
+    rolloverCase.firm.slug,
+    `/client/enter?token=${encodeURIComponent(plaintext)}`,
+  );
 
   const advisorName = rolloverCase.assignedAdvisor
     ? `${rolloverCase.assignedAdvisor.firstName} ${rolloverCase.assignedAdvisor.lastName}`

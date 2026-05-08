@@ -4,6 +4,7 @@ import { signOut } from "next-auth/react";
 import Link from "next/link";
 import { usePathname } from "next/navigation";
 import { useState } from "react";
+import { buildApexUrl } from "@/lib/firmDomain";
 
 interface Props {
   user: { name?: string | null; email?: string | null };
@@ -120,7 +121,14 @@ export default function TopNav({ user }: Props) {
                 Cancel
               </button>
               <button
-                onClick={() => signOut({ callbackUrl: "/" })}
+                onClick={() => {
+                  // Sign out kills the .riftira.com cookie on every subdomain.
+                  // Send the user to apex login directly so they don't bounce
+                  // through the tenant subdomain root first.
+                  void signOut({ redirect: false }).then(() => {
+                    window.location.assign(buildApexUrl("/login"));
+                  });
+                }}
                 className="px-4 py-2 text-sm font-semibold rounded-lg transition-colors hover:bg-red-700"
                 style={{ background: "#b91c1c", color: "#fff" }}
               >

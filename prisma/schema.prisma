@@ -9,6 +9,11 @@ datasource db {
 model Firm {
   id                  String              @id @default(cuid())
   name                String
+  // URL slug for the firm's subdomain: <slug>.riftira.com.
+  // Lowercase [a-z0-9-]{3,63}, globally unique, reserved-list filtered.
+  // Auto-generated from `name` for firms that predate the slug step in
+  // the onboarding wizard; admins can change it later in Settings.
+  slug                String              @unique
   createdAt           DateTime            @default(now())
   updatedAt           DateTime            @updatedAt
   legalName           String?

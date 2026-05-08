@@ -11,6 +11,7 @@ export function sessionFor(user: SeededUser) {
       id: user.id,
       email: user.email,
       firmId: user.firmId,
+      firmSlug: user.firmSlug,
       role: user.role,
       name: `${user.role} User`,
     },

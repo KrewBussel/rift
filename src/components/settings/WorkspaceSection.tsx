@@ -1,6 +1,6 @@
 "use client";
 
-import { useRef, useState } from "react";
+import { useEffect, useRef, useState } from "react";
 import { useRouter } from "next/navigation";
 import {
   CardSection,
@@ -11,6 +11,7 @@ import {
   SETTINGS_TOKENS,
 } from "./primitives";
 import { SectionHeader } from "./SettingsShell";
+import { buildFirmUrl, getRootDomain, validateSlug } from "@/lib/firmDomain";
 
 const T = SETTINGS_TOKENS;
 
@@ -25,6 +26,7 @@ const US_STATES = [
 export type WorkspaceFirm = {
   id: string;
   name: string;
+  slug: string;
   legalName: string | null;
   taxId: string | null;
   businessAddress: string | null;
@@ -108,6 +110,68 @@ export default function WorkspaceSection({
       setLogoBusy(false);
     }
   }
+
+  // Workspace URL (subdomain slug). Self-contained save flow because saving
+  // changes the user's URL and we have to navigate after. Never participates
+  // in the dirty/unsaved-changes registry.
+  const rootDomain = getRootDomain();
+  const [slug, setSlug] = useState(firm.slug);
+  const [slugCheck, setSlugCheck] = useState<{ available: boolean; reason: string | null } | null>(null);
+  const [savingSlug, setSavingSlug] = useState(false);
+  const [slugErr, setSlugErr] = useState<string | null>(null);
+
+  useEffect(() => {
+    if (slug === firm.slug) {
+      setSlugCheck({ available: true, reason: null });
+      return;
+    }
+    const validation = validateSlug(slug);
+    if (!validation.ok) {
+      setSlugCheck({ available: false, reason: validation.reason });
+      return;
+    }
+    setSlugCheck(null);
+    const timer = setTimeout(() => {
+      void (async () => {
+        const res = await fetch(`/api/firm/slug?check=${encodeURIComponent(validation.slug)}`);
+        if (!res.ok) return;
+        const body = (await res.json()) as { available: boolean; reason: string | null };
+        setSlugCheck(body);
+      })();
+    }, 300);
+    return () => clearTimeout(timer);
+    // eslint-disable-next-line react-hooks/set-state-in-effect
+  }, [slug, firm.slug]);
+
+  async function saveSlug() {
+    setSlugErr(null);
+    const validation = validateSlug(slug);
+    if (!validation.ok) {
+      setSlugErr(validation.reason);
+      return;
+    }
+    setSavingSlug(true);
+    const res = await fetch("/api/firm/slug", {
+      method: "PUT",
+      headers: { "Content-Type": "application/json" },
+      body: JSON.stringify({ slug: validation.slug }),
+    });
+    setSavingSlug(false);
+    if (!res.ok) {
+      const data = await res.json().catch(() => ({}));
+      setSlugErr(data.error ?? `Save failed (HTTP ${res.status}).`);
+      return;
+    }
+    // Slug changed → URL changed. Full-page navigate to the new subdomain so
+    // the URL bar reflects reality. The session JWT still has the old
+    // firmSlug claim (stamped at sign-in); the proxy uses firmId for the
+    // mismatch check, so the admin stays signed in. The claim refreshes on
+    // their next sign-in.
+    window.location.assign(buildFirmUrl(validation.slug, "/dashboard/settings?section=workspace"));
+  }
+
+  const slugDirty = slug !== firm.slug;
+  const slugValid = !!slugCheck?.available;
 
   // Compliance + operating states
   const [complianceContactEmail, setComplianceContactEmail] = useState(firmSettings.complianceContactEmail ?? "");
@@ -269,6 +333,55 @@ export default function WorkspaceSection({
           </FieldRow>
           <FieldRow label="Website" isLast>
             <TextInput value={websiteUrl} onChange={setWebsiteUrl} placeholder="https://yourfirm.com" type="url" />
+          </FieldRow>
+        </CardSection>
+
+        <CardSection
+          title="Workspace URL"
+          description="The address your team signs in at. It also appears in the magic-link emails you send to clients. Renaming breaks links you've already shared — change it deliberately."
+        >
+          <FieldRow
+            label="Subdomain"
+            hint={`Lowercase letters, numbers, and hyphens. 3–63 characters. Live URL: ${buildFirmUrl(firm.slug, "/dashboard")}`}
+          >
+            <div style={{ display: "flex", alignItems: "stretch", gap: 0, width: "100%" }}>
+              <TextInput
+                value={slug}
+                onChange={(v) => setSlug(v.toLowerCase())}
+                placeholder="acme"
+              />
+              <span
+                style={{
+                  background: T.input,
+                  border: `1px solid ${T.border}`,
+                  borderLeft: 0,
+                  borderRadius: "0 6px 6px 0",
+                  padding: "8px 10px",
+                  color: T.textSecondary,
+                  fontSize: 13,
+                  whiteSpace: "nowrap",
+                }}
+              >
+                .{rootDomain}
+              </span>
+            </div>
+          </FieldRow>
+          <FieldRow label="" hint={
+            slugErr ??
+            (slug === firm.slug
+              ? "This is your current URL."
+              : slugCheck === null
+                ? "Checking availability…"
+                : slugCheck.available
+                  ? `${slug}.${rootDomain} is available.`
+                  : slugCheck.reason ?? "That slug isn't available.")
+          } isLast>
+            <Btn
+              onClick={saveSlug}
+              disabled={savingSlug || !slugDirty || !slugValid}
+            >
+              {savingSlug ? "Saving…" : "Save new URL"}
+            </Btn>
           </FieldRow>
         </CardSection>
 

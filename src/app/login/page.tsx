@@ -1,13 +1,12 @@
 "use client";
 
 import { useState } from "react";
-import { signIn } from "next-auth/react";
-import { useRouter } from "next/navigation";
+import { signIn, getSession } from "next-auth/react";
 import Link from "next/link";
 import LogoMark from "@/components/LogoMark";
+import { buildFirmUrl } from "@/lib/firmDomain";
 
 export default function LoginPage() {
-  const router = useRouter();
   const [error, setError] = useState<string | null>(null);
   const [loading, setLoading] = useState(false);
 
@@ -23,13 +22,28 @@ export default function LoginPage() {
       redirect: false,
     });
 
-    setLoading(false);
-
     if (result?.error) {
+      setLoading(false);
       setError("Invalid email or password.");
-    } else {
-      router.push("/dashboard");
+      return;
     }
+
+    // After credentials sign-in succeeds, fetch the freshly-issued session to
+    // read the user's firm slug and redirect to <slug>.riftira.com/dashboard.
+    // Full-page navigation (not router.push) is required so the browser sees
+    // the new origin and the .riftira.com session cookie is sent.
+    const session = await getSession();
+    const slug = session?.user?.firmSlug;
+
+    if (!slug) {
+      // Shouldn't happen — every user has a firm with a slug. Fail loud rather
+      // than silently leaving them on the apex login.
+      setLoading(false);
+      setError("Sign-in succeeded but your firm workspace could not be loaded. Please try again.");
+      return;
+    }
+
+    window.location.assign(buildFirmUrl(slug, "/dashboard"));
   }
 
   return (

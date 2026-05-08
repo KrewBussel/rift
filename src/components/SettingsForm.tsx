@@ -46,6 +46,7 @@ interface User {
 interface Firm {
   id: string;
   name: string;
+  slug: string;
   legalName: string | null;
   taxId: string | null;
   businessAddress: string | null;

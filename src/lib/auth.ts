@@ -40,7 +40,10 @@ export const { handlers, auth, signIn, signOut } = NextAuth({
           return null;
         }
 
-        const user = await prisma.user.findUnique({ where: { email: normalizedEmail } });
+        const user = await prisma.user.findUnique({
+          where: { email: normalizedEmail },
+          include: { firm: { select: { slug: true } } },
+        });
         if (!user) return null;
 
         if (user.deactivatedAt) return null;
@@ -75,6 +78,7 @@ export const { handlers, auth, signIn, signOut } = NextAuth({
           name: `${user.firstName} ${user.lastName}`,
           email: user.email,
           firmId: user.firmId,
+          firmSlug: user.firm.slug,
           role: user.role,
         };
       },
@@ -85,6 +89,7 @@ export const { handlers, auth, signIn, signOut } = NextAuth({
       if (user) {
         token.id = user.id;
         token.firmId = user.firmId;
+        token.firmSlug = user.firmSlug;
         token.role = user.role;
       }
       return token;
@@ -93,6 +98,7 @@ export const { handlers, auth, signIn, signOut } = NextAuth({
       if (session.user) {
         session.user.id = token.id as string;
         session.user.firmId = token.firmId as string;
+        session.user.firmSlug = token.firmSlug as string;
         session.user.role = token.role as string;
         // Tag Sentry events with user identity (no PII beyond the internal id)
         Sentry.setUser({ id: session.user.id });
@@ -106,4 +112,36 @@ export const { handlers, auth, signIn, signOut } = NextAuth({
     signIn: "/login",
   },
   session: { strategy: "jwt" },
+  // Subdomain-per-tenant: cookies must be valid on every <slug>.<root>.
+  // Setting `domain: .<root>` lets the same session carry across the apex
+  // (where login lives) and any tenant subdomain.
+  //
+  // Browsers reject `domain=.localhost` per RFC 6265 — for local dev set
+  // NEXT_PUBLIC_ROOT_DOMAIN to a wildcard-friendly host like `lvh.me:3000`
+  // (every subdomain resolves to 127.0.0.1) so the dot-rule is satisfied.
+  // The port is stripped before becoming a cookie domain (cookie domain
+  // attribute is host-only, no port).
+  cookies: (() => {
+    const root = process.env.NEXT_PUBLIC_ROOT_DOMAIN;
+    if (!root) return undefined;
+    const hostOnly = root.replace(/:\d+$/, "");
+    if (!hostOnly.includes(".")) return undefined;
+    const isProd = process.env.NODE_ENV === "production";
+    return {
+      sessionToken: {
+        name: isProd ? "__Secure-authjs.session-token" : "authjs.session-token",
+        options: {
+          httpOnly: true,
+          sameSite: "lax" as const,
+          path: "/",
+          secure: isProd,
+          domain: `.${hostOnly}`,
+        },
+      },
+    };
+  })(),
+  // We serve the same NextAuth handlers from multiple hostnames (apex +
+  // every tenant subdomain), so a fixed NEXTAUTH_URL would lie. trustHost
+  // tells next-auth to derive the canonical URL from the request instead.
+  trustHost: true,
 });

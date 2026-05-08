@@ -48,6 +48,11 @@ export default function RootLayout({
     <html
       lang="en"
       className={`${geistSans.variable} ${geistMono.variable} ${interTight.variable} ${jetbrainsMono.variable} ${instrumentSerif.variable} h-full antialiased`}
+      // Browser extensions (e.g. Scribe, Grammarly, password managers) often
+      // inject attributes onto <html> before React hydrates, causing spurious
+      // hydration mismatches. suppressHydrationWarning here only opts out of
+      // attribute-diff warnings on this element, not on its children.
+      suppressHydrationWarning
     >
       <body className="min-h-full flex flex-col">
         <Providers>{children}</Providers>

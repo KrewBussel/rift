@@ -38,6 +38,7 @@ export default async function SettingsPage() {
           select: {
             id: true,
             name: true,
+            slug: true,
             legalName: true,
             taxId: true,
             businessAddress: true,
