@@ -42,8 +42,13 @@ export async function proxy(request: NextRequest) {
     pathname === "/login" ||
     pathname === "/forgot-password" ||
     pathname === "/reset-password";
+  // The client portal lives under /client/** and uses its own cookie-bound
+  // session (see src/lib/client-auth.ts). The firm NextAuth session is
+  // explicitly NOT required — those pages are reached via emailed magic
+  // links. Don't redirect them through the firm login.
+  const isClientPortalPage = pathname.startsWith("/client");
 
-  if (!isAuth && !isPublicPage) {
+  if (!isAuth && !isPublicPage && !isClientPortalPage) {
     return NextResponse.redirect(new URL("/login", request.url));
   }
 

@@ -29,7 +29,7 @@ export default async function ClientHomePage() {
       status: true,
       statusUpdatedAt: true,
       createdAt: true,
-      firm: { select: { name: true, supportEmail: true, supportPhone: true } },
+      firm: { select: { name: true, supportEmail: true, supportPhone: true, logoUrl: true } },
       assignedAdvisor: { select: { firstName: true, lastName: true } },
     },
   });
@@ -45,7 +45,17 @@ export default async function ClientHomePage() {
         required: true,
         status: true,
         sortOrder: true,
-        documents: { select: { id: true, name: true, createdAt: true }, orderBy: { createdAt: "desc" } },
+        documents: {
+          select: {
+            id: true,
+            name: true,
+            fileType: true,
+            fileSize: true,
+            createdAt: true,
+            uploadedByClientSessionId: true,
+          },
+          orderBy: { createdAt: "desc" },
+        },
       },
       orderBy: { sortOrder: "asc" },
     }),
@@ -72,7 +82,14 @@ export default async function ClientHomePage() {
       }}
       checklist={checklist.map((c) => ({
         ...c,
-        documents: c.documents.map((d) => ({ ...d, createdAt: d.createdAt.toISOString() })),
+        documents: c.documents.map((d) => ({
+          id: d.id,
+          name: d.name,
+          fileType: d.fileType,
+          fileSize: d.fileSize,
+          createdAt: d.createdAt.toISOString(),
+          uploadedByClient: d.uploadedByClientSessionId !== null,
+        })),
       }))}
       initialNotes={notes.map((n) => ({ ...n, createdAt: n.createdAt.toISOString() }))}
       scope={session.scope}

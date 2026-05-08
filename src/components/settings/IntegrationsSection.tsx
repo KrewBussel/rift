@@ -387,7 +387,7 @@ function ConnectedDetail({
   const [savingMap, setSavingMap] = useState(false);
   const [mapMsg, setMapMsg] = useState<string | null>(null);
   const [syncing, setSyncing] = useState(false);
-  const [syncResult, setSyncResult] = useState<{ created: number; scanned: number; skipped: number; errors: Array<{ opportunityId: string; message: string }> } | null>(null);
+  const [syncResult, setSyncResult] = useState<{ created: number; scanned: number; skipped: number; closed: number; errors: Array<{ opportunityId: string; message: string }> } | null>(null);
   const [syncErr, setSyncErr] = useState<string | null>(null);
 
   async function loadAll() {
@@ -445,7 +445,7 @@ function ConnectedDetail({
     setSyncing(true);
     setSyncErr(null);
     setSyncResult(null);
-    const res = await fetch("/api/integrations/wealthbox/poll", { method: "POST" });
+    const res = await fetch("/api/integrations/crm/poll", { method: "POST" });
     setSyncing(false);
     if (!res.ok) {
       const body = await res.json().catch(() => ({}));
@@ -543,27 +543,27 @@ function ConnectedDetail({
         )}
       </div>
 
-      {/* Sync (Wealthbox only) */}
-      {connection.provider === "WEALTHBOX" && (
-        <div style={{ borderTop: `1px solid ${T.border}`, paddingTop: 14 }}>
-          <div style={{ fontSize: 13, fontWeight: 600, color: T.text, marginBottom: 6 }}>Sync from Wealthbox</div>
-          <div style={{ fontSize: 11.5, color: T.textTertiary, lineHeight: 1.5, marginBottom: 10 }}>
-            Pulls every Wealthbox opportunity at the stage you mapped to <em>Proposal Accepted</em> and creates a Rift case for any not yet linked.
-          </div>
-          <div style={{ display: "flex", alignItems: "center", gap: 10 }}>
-            <Btn small onClick={syncFromCrm} disabled={syncing}>
-              {syncing ? "Syncing…" : "Sync now"}
-            </Btn>
-            {syncResult && (
-              <span style={{ fontSize: 11.5, color: T.textTertiary }}>
-                Scanned {syncResult.scanned} · Created {syncResult.created} · Skipped {syncResult.skipped}
-                {syncResult.errors.length > 0 ? ` · ${syncResult.errors.length} errors` : ""}
-              </span>
-            )}
-            {syncErr && <span style={{ fontSize: 11.5, color: T.danger }}>{syncErr}</span>}
-          </div>
+      {/* Sync — both providers */}
+      <div style={{ borderTop: `1px solid ${T.border}`, paddingTop: 14 }}>
+        <div style={{ fontSize: 13, fontWeight: 600, color: T.text, marginBottom: 6 }}>
+          Sync from {connection.provider === "WEALTHBOX" ? "Wealthbox" : "Salesforce"}
         </div>
-      )}
+        <div style={{ fontSize: 11.5, color: T.textTertiary, lineHeight: 1.5, marginBottom: 10 }}>
+          Pulls every {connection.provider === "WEALTHBOX" ? "Wealthbox" : "Salesforce"} opportunity at the stage you mapped to <em>Proposal Accepted</em> and creates a Rift case for any not yet linked. Also auto-closes any linked case whose opportunity has reached the <em>Won</em>-mapped stage.
+        </div>
+        <div style={{ display: "flex", alignItems: "center", gap: 10 }}>
+          <Btn small onClick={syncFromCrm} disabled={syncing}>
+            {syncing ? "Syncing…" : "Sync now"}
+          </Btn>
+          {syncResult && (
+            <span style={{ fontSize: 11.5, color: T.textTertiary }}>
+              Scanned {syncResult.scanned} · Created {syncResult.created} · Closed {syncResult.closed} · Skipped {syncResult.skipped}
+              {syncResult.errors.length > 0 ? ` · ${syncResult.errors.length} errors` : ""}
+            </span>
+          )}
+          {syncErr && <span style={{ fontSize: 11.5, color: T.danger }}>{syncErr}</span>}
+        </div>
+      </div>
 
     </div>
   );

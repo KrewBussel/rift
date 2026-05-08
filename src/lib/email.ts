@@ -289,15 +289,49 @@ export function buildPasswordResetEmail(resetUrl: string, firstName: string): { 
 
 // ─── Send helpers ─────────────────────────────────────────────────────────────
 
-export async function sendEmail(to: string, subject: string, html: string): Promise<boolean> {
+export interface SendEmailResult {
+  ok: boolean;
+  /** Short, user-displayable reason when ok=false; null on success. */
+  reason: string | null;
+}
+
+/**
+ * Send a transactional email via Resend. Returns a result object so callers
+ * can surface the actual reason (missing recipient, Resend free-tier
+ * restriction, etc.) to the UI instead of a generic "check config" message.
+ *
+ * Common Resend free-tier failure: `validation_error` with a message like
+ * "You can only send testing emails to your own email address". The fix is
+ * to verify a sending domain at https://resend.com/domains.
+ */
+export async function sendEmail(to: string, subject: string, html: string): Promise<SendEmailResult> {
+  if (!to || !to.trim()) {
+    return { ok: false, reason: "no recipient email on record" };
+  }
   if (!process.env.RESEND_API_KEY || process.env.RESEND_API_KEY.startsWith("re_placeholder")) {
     console.log(`[email] RESEND_API_KEY not set — would send to ${to}: "${subject}"`);
-    return false;
+    return { ok: false, reason: "email service not configured" };
   }
   const { error } = await resend.emails.send({ from: FROM, to, subject, html });
   if (error) {
     console.error("[email] Send failed:", error);
-    return false;
+    // Resend free-tier "you can only send to your own address" check.
+    const msg = (error as { message?: string }).message ?? "";
+    if (/you can only send testing emails to your own email/i.test(msg) || /restricted_recipient/i.test(msg)) {
+      return {
+        ok: false,
+        reason: "Resend free tier only delivers to the account owner's email — verify a domain at resend.com/domains to send to clients",
+      };
+    }
+    return { ok: false, reason: msg || "email service rejected the message" };
   }
-  return true;
+  return { ok: true, reason: null };
+}
+
+/**
+ * Back-compat wrapper for callers that just want a boolean.
+ */
+export async function sendEmailBool(to: string, subject: string, html: string): Promise<boolean> {
+  const r = await sendEmail(to, subject, html);
+  return r.ok;
 }

@@ -21,7 +21,18 @@ const UpdateCaseSchema = z
   .object({
     clientFirstName: z.string().trim().min(1).max(100).optional(),
     clientLastName: z.string().trim().min(1).max(100).optional(),
-    clientEmail: z.string().trim().toLowerCase().email().max(200).optional(),
+    // Allow either a valid email or an empty string (cases imported from a CRM
+    // without a Contact Role have clientEmail = "" until the user fills it in).
+    clientEmail: z
+      .string()
+      .trim()
+      .toLowerCase()
+      .max(200)
+      .refine((v) => v === "" || /^[^\s@]+@[^\s@]+\.[^\s@]+$/.test(v), {
+        message: "Must be a valid email or empty",
+      })
+      .optional(),
+    clientPhone: z.string().trim().max(40).nullable().optional(),
     sourceProvider: z.string().trim().min(1).max(200).optional(),
     destinationCustodian: z.string().trim().min(1).max(200).optional(),
     accountType: AccountTypeSchema.optional(),
@@ -84,6 +95,7 @@ export async function PATCH(request: NextRequest, { params }: { params: Promise<
       ...(body.clientFirstName !== undefined && { clientFirstName: body.clientFirstName }),
       ...(body.clientLastName !== undefined && { clientLastName: body.clientLastName }),
       ...(body.clientEmail !== undefined && { clientEmail: body.clientEmail }),
+      ...(body.clientPhone !== undefined && { clientPhone: body.clientPhone || null }),
       ...(body.sourceProvider !== undefined && { sourceProvider: body.sourceProvider }),
       ...(body.destinationCustodian !== undefined && { destinationCustodian: body.destinationCustodian }),
       ...(body.accountType !== undefined && { accountType: body.accountType }),

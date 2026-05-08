@@ -270,29 +270,88 @@ export async function getProviderClient(connection: CrmConnection): Promise<CrmP
         };
       },
       async getOpportunityHydrated(id) {
-        // Salesforce inbound polling isn't built yet; return the basic detail
-        // with empty contact + custom fields so callers can still surface a
-        // needs-review case if the provider matters at all.
-        const o = await callWithRetry((t) => sf.getOpportunity(instanceUrl, t, id));
+        const o = await callWithRetry((t) => sf.getOpportunityHydrated(instanceUrl, t, id));
+
+        // Build the case-insensitive customFields map keyed by the same labels
+        // the inbound case creator looks up ("Source Provider", etc.). The
+        // crmSync layer is provider-agnostic — it only cares about field
+        // labels, not API names.
+        const customFields: Record<string, string> = {};
+        const sourceProvider = (o.Source_Provider__c ?? "").trim();
+        const destination = (o.Destination_Custodian__c ?? "").trim();
+        const accountType = (o.Account_Type__c ?? "").trim();
+        if (sourceProvider) customFields["source provider"] = sourceProvider;
+        if (destination) customFields["destination custodian"] = destination;
+        if (accountType) customFields["account type"] = accountType;
+
+        // Contact resolution priority:
+        //   1. OpportunityContactRoles (primary first) — the textbook setup
+        //   2. Account.PersonContact* — Person Account orgs
+        //   3. Account.Name as a last-resort label so the case isn't
+        //      "Unknown Unknown" when only an Account is linked.
+        let contact: OpportunityHydrated["contact"] = null;
+        const role = o.OpportunityContactRoles?.records.find((r) => r.Contact);
+        if (role?.Contact) {
+          const c = role.Contact;
+          contact = {
+            id: c.Id,
+            firstName: c.FirstName?.trim() || null,
+            lastName: c.LastName?.trim() || null,
+            email: c.Email?.trim().toLowerCase() || null,
+            // Prefer a mobile number if the primary phone is empty — many SF
+            // orgs default the click-to-call field to MobilePhone.
+            phone: (c.Phone?.trim() || c.MobilePhone?.trim() || null) ?? null,
+          };
+        } else if (o.Account?.IsPersonAccount && (o.Account.FirstName || o.Account.LastName)) {
+          // Person Account: the Account itself is effectively the contact.
+          contact = {
+            id: o.Account.PersonContactId ?? o.Account.Id,
+            firstName: o.Account.FirstName?.trim() || null,
+            lastName: o.Account.LastName?.trim() || null,
+            email: o.Account.PersonEmail?.trim().toLowerCase() || null,
+            phone: (o.Account.Phone?.trim() || o.Account.PersonMobilePhone?.trim() || null) ?? null,
+          };
+        } else if (o.Account?.Name) {
+          // Business Account with no Contact Role on the opp — use the Account
+          // name so the case is at least identifiable. We split on the last
+          // whitespace so "Acme Corp" → ("Acme", "Corp") and "Smith" → ("Smith", "").
+          const name = o.Account.Name.trim();
+          const lastSpace = name.lastIndexOf(" ");
+          const firstName = lastSpace > 0 ? name.slice(0, lastSpace) : name;
+          const lastName = lastSpace > 0 ? name.slice(lastSpace + 1) : "";
+          contact = {
+            id: o.Account.Id,
+            firstName,
+            lastName: lastName || null,
+            email: null,
+            phone: o.Account.Phone?.trim() || null,
+          };
+        }
+
         return {
           id: o.Id,
           name: o.Name,
           stage: o.StageName ?? null,
           stageId: o.StageName ?? null,
-          contact: null,
-          customFields: {},
-          amount: null,
-          amountCurrency: null,
-          targetClose: null,
-          probability: null,
-          oppCreatedAt: null,
+          contact,
+          customFields,
+          amount: typeof o.Amount === "number" ? o.Amount : null,
+          // Salesforce Amount uses the org's CorporateCurrencyIsoCode; not
+          // returned in this query. Default to USD which is the most common
+          // org default.
+          amountCurrency: typeof o.Amount === "number" ? "USD" : null,
+          targetClose: o.CloseDate ? safeParseDate(o.CloseDate) : null,
+          probability: typeof o.Probability === "number" ? o.Probability : null,
+          oppCreatedAt: o.CreatedDate ? safeParseDate(o.CreatedDate) : null,
         };
       },
       async listOpportunitiesByStage(stageId) {
-        const list = await callWithRetry((t) => sf.searchOpportunities(instanceUrl, t, { limit: 500 }));
-        return list
-          .filter((o) => (o.StageName ?? null) === stageId)
-          .map((o) => ({ id: o.Id, name: o.Name, stage: o.StageName ?? null }));
+        // Server-side filter via SOQL — much cheaper than pulling 500 and
+        // filtering client-side. Cap matches the Wealthbox MAX_PAGES * PER_PAGE.
+        const list = await callWithRetry((t) =>
+          sf.searchOpportunities(instanceUrl, t, { limit: 500, stageName: stageId }),
+        );
+        return list.map((o) => ({ id: o.Id, name: o.Name, stage: o.StageName ?? null }));
       },
       async updateOpportunityStage(id, _stageId, stageName) {
         await callWithRetry((t) => sf.updateOpportunityStage(instanceUrl, t, id, stageName));

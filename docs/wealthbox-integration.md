@@ -1,11 +1,12 @@
-# Wealthbox integration — handoff notes
+# Wealthbox integration — current state
 
 Read this whole file before changing anything in `src/lib/crmSync.ts`,
 `src/lib/crmClient.ts`, `src/lib/wealthbox.ts`, the
-`/api/integrations/wealthbox/**` routes, or the `CrmStageMapping` schema.
+`/api/integrations/wealthbox/**` routes, the `CrmStageMapping` /
+`CaseStageConfig` schemas, or the `/onboarding` wizard.
 
-It captures the design conversation that produced commit `7b7d366` so a new
-Claude Code session (or human) can pick up without re-deriving it.
+This document describes how the integration works **today**, not how it
+got built. Git history is the phase log; this is the architecture.
 
 ---
 
@@ -14,21 +15,26 @@ Claude Code session (or human) can pick up without re-deriving it.
 Rift is a 7-stage rollover pipeline. Of those 7 stages, only the **bookends**
 talk to Wealthbox. `PROPOSAL_ACCEPTED` is the inbound entry point — when a
 Wealthbox opportunity reaches the firm-mapped stage, a Rift case is created.
-`WON` is the outbound close trigger — moving a case to Won pushes the mapped
-stage to Wealthbox, which closes the opp natively via its winning-stage flag.
-The five intermediate stages (`AWAITING_CLIENT_ACTION`, `READY_TO_SUBMIT`,
+`WON` is the outbound *and* inbound close trigger — moving a case to Won
+in Rift pushes the mapped Wealthbox stage; moving an opportunity to the
+mapped Won stage in Wealthbox auto-closes the linked Rift case. The five
+intermediate stages (`AWAITING_CLIENT_ACTION`, `READY_TO_SUBMIT`,
 `SUBMITTED`, `PROCESSING`, `IN_TRANSIT`) are **Rift-only** and never sync.
 
 ```
 WEALTHBOX                          RIFT
-"Proposal Accepted" stage   ──→    PROPOSAL_ACCEPTED   (created via poll)
+"Proposal Accepted" stage   ──→    PROPOSAL_ACCEPTED  (created via poll)
                                    AWAITING_CLIENT_ACTION
                                    READY_TO_SUBMIT
-                                   SUBMITTED               ← intermediate,
-                                   PROCESSING                Rift-only,
-                                   IN_TRANSIT                no CRM round-trip
-"Won" stage (closes opp)   ←──     WON                  (push on status change)
+                                   SUBMITTED              ← intermediate,
+                                   PROCESSING              Rift-only,
+                                   IN_TRANSIT              no CRM round-trip
+"Won" stage (closes opp)   ←─→     WON                 (bidirectional close)
 ```
+
+Each firm can rename or selectively disable the five intermediate stages
+via `CaseStageConfig`. The two bookends are always enabled because the
+Wealthbox sync depends on them.
 
 Why bookends only: most rollover work happens off-CRM (paperwork, custodian
 ops). Mapping every status would either (a) clutter the firm's Wealthbox
@@ -38,179 +44,234 @@ keep Rift authoritative for the in-progress states.
 
 ---
 
-## Phase 1 + 2 are done and pushed (`origin/main`)
+## Inbound: three triggers, one function
 
-Commit: `7b7d366 Wealthbox stage workflow: Proposal Accepted ↔ Won bookend sync`
+Wealthbox doesn't support webhooks. All inbound sync is poll-based. There
+are **three independent triggers** that all converge on the same idempotent
+`pollFirmForNewOpportunities(firmId)` function in `src/lib/crmSync.ts`:
 
-### Phase 1 — schema + UI rename
-- `CaseStatus` enum: `INTAKE` → `PROPOSAL_ACCEPTED`, `COMPLETED` → `WON`
-- Migration: `prisma/migrations/20260501000000_rename_case_status_proposal_won`
-- Default on `RolloverCase.status` updated to `PROPOSAL_ACCEPTED`
-- `CrmStageMapping` API restricted to `PROPOSAL_ACCEPTED` + `WON` only (`max(2)`)
-- Settings UI (`SettingsForm.tsx`) shows just two mapping rows, not seven
-- All 17 label/color/dropdown maps across the app updated
-- All `status === "COMPLETED"` filters on `RolloverCase` switched to `"WON"` —
-  TaskStatus.COMPLETED references left alone
+| Trigger | Where it lives | Cadence | Auth |
+|---|---|---|---|
+| External cron | cron-job.org → `POST /api/integrations/wealthbox/poll` | Configurable (currently every 1 min, recommended 10–15 min once page-load polling is live) | `Authorization: Bearer ${CRON_SECRET}` |
+| Page-load auto-sync | `maybePollOnPageLoad(firmId)` from server components on `/dashboard` and `/dashboard/cases` | Throttled to once per 10 s per firm; 2.5 s timeout | Active session (firm-scoped) |
+| Manual button | `WealthboxSyncButton` on cases page; "Sync now" in Settings → Integrations | On click | Active ADMIN session (firm-scoped) |
 
-### Phase 2 — sync infrastructure
-- `src/lib/wealthbox.ts`: added `getContact()`, `pickPrimaryEmail()`,
-  `readCustomField()`, plus `custom_fields[]` on the opportunity type
-- `src/lib/crmClient.ts`: added `getOpportunityHydrated()` (joins opportunity
-  + linked Contact + custom fields) and `listOpportunitiesByStage()`
-- `src/lib/crmSync.ts`:
-  - `pollFirmForNewOpportunities(firmId)` — the inbound creator. Idempotent
-    (skips already-linked opps). Per-opp errors don't abort the run.
-  - `syncOpportunityStage()` (already existed) now silently returns
-    `rift_only_stage` for intermediate statuses instead of writing fake
-    "no_mapping" errors to `wealthboxLastSyncError`.
-  - `MAPPABLE_STATUSES` constant — keep in sync with the API validation.
-- `src/app/api/integrations/wealthbox/poll/route.ts`: POST endpoint with
-  two auth modes:
-  - `Authorization: Bearer ${CRON_SECRET}` → polls **all** firms (for cron)
-  - Active ADMIN session → polls **own firm only** (for the manual button)
-- `prisma/migrations/20260502000000_add_needs_review_to_case`: adds
-  `needsReview Boolean` + `reviewReason String?` to `RolloverCase`
-- `SettingsForm.tsx`: "Sync from Wealthbox" panel with a "Sync now" button
-- `CasesView.tsx`: orange "Needs review" pill (tooltip = reason)
-- `CaseDetail.tsx`: banner with reason + "Mark as reviewed" button
+The poll endpoint dispatches based on auth mode:
+- `Bearer ${CRON_SECRET}` → polls **all** firms
+- Active ADMIN session → polls **own firm only**
 
-### Wealthbox custom field names (must match exactly, case-insensitive)
-Defined in `src/lib/crmSync.ts` as `WEALTHBOX_CUSTOM_FIELDS`:
-- `Source Provider` (free text)
-- `Destination Custodian` (free text)
-- `Account Type` (single-select dropdown)
+`pollFirmForNewOpportunities` does both bookend scans in one pass:
 
-`Account Type` dropdown values map via `mapAccountType()`:
-- contains "traditional" → `TRADITIONAL_IRA_401K`
-- contains "roth" → `ROTH_IRA_401K`
-- contains "403" → `IRA_403B`
-- exact "other" → `OTHER`
-- anything else → null → case still created but flagged needsReview
+1. Scan the Proposal Accepted stage → create Rift cases for any opportunity not already linked
+2. Scan the Won stage → find any opportunity linked to a Rift case that isn't already on `WON` and auto-close those cases
+
+Per-opp errors are collected in `result.errors` and don't abort the run.
+Connection-level failures (e.g., bad token, 5xx) update
+`CrmConnection.lastHealthError` and `lastHealthOk = false` so the issue
+is visible in Settings → Integrations.
+
+### Why three triggers
+
+| Trigger | Covers |
+|---|---|
+| Cron | Off-hours sync, reverse-Won timeliness when no one is in Rift, notification accuracy, health monitoring |
+| Page-load | Active-user moments — "I just changed something in Wealthbox, refresh to see it" |
+| Manual button | Impatient moments mid-session, or debugging |
+
+They're complementary. Lower the cron cadence freely once page-load is in
+place; **don't remove it** — the off-hours / reverse-Won safety net depends
+on it.
 
 ---
 
-## What's NOT done — pick up here
+## Outbound: the easy direction
 
-### 1. Wealthbox-side configuration (manual, no code)
+When a Rift case status changes via `PATCH /api/cases/[id]`,
+`syncOpportunityStage(caseId)` is called fire-and-forget in the same
+request handler:
 
-In Wealthbox dashboard:
+- If the new status is **not** a bookend (`PROPOSAL_ACCEPTED` / `WON`), it
+  silently returns `rift_only_stage` without writing any error. Intermediate
+  stages are deliberately not pushed.
+- If it **is** a bookend and the firm has a `CrmStageMapping` for it, it
+  PUTs the mapped Wealthbox stage to the linked opportunity.
+- Failures land on `RolloverCase.wealthboxLastSyncError` and
+  `CrmConnection.lastHealthError`. They never throw; the user's status
+  change always succeeds in Rift even if Wealthbox is down.
 
-1. **Settings → Custom Fields → Opportunities**, add three fields with
-   these exact names (case-insensitive but spell them right):
-   - `Source Provider` (Text)
-   - `Destination Custodian` (Text)
-   - `Account Type` (Single-select dropdown). Options:
-     - `401(k) → Traditional IRA`
-     - `401(k) → Roth IRA`
-     - `403(b) → IRA`
-     - `Other`
-2. **Settings → Categories → Opportunity Stages**: confirm the `Won` stage
-   has its **win type** set to "won". This is what makes Wealthbox close
-   the opp when our outbound sync moves it there.
-3. In Rift: **Settings → Integrations**, set the two stage mappings
-   (Proposal Accepted ↔ your Wealthbox stage, Won ↔ Wealthbox Won).
+Symmetric to the reverse-Won inbound path: changing status to `WON` in
+Rift pushes Wealthbox; changing the opp to the Won stage in Wealthbox
+pulls the Rift case to `WON` on next poll.
 
-### 2. External cron pinger (Vercel Hobby tier won't run sub-daily crons)
+---
 
-The `/api/integrations/wealthbox/poll` route works on demand. Vercel Hobby
-caps cron jobs at once-per-day, which is useless for this. Two options
-shipped — pick one:
+## What gets pulled from a Wealthbox opportunity
 
-**cron-job.org** is what's currently in use (free, sub-minute granularity):
-1. Create a free account at cron-job.org
+`getOpportunityHydrated(id)` joins the opportunity, its primary linked
+Contact, and its custom fields into a single `OpportunityHydrated` shape.
+On case creation, the following land on `RolloverCase`:
+
+**From the opportunity's linked Contact:**
+- `clientFirstName`, `clientLastName` — from `first_name`/`last_name`
+- `clientEmail` — primary email (the `principal: true` one, else first)
+- `clientPhone` — primary phone, includes extension if set
+  (rendered as click-to-call in the case header)
+
+**From the opportunity itself:**
+- `wealthboxOpportunityId` — link
+- `wealthboxOpportunityName` — opp name, shown next to the ID
+- `wealthboxAmount` + `wealthboxAmountCurrency` — formatted as currency
+- `wealthboxTargetClose` — expected paperwork close date
+- `wealthboxProbability` — 0–100
+- `wealthboxOppCreatedAt` — when the deal started in Wealthbox
+- `sourceProvider` — from the `Source Provider` custom field
+- `destinationCustodian` — from the `Destination Custodian` custom field
+- `accountType` — from the `Account Type` custom field, mapped via `mapAccountType()`
+
+**Refresh behavior:** The "Refresh from CRM" button on the case detail
+panel re-pulls all Wealthbox-shadowed fields (opp metadata + phone) but
+deliberately **does not** overwrite user-mutable case fields
+(name, email, source provider, custodian, account type). Once the user
+edits those in Rift, Rift becomes the source of truth.
+
+### Required Wealthbox-side custom fields
+
+Defined in `src/lib/crmSync.ts` as `WEALTHBOX_CUSTOM_FIELDS` (matching is
+case-insensitive, but spell them right):
+
+- `Source Provider` (Text)
+- `Destination Custodian` (Text)
+- `Account Type` (Single-select dropdown). Recognized via `mapAccountType()`:
+  - any value containing "traditional" → `TRADITIONAL_IRA_401K`
+  - any value containing "roth" → `ROTH_IRA_401K`
+  - any value containing "403" → `IRA_403B`
+  - exact "other" → `OTHER`
+  - anything else → null → case still created but flagged `needsReview = true`
+
+A case auto-created with any missing custom field gets `needsReview = true`
+and `reviewReason` summarizing which fields were missing. The orange
+"Review" pill renders on the cases list, and a banner with a "Mark as
+reviewed" button shows on the detail page.
+
+### Required Wealthbox-side stage configuration
+
+The firm's Won stage in Wealthbox needs **win type = "won"** so Wealthbox
+closes the opportunity natively when our outbound sync pushes it there.
+Set in Wealthbox → Settings → Categories → Opportunity Stages.
+
+---
+
+## Per-firm stage configuration
+
+`CaseStageConfig` is a per-firm overlay on the canonical `CaseStatus` enum:
+
+```prisma
+model CaseStageConfig {
+  firmId      String
+  status      CaseStatus
+  customLabel String?     // null → use the canonical default label
+  isEnabled   Boolean     // bookends always forced true server-side
+  sortOrder   Int
+  @@unique([firmId, status])
+}
+```
+
+The migration backfills default rows (`customLabel: null`, `isEnabled: true`)
+for every existing firm and for every new firm via `ensureFirmStageConfig`.
+
+**Helpers in `src/components/casesDesignTokens.ts`:**
+- `resolveStageLabel(status, overlays)` — returns the firm's custom label or the canonical default
+- `resolveEnabledStages(overlays)` — returns the visible-to-this-firm pipeline in canonical order, with custom labels swapped in
+- `ALWAYS_ENABLED_STATUSES` — `{ PROPOSAL_ACCEPTED, WON }`, used for the bookend lock
+
+**Server preload in `src/lib/stageConfig.ts`:**
+- `getFirmStageConfig(firmId)` — read overlay, called from server components
+- `ensureFirmStageConfig(firmId)` — idempotent default-seed, called from `GET /api/firm/stages` and `POST /api/firm/onboarding` as a safety net
+
+**Where labels render through the overlay:**
+- Cases list (`CasesView`, `CasesViewBoard`, `CasesViewWorkbench`)
+- Case detail status dropdown (`CaseDetail`)
+- Dashboard pipeline buckets and "needs attention" feed
+  (`STATUS_LABELS` is computed at request time from the overlay)
+
+The status dropdown filters out disabled intermediate stages. Cases sitting
+on a now-disabled stage still render (orphan column on the board, label
+falls back to canonical default).
+
+---
+
+## Onboarding wizard
+
+A new firm hits `/onboarding` on first ADMIN login, gated by
+`Firm.onboardedAt IS NULL`. The dashboard layout redirects ADMIN there;
+non-admins see a "setup in progress" screen until completion.
+
+The wizard has 6 steps (see `src/components/OnboardingWizard.tsx`):
+
+1. **Choose CRM** — Wealthbox today, Salesforce shown disabled
+2. **Connect** — token paste with inline how-to + an illustrated mock of
+   the Wealthbox API Access screen pointing at the Create Access Token
+   button. Hits `POST /api/integrations/wealthbox`
+3. **Trigger stage** — live-loads the firm's Wealthbox stages, admin
+   picks which one creates Rift cases
+4. **Won stage** — picks the Wealthbox stage to push to when a case is
+   moved to `WON` in Rift. Both mappings save together to
+   `PUT /api/integrations/crm/mapping`
+5. **Rift stages** — the `CaseStageConfig` editor. Bookends locked on,
+   intermediates have rename + enable/disable. Saves to
+   `PUT /api/firm/stages`
+6. **Invite team** — `GET /api/integrations/crm/users` returns Wealthbox
+   account members annotated with `riftStatus: available | in_firm | other_firm`.
+   Admin picks Advisor / Ops / Skip per row. Each invite hits the existing
+   `POST /api/firm/team`
+
+`POST /api/firm/onboarding` is the completion endpoint. It enforces:
+- A CRM must be connected
+- Both bookend mappings (`PROPOSAL_ACCEPTED` + `WON`) must exist
+- `CaseStageConfig` rows are auto-seeded as a safety net
+
+On success it sets `Firm.onboardedAt = now()` and unlocks the dashboard.
+
+The wizard is idempotent on refresh — `GET /api/firm/onboarding` returns
+the current state, and the wizard lands on the first not-yet-done step.
+
+---
+
+## CRM team import (post-onboarding)
+
+The same Wealthbox-team-fetch path used in the wizard's step 6 is also
+exposed in **Settings → Team → Import from Wealthbox**:
+
+- Hidden when no CRM is connected
+- Lazy-loads on click ("Load list") so opening Settings doesn't ping
+  Wealthbox unnecessarily
+- Annotates each row with Rift status:
+  - `available` — eligible to invite
+  - `in_firm` — already on this firm's team (locked, shows green pill with current role)
+  - `other_firm` — email is taken by a Rift user at a different firm (locked, shows red pill)
+- Bulk-invite button respects `Firm.seatsLimit`
+- Each invite fires `POST /api/firm/team` sequentially with per-row outcome status
+
+The connected admin themselves is filtered out client-side by email match
+against `CrmConnection.connectedUserEmail`.
+
+---
+
+## Cron setup
+
+Currently using **cron-job.org** (free, sub-minute granularity):
+
+1. Free account at cron-job.org
 2. New cronjob:
    - URL: `https://<your-vercel-app>.vercel.app/api/integrations/wealthbox/poll`
    - Method: `POST`
-   - Header: `Authorization: Bearer <CRON_SECRET>` — value lives in
-     Vercel's env vars
-   - Schedule: every 1, 2, or 5 minutes
+   - Header: `Authorization: Bearer <CRON_SECRET>` — value lives in Vercel's env vars
+   - Schedule: every 10–15 min recommended (page-load polling covers active-user moments; cron only needs to cover off-hours and reverse-Won timeliness)
 
-A previous version of this repo also shipped a GitHub Actions workflow at
-`.github/workflows/wealthbox-poll.yml` as a redundant trigger. It was
-removed because running both crons just produces extra noise — the poll
-endpoint is idempotent so duplicate pings would do nothing useful, and
-without the GitHub-side secrets configured the workflow failed loudly on
-every scheduled run. If you ever want to switch back to GitHub Actions
-(e.g. to avoid relying on cron-job.org), restore the workflow from git
-history and add `CRON_SECRET` + `RIFT_BASE_URL` as repo secrets.
-
-The **"Sync now"** button in Settings → Integrations and the
-**"Sync Wealthbox"** button on the cases page always work as manual
-fallbacks regardless of which (if any) cron is configured.
-
-### 3. Optional polish (not on the critical path)
-
-- **Pagination in `listOpportunitiesByStage`** — done. `crmClient.ts`
-  walks pages of 100 up to 50 pages (5,000 opportunities scanned per
-  poll). Wealthbox doesn't expose a server-side stage filter, so
-  client-side filtering is unavoidable.
-- **Isolation test for `pollFirmForNewOpportunities`** — done. See
-  `tests/api/wealthbox-poll-isolation.test.ts`. Asserts: firm A's poll
-  never lands a case in firm B; only firm A's token ever appears on
-  outbound requests; second run is idempotent; missing custom fields
-  flag `needsReview`; missing mapping is a silent no-op.
-- **Activity event for inbound creation** is generic
-  (`"Auto-created from Wealthbox opportunity \"X\""`). Could add a
-  dedicated `EventType.CASE_AUTO_CREATED` for filtering — needs a
-  schema migration on dev + test DBs, so deferred.
-- **Salesforce inbound**: `getOpportunityHydrated` for Salesforce returns
-  empty `contact` + `customFields`. If Salesforce ever needs inbound
-  polling, the Salesforce branch in `crmClient.ts` needs the equivalent
-  contact-and-custom-fields hydration path.
-
----
-
-## Repo gotchas (learned the hard way last session)
-
-- **Do NOT put the project in `~/Desktop` on a Mac**. macOS auto-syncs
-  Desktop to iCloud and silently evicts file content as "dataless"
-  placeholders — the bytes appear to exist (`ls -lO` shows size) but
-  reads return nothing. This corrupted ~20 source files including
-  `src/app/layout.tsx` and broke the dev server. The project now lives
-  at `~/dev/rift`. On the new machine, clone to a non-iCloud path:
-  `git clone https://github.com/KrewBussel/rift.git ~/dev/rift`.
-- **Vercel pull**: env vars come down as `.env.local`, not `.env`.
-  `prisma.config.ts` reads `process.env.DIRECT_URL ?? process.env.DATABASE_URL`,
-  but if both are missing or the URL doesn't include `?sslmode`, the pg
-  Pool will throw ECONNRESET on idle sockets. The fix is in
-  `src/lib/prisma.ts` (already committed): `ssl: { rejectUnauthorized: false }`,
-  `keepAlive: true`, and a `pool.on('error')` handler so dropped idle
-  sockets don't crash the dev server.
-- **Migrations on a non-interactive shell**: `prisma migrate dev` requires
-  TTY. For CI/scripted use:
-  ```
-  npx prisma migrate deploy
-  ```
-  (deploys the SQL files in `prisma/migrations/` without prompting). To
-  generate a new migration, run `prisma migrate dev` interactively.
-- **Pooled URL and ad-hoc tsx scripts**: Supabase's pooled URL gives
-  ECONNREFUSED for one-off scripts. Use `DIRECT_URL` for those — see
-  `scripts/inspect-users.ts` and `scripts/cleanup-non-admins.ts` for
-  working examples.
-
----
-
-## Verification checklist (do this end-to-end after Wealthbox-side setup)
-
-1. ✅ `npm run dev` starts cleanly, `GET /` returns 200
-2. ✅ Settings → Integrations shows Wealthbox connected, just two
-   mapping rows
-3. Save mappings: Proposal Accepted ↔ <Wealthbox stage>, Won ↔ Won
-4. In Wealthbox: create a new opportunity, link it to a contact, fill
-   the three custom fields, move it to your "Proposal Accepted" stage
-5. In Rift: Settings → Integrations → "Sync now". Result should show
-   `Created: 1`. The new case appears on the Cases page.
-6. Verify `clientFirstName/Last/Email` came from the Wealthbox contact
-   and `sourceProvider/destinationCustodian/accountType` came from the
-   custom fields
-7. Test the missing-field path: create another Wealthbox opp with one
-   custom field blank, sync, expect a case with the orange "Needs
-   review" pill and reason text
-8. Test outbound: move a case to `WON` in Rift, refresh Wealthbox,
-   the linked opportunity should be at the mapped Won stage and closed
-9. Test intermediate skip: move a case to `SUBMITTED`, then check
-   `wealthboxLastSyncError` on that case — should be null (silent skip,
-   not a fake error)
+The previous `.github/workflows/wealthbox-poll.yml` GitHub Actions
+workflow was removed because running both crons just produced extra noise
+without configured GitHub-side secrets. To switch back: restore the file
+from git history and add `CRON_SECRET` + `RIFT_BASE_URL` as repo secrets.
 
 ---
 
@@ -218,15 +279,86 @@ fallbacks regardless of which (if any) cron is configured.
 
 | What | File |
 |---|---|
-| Enum definition | `prisma/schema.prisma` (`enum CaseStatus`) |
+| `CaseStatus` enum + `RolloverCase` Wealthbox fields | `prisma/schema.prisma` |
+| `CaseStageConfig` overlay model | `prisma/schema.prisma` |
+| Firm onboarding gate (`onboardedAt`) | `prisma/schema.prisma` (Firm model), `src/app/dashboard/layout.tsx` (redirect) |
 | Mappable-statuses constant | `src/lib/crmSync.ts` (`MAPPABLE_STATUSES`) |
-| API mapping validation | `src/app/api/integrations/crm/mapping/route.ts` |
-| Inbound poller | `src/lib/crmSync.ts` (`pollFirmForNewOpportunities`) |
+| Stage mapping API validation | `src/app/api/integrations/crm/mapping/route.ts` |
+| Inbound poller (both bookends) | `src/lib/crmSync.ts` (`pollFirmForNewOpportunities`) |
+| Page-load auto-sync | `src/lib/crmSync.ts` (`maybePollOnPageLoad`) — called from `src/app/dashboard/page.tsx` and `src/app/dashboard/cases/page.tsx` |
 | Outbound sync | `src/lib/crmSync.ts` (`syncOpportunityStage`) — fired from `PATCH /api/cases/[id]` |
+| Per-case refresh | `src/lib/crmSync.ts` (`refreshCaseFromCrm`) — called from `/api/cases/[id]/crm/refresh` |
 | Polling endpoint | `src/app/api/integrations/wealthbox/poll/route.ts` |
 | Wealthbox API client | `src/lib/wealthbox.ts` |
 | Polymorphic CRM client | `src/lib/crmClient.ts` |
+| CRM org users (team import) | `src/lib/wealthbox.ts` (`getOrgUsers`) → `crmClient.ts` → `/api/integrations/crm/users` |
 | Custom field name constants | `src/lib/crmSync.ts` (`WEALTHBOX_CUSTOM_FIELDS`) |
 | Account type mapper | `src/lib/crmSync.ts` (`mapAccountType`) |
-| Settings UI (mapping + sync button) | `src/components/SettingsForm.tsx` (`IntegrationsSection`) |
-| Review badge | `src/components/CasesView.tsx`, `src/components/CaseDetail.tsx` |
+| Stage config helpers | `src/lib/stageConfig.ts`, `src/components/casesDesignTokens.ts` |
+| Onboarding wizard | `src/components/OnboardingWizard.tsx`, `src/app/onboarding/page.tsx` |
+| Onboarding completion | `src/app/api/firm/onboarding/route.ts` |
+| Stage config API | `src/app/api/firm/stages/route.ts` |
+| Settings UI (mapping + sync + stages) | `src/components/SettingsForm.tsx`, `src/components/settings/IntegrationsSection*` |
+| CRM team import in Settings | `src/components/settings/TeamSection.tsx` (`CrmTeamImportPanel`) |
+| Sync button on cases page | `src/components/WealthboxSyncButton.tsx` |
+| Review badge / banner | `src/components/CasesView.tsx`, `src/components/CasesViewWorkbench.tsx`, `src/components/CaseDetail.tsx` |
+
+---
+
+## Tests
+
+| File | Covers |
+|---|---|
+| `tests/api/wealthbox.test.ts` | crypto seal/open, connect/disconnect, mapping CRUD, per-case link/unlink, `syncOpportunityStage` outbound (200 / 500 / no_mapping / not_linked) |
+| `tests/api/wealthbox-poll-isolation.test.ts` | tenant isolation on inbound poll, per-firm token usage, idempotency, `needsReview` flagging, missing-mapping no-op, opportunity metadata + client phone population, reverse Won bookend, `maybePollOnPageLoad` throttle + run-window |
+| `tests/api/crm-users.test.ts` | `/api/integrations/crm/users` — ADVISOR rejection, no-CRM rejection, `riftStatus` annotation, name parsing fallback, 502 on Wealthbox errors |
+| `tests/api/firm-stages.test.ts` | `CaseStageConfig` API — auto-seed defaults, tenant isolation, bookend `isEnabled` enforcement, label + disable persistence |
+| `tests/api/firm-onboarding.test.ts` | `/api/firm/onboarding` — ADVISOR rejection, no-CRM rejection, missing-bookend rejection, success path, tenant isolation |
+
+Run a single file:
+
+```bash
+npx vitest run tests/api/wealthbox-poll-isolation.test.ts
+```
+
+When changing schema fields used by tests, run **both** dev + test
+migrations (see CLAUDE.md "Database").
+
+---
+
+## Verification checklist
+
+End-to-end smoke test for the full integration:
+
+1. `npm run dev` starts cleanly
+2. New firm with `onboardedAt = NULL` → ADMIN login → redirected to `/onboarding`
+3. Walk all 6 wizard steps. After step 6, redirected to dashboard
+4. Settings → Integrations shows Wealthbox connected, both bookend mappings populated
+5. Settings → Team shows the "Import from Wealthbox" panel; "Load list" pulls account members
+6. In Wealthbox: create a new opportunity, link to a contact, fill the three custom fields, move to your trigger stage
+7. Either wait one cron cycle, refresh the cases page, or click "Sync Wealthbox" — case appears
+8. Verify the new case has: contact name + email + phone, opportunity name, amount, target close, probability, opp createdAt, source provider, destination custodian, account type
+9. Test the missing-field path: create another opp with a custom field blank → case appears flagged with the orange "Review" pill
+10. Click "Mark as reviewed" → pill disappears (verify the patch actually persists by refreshing)
+11. Test outbound: move a case to `WON` in Rift → linked Wealthbox opp closes within a second
+12. Test reverse Won: in Wealthbox, move a different opp to the Won stage → wait for cron / refresh / click sync → linked Rift case auto-closes with an activity event noting "pulled from Wealthbox"
+13. Test intermediate skip: move a case to `SUBMITTED` → check `wealthboxLastSyncError` is null (silent skip, not a fake error)
+14. Test stage config: rename "Submitted" to "Sent to custodian" in Settings → Integrations → Rift stages → verify the new label renders on the cases board, in the case detail status dropdown, and in the dashboard pipeline counts
+15. Disable an intermediate stage → verify it disappears from the status dropdown but cases already on it still render
+
+---
+
+## Repo gotchas (still relevant)
+
+- **`prisma migrate dev` requires TTY.** For CI/scripted use:
+  ```
+  npx prisma migrate deploy
+  ```
+- **Pooled URL gives ECONNREFUSED for ad-hoc tsx scripts.** Use `DIRECT_URL`.
+- **`@dnd-kit` IDs cause hydration warnings** unless gated by a `mounted` flag.
+  See `CasesViewBoard.tsx` for the working pattern.
+- **`CardSection` already wraps a `Card`.** Nesting them produces "doubled-up"
+  bordered boxes. Use `Card` directly with manual padding when you don't need
+  the title/description block.
+- **Page-load auto-sync is awaited but time-boxed.** The 2.5s timeout exists
+  so a slow Wealthbox never blocks page rendering. Don't remove it.

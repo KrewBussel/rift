@@ -3,7 +3,7 @@
 import { useState } from "react";
 import { formatDateTime } from "@/lib/utils";
 
-interface Document { id: string; name: string; fileType: string; fileSize: number; createdAt: string; uploadedBy: { id: string; firstName: string; lastName: string }; checklistItem: { id: string; name: string } | null; }
+interface Document { id: string; name: string; fileType: string; fileSize: number; createdAt: string; uploadedBy: { id: string; firstName: string; lastName: string } | null; uploadedByClientSessionId: string | null; checklistItem: { id: string; name: string } | null; }
 interface Props { caseId: string; initialDocuments: Document[]; userRole: string; refreshKey: number; }
 
 function formatBytes(bytes: number) {
@@ -205,7 +205,14 @@ export default function DocumentsPanel({ caseId, initialDocuments, userRole, ref
                     {doc.name}
                   </button>
                   <p className="text-xs mt-0.5" style={{ color: "#7d8590" }}>
-                    {formatBytes(doc.fileSize)} · {doc.uploadedBy.firstName} {doc.uploadedBy.lastName}
+                    {formatBytes(doc.fileSize)} ·{" "}
+                    {doc.uploadedByClientSessionId ? (
+                      <span className="font-medium" style={{ color: "#34d399" }}>Client</span>
+                    ) : doc.uploadedBy ? (
+                      `${doc.uploadedBy.firstName} ${doc.uploadedBy.lastName}`
+                    ) : (
+                      "Unknown"
+                    )}
                     {doc.checklistItem && (
                       <span className="ml-1.5 font-medium" style={{ color: "#c4b5fd" }}>· {doc.checklistItem.name}</span>
                     )}

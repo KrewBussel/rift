@@ -4,7 +4,7 @@ import { prisma } from "@/lib/prisma";
 import CasesView, { type CasesViewCase, type CasesViewUser } from "@/components/CasesView";
 import { getFirmStageConfig } from "@/lib/stageConfig";
 import { maybePollOnPageLoad } from "@/lib/crmSync";
-import WealthboxSyncButton from "@/components/WealthboxSyncButton";
+import CrmSyncButton from "@/components/WealthboxSyncButton";
 
 export default async function CasesPage({
   searchParams,
@@ -56,7 +56,7 @@ export default async function CasesPage({
       ? prisma.crmConnection.findUnique({ where: { firmId }, select: { provider: true } })
       : Promise.resolve(null),
   ]);
-  const wealthboxConnected = crmConn?.provider === "WEALTHBOX";
+  const crmProvider = crmConn?.provider ?? null;
 
   const serialized: CasesViewCase[] = cases.map((c) => ({
     id: c.id,
@@ -90,7 +90,7 @@ export default async function CasesPage({
               : "Rollover cases assigned to you."}
           </p>
         </div>
-        {role === "ADMIN" && wealthboxConnected && <WealthboxSyncButton />}
+        {role === "ADMIN" && crmProvider && <CrmSyncButton provider={crmProvider} />}
       </div>
       <CasesView
         cases={serialized}

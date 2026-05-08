@@ -19,12 +19,33 @@ export async function GET() {
       status: true,
       sortOrder: true,
       documents: {
-        select: { id: true, name: true, createdAt: true },
+        select: {
+          id: true,
+          name: true,
+          fileType: true,
+          fileSize: true,
+          createdAt: true,
+          uploadedByClientSessionId: true,
+        },
         orderBy: { createdAt: "desc" },
       },
     },
     orderBy: { sortOrder: "asc" },
   });
 
-  return NextResponse.json(items);
+  // Mark each document as `uploadedByClient` so the UI can render
+  // "You uploaded" vs "Shared by your team" without leaking firm-user identity.
+  const sanitized = items.map((item) => ({
+    ...item,
+    documents: item.documents.map((d) => ({
+      id: d.id,
+      name: d.name,
+      fileType: d.fileType,
+      fileSize: d.fileSize,
+      createdAt: d.createdAt,
+      uploadedByClient: d.uploadedByClientSessionId !== null,
+    })),
+  }));
+
+  return NextResponse.json(sanitized);
 }

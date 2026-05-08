@@ -211,18 +211,24 @@ model ChecklistItem {
 }
 
 model Document {
-  id              String         @id @default(cuid())
-  caseId          String
-  checklistItemId String?
-  name            String
-  storagePath     String
-  fileType        String
-  fileSize        Int
-  uploadedById    String
-  createdAt       DateTime       @default(now())
-  case            RolloverCase   @relation(fields: [caseId], references: [id], onDelete: Cascade)
-  checklistItem   ChecklistItem? @relation(fields: [checklistItemId], references: [id])
-  uploadedBy      User           @relation(fields: [uploadedById], references: [id])
+  id                        String         @id @default(cuid())
+  caseId                    String
+  checklistItemId           String?
+  name                      String
+  storagePath               String
+  fileType                  String
+  fileSize                  Int
+  // Exactly one of these is set:
+  //   uploadedById                — firm user uploaded
+  //   uploadedByClientSessionId   — end client uploaded via the portal
+  // Both nullable on the table; the API enforces the XOR.
+  uploadedById              String?
+  uploadedByClientSessionId String?
+  createdAt                 DateTime       @default(now())
+  case                      RolloverCase   @relation(fields: [caseId], references: [id], onDelete: Cascade)
+  checklistItem             ChecklistItem? @relation(fields: [checklistItemId], references: [id])
+  uploadedBy                User?          @relation(fields: [uploadedById], references: [id])
+  uploadedByClientSession   ClientSession? @relation(fields: [uploadedByClientSessionId], references: [id], onDelete: SetNull)
 }
 
 model Custodian {
@@ -378,6 +384,7 @@ model ClientSession {
   case           RolloverCase      @relation(fields: [caseId], references: [id], onDelete: Cascade)
   firm           Firm              @relation(fields: [firmId], references: [id], onDelete: Cascade)
   activityEvents ActivityEvent[]
+  uploadedDocuments Document[]
 
   @@index([caseId, revokedAt])
   @@index([expiresAt])

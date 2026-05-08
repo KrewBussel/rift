@@ -116,7 +116,19 @@ export async function refreshCaseFromCrm(caseId: string, actorUserId: string): P
 > {
   const rolloverCase = await prisma.rolloverCase.findUnique({
     where: { id: caseId },
-    select: { id: true, firmId: true, status: true, wealthboxOpportunityId: true },
+    select: {
+      id: true,
+      firmId: true,
+      status: true,
+      wealthboxOpportunityId: true,
+      clientFirstName: true,
+      clientLastName: true,
+      clientEmail: true,
+      sourceProvider: true,
+      destinationCustodian: true,
+      accountType: true,
+      needsReview: true,
+    },
   });
   if (!rolloverCase) return { ok: false, reason: "not_linked" };
   if (!rolloverCase.wealthboxOpportunityId) return { ok: false, reason: "not_linked" };
@@ -150,10 +162,26 @@ export async function refreshCaseFromCrm(caseId: string, actorUserId: string): P
   const oldStatus = rolloverCase.status;
   const newStatus = mapping.riftStatus;
 
-  // Always refresh the Wealthbox-shadowed fields. We deliberately don't touch
+  // Always refresh the CRM-shadowed fields. We deliberately don't touch
   // user-mutable fields (sourceProvider, destinationCustodian, accountType,
-  // clientFirstName/LastName/Email) on refresh — once the user edits them in
-  // Rift, we treat Rift as the source of truth for case data.
+  // clientFirstName/LastName/Email) on refresh once the user has filled them
+  // in — at that point we treat Rift as the source of truth for case data.
+  //
+  // Exception: a case that was auto-created with placeholder values
+  // ("Unknown" / "") because the CRM opportunity didn't yet have the data
+  // available is *eligible* for a one-time backfill on refresh. Once the
+  // case has real values, the next refresh leaves them alone.
+  const wasPlaceholderName =
+    rolloverCase.clientFirstName === "Unknown" && rolloverCase.clientLastName === "Unknown";
+  const wasPlaceholderEmail = rolloverCase.clientEmail === "";
+  const wasPlaceholderSource = rolloverCase.sourceProvider === "";
+  const wasPlaceholderDest = rolloverCase.destinationCustodian === "";
+
+  const sourceProviderRaw = hydrated.customFields["source provider"] ?? null;
+  const destinationRaw = hydrated.customFields["destination custodian"] ?? null;
+  const accountTypeRaw = hydrated.customFields["account type"] ?? null;
+  const accountType = mapAccountType(accountTypeRaw);
+
   const refreshedFields = {
     wealthboxOpportunityName: hydrated.name,
     wealthboxAmount: hydrated.amount,
@@ -164,7 +192,50 @@ export async function refreshCaseFromCrm(caseId: string, actorUserId: string): P
     // Phone is the one client-data field we re-pull, since it changes more
     // often than name/email and isn't typically edited in Rift.
     ...(hydrated.contact?.phone !== undefined && { clientPhone: hydrated.contact.phone }),
+    // Backfill placeholders only.
+    ...(wasPlaceholderName && hydrated.contact?.firstName && {
+      clientFirstName: hydrated.contact.firstName,
+    }),
+    ...(wasPlaceholderName && hydrated.contact?.lastName && {
+      clientLastName: hydrated.contact.lastName,
+    }),
+    ...(wasPlaceholderEmail && hydrated.contact?.email && {
+      clientEmail: hydrated.contact.email,
+    }),
+    ...(wasPlaceholderSource && sourceProviderRaw && { sourceProvider: sourceProviderRaw }),
+    ...(wasPlaceholderDest && destinationRaw && { destinationCustodian: destinationRaw }),
+    ...(rolloverCase.accountType === "OTHER" && accountType && { accountType }),
   };
+
+  // If the refresh resolved every reason a case was flagged for review, drop
+  // the flag so the user doesn't have to chase it manually after the CRM is
+  // populated.
+  const willHaveName =
+    (refreshedFields as { clientFirstName?: string }).clientFirstName ?? rolloverCase.clientFirstName;
+  const willHaveLast =
+    (refreshedFields as { clientLastName?: string }).clientLastName ?? rolloverCase.clientLastName;
+  const willHaveEmail =
+    (refreshedFields as { clientEmail?: string }).clientEmail ?? rolloverCase.clientEmail;
+  const willHaveSource =
+    (refreshedFields as { sourceProvider?: string }).sourceProvider ?? rolloverCase.sourceProvider;
+  const willHaveDest =
+    (refreshedFields as { destinationCustodian?: string }).destinationCustodian ?? rolloverCase.destinationCustodian;
+  const willHaveAccountType =
+    (refreshedFields as { accountType?: AccountType }).accountType ?? rolloverCase.accountType;
+  const fullyResolved =
+    rolloverCase.needsReview &&
+    willHaveName &&
+    willHaveName !== "Unknown" &&
+    willHaveLast &&
+    willHaveLast !== "Unknown" &&
+    willHaveEmail &&
+    willHaveSource &&
+    willHaveDest &&
+    willHaveAccountType !== "OTHER";
+  const reviewClear = fullyResolved
+    ? { needsReview: false, reviewReason: null }
+    : {};
+  Object.assign(refreshedFields, reviewClear);
 
   if (oldStatus === newStatus) {
     await prisma.rolloverCase.update({
@@ -227,9 +298,10 @@ export async function maybePollOnPageLoad(firmId: string): Promise<void> {
       where: { firmId },
       select: { provider: true, lastHealthCheckAt: true },
     });
-    // Salesforce inbound polling isn't built yet, so skip there even if
-    // connected. Wealthbox is the only supported provider for this path.
-    if (!connection || connection.provider !== "WEALTHBOX") return;
+    // Provider-agnostic: any connected CRM (Wealthbox or Salesforce) goes
+    // through pollFirmForNewOpportunities, which uses the polymorphic
+    // getProviderClient.
+    if (!connection) return;
 
     if (
       connection.lastHealthCheckAt &&
@@ -318,7 +390,7 @@ export async function pollFirmForNewOpportunities(firmId: string): Promise<PollR
       }
       try {
         const hydrated = await client.getOpportunityHydrated(summary.id);
-        const created = await createCaseFromOpportunity(firmId, hydrated);
+        const created = await createCaseFromOpportunity(firmId, hydrated, connection.provider);
         if (created) result.created += 1;
         else result.skipped += 1;
       } catch (err) {
@@ -343,6 +415,7 @@ export async function pollFirmForNewOpportunities(firmId: string): Promise<PollR
           },
           select: { id: true, wealthboxOpportunityId: true, status: true },
         });
+        const providerLabel = connection.provider === "SALESFORCE" ? "Salesforce" : "Wealthbox";
         for (const c of linkedToWon) {
           try {
             await prisma.rolloverCase.update({
@@ -358,7 +431,7 @@ export async function pollFirmForNewOpportunities(firmId: string): Promise<PollR
               data: {
                 caseId: c.id,
                 eventType: "STATUS_CHANGED",
-                eventDetails: `Status changed from ${c.status} to WON (pulled from Wealthbox)`,
+                eventDetails: `Status changed from ${c.status} to WON (pulled from ${providerLabel})`,
               },
             });
             result.closed += 1;
@@ -388,10 +461,11 @@ export async function pollFirmForNewOpportunities(firmId: string): Promise<PollR
   return result;
 }
 
-/** Insert a Rift case from a hydrated Wealthbox opportunity. */
+/** Insert a Rift case from a hydrated CRM opportunity (either provider). */
 async function createCaseFromOpportunity(
   firmId: string,
   opp: OpportunityHydrated,
+  provider: "WEALTHBOX" | "SALESFORCE",
 ): Promise<boolean> {
   const reasons: string[] = [];
 
@@ -447,11 +521,12 @@ async function createCaseFromOpportunity(
     },
   });
 
+  const providerLabel = provider === "SALESFORCE" ? "Salesforce" : "Wealthbox";
   await prisma.activityEvent.create({
     data: {
       caseId: newCase.id,
       eventType: "CASE_CREATED",
-      eventDetails: `Auto-created from Wealthbox opportunity "${opp.name}"`,
+      eventDetails: `Auto-created from ${providerLabel} opportunity "${opp.name}"`,
     },
   });
 

@@ -340,6 +340,194 @@ describe("Client portal — token + session + isolation", () => {
       expect(res.status).toBe(404);
     });
 
+    it("confirm attributes the document to the client session, not a firm user", async () => {
+      const { row: token } = await seedLinkToken({
+        caseId: world.a.caseId,
+        firmId: world.a.firmId,
+        issuedByUserId: world.a.ops.id,
+      });
+      const { plaintext, row: clientSession } = await seedClientSession({
+        caseId: world.a.caseId,
+        firmId: world.a.firmId,
+        tokenId: token.id,
+      });
+
+      mockSession(null);
+      mockClientCookie(plaintext);
+      const { POST } = await import("@/app/api/client/documents/confirm/route");
+      const res = await POST(
+        buildRequest("http://localhost/api/client/documents/confirm", {
+          method: "POST",
+          body: {
+            key: `${world.a.firmId}/${world.a.caseId}/client/file.pdf`,
+            name: "client-upload.pdf",
+            fileType: "application/pdf",
+            fileSize: 100,
+            checklistItemId: world.a.checklistItemId,
+          },
+        }) as never,
+      );
+      expect(res.status).toBe(201);
+
+      const docs = await prisma.document.findMany({
+        where: { caseId: world.a.caseId, name: "client-upload.pdf" },
+      });
+      expect(docs).toHaveLength(1);
+      expect(docs[0].uploadedById).toBeNull();
+      expect(docs[0].uploadedByClientSessionId).toBe(clientSession.id);
+
+      // The firm user who issued the link is NOT credited as the uploader.
+      expect(docs[0].uploadedById).not.toBe(world.a.ops.id);
+
+      // Checklist item moves NOT_STARTED -> RECEIVED on first upload.
+      const item = await prisma.checklistItem.findUnique({
+        where: { id: world.a.checklistItemId },
+      });
+      expect(item?.status).toBe("RECEIVED");
+    });
+
+    it("confirm does not move a REVIEWED item backward to RECEIVED", async () => {
+      // Firm has already reviewed the item; a late client upload shouldn't
+      // bounce the workflow state backwards.
+      await prisma.checklistItem.update({
+        where: { id: world.a.checklistItemId },
+        data: { status: "REVIEWED" },
+      });
+
+      const { row: token } = await seedLinkToken({
+        caseId: world.a.caseId,
+        firmId: world.a.firmId,
+        issuedByUserId: world.a.ops.id,
+      });
+      const { plaintext } = await seedClientSession({
+        caseId: world.a.caseId,
+        firmId: world.a.firmId,
+        tokenId: token.id,
+      });
+
+      mockSession(null);
+      mockClientCookie(plaintext);
+      const { POST } = await import("@/app/api/client/documents/confirm/route");
+      const res = await POST(
+        buildRequest("http://localhost/api/client/documents/confirm", {
+          method: "POST",
+          body: {
+            key: `${world.a.firmId}/${world.a.caseId}/client/late.pdf`,
+            name: "late.pdf",
+            fileType: "application/pdf",
+            fileSize: 100,
+            checklistItemId: world.a.checklistItemId,
+          },
+        }) as never,
+      );
+      expect(res.status).toBe(201);
+
+      const item = await prisma.checklistItem.findUnique({
+        where: { id: world.a.checklistItemId },
+      });
+      expect(item?.status).toBe("REVIEWED"); // unchanged
+    });
+
+    it("client checklist GET marks docs uploaded by the client as uploadedByClient=true", async () => {
+      // Seed a client doc directly via the confirm flow.
+      const { row: token } = await seedLinkToken({
+        caseId: world.a.caseId,
+        firmId: world.a.firmId,
+        issuedByUserId: world.a.ops.id,
+      });
+      const { plaintext, row: clientSession } = await seedClientSession({
+        caseId: world.a.caseId,
+        firmId: world.a.firmId,
+        tokenId: token.id,
+      });
+
+      // One firm-uploaded doc + one client-uploaded doc on the same item.
+      await prisma.document.createMany({
+        data: [
+          {
+            caseId: world.a.caseId,
+            checklistItemId: world.a.checklistItemId,
+            name: "firm.pdf",
+            storagePath: `${world.a.firmId}/${world.a.caseId}/firm.pdf`,
+            fileType: "application/pdf",
+            fileSize: 100,
+            uploadedById: world.a.ops.id,
+          },
+          {
+            caseId: world.a.caseId,
+            checklistItemId: world.a.checklistItemId,
+            name: "client.pdf",
+            storagePath: `${world.a.firmId}/${world.a.caseId}/client/c.pdf`,
+            fileType: "application/pdf",
+            fileSize: 100,
+            uploadedByClientSessionId: clientSession.id,
+          },
+        ],
+      });
+
+      mockSession(null);
+      mockClientCookie(plaintext);
+      const { GET } = await import("@/app/api/client/checklist/route");
+      const res = await GET();
+      expect(res.status).toBe(200);
+      const items = (await res.json()) as Array<{
+        id: string;
+        documents: Array<{ name: string; uploadedByClient: boolean }>;
+      }>;
+      const target = items.find((i) => i.id === world.a.checklistItemId);
+      const firmDoc = target?.documents.find((d) => d.name === "firm.pdf");
+      const clientDoc = target?.documents.find((d) => d.name === "client.pdf");
+      expect(firmDoc?.uploadedByClient).toBe(false);
+      expect(clientDoc?.uploadedByClient).toBe(true);
+    });
+
+    it("client document GET returns a presigned URL for a doc on their own case", async () => {
+      const { row: token } = await seedLinkToken({
+        caseId: world.a.caseId,
+        firmId: world.a.firmId,
+        issuedByUserId: world.a.ops.id,
+      });
+      const { plaintext } = await seedClientSession({
+        caseId: world.a.caseId,
+        firmId: world.a.firmId,
+        tokenId: token.id,
+      });
+
+      mockSession(null);
+      mockClientCookie(plaintext);
+      const { GET } = await import("@/app/api/client/documents/[id]/route");
+      const res = await GET(
+        buildRequest(`http://localhost/api/client/documents/${world.a.documentId}`) as never,
+        { params: Promise.resolve({ id: world.a.documentId }) },
+      );
+      expect(res.status).toBe(200);
+      const body = await res.json();
+      expect(typeof body.url).toBe("string");
+      expect(body.url.length).toBeGreaterThan(0);
+    });
+
+    it("client document GET refuses a document on a different case (404)", async () => {
+      const { row: token } = await seedLinkToken({
+        caseId: world.a.caseId,
+        firmId: world.a.firmId,
+        issuedByUserId: world.a.ops.id,
+      });
+      const { plaintext } = await seedClientSession({
+        caseId: world.a.caseId,
+        firmId: world.a.firmId,
+        tokenId: token.id,
+      });
+
+      mockSession(null);
+      mockClientCookie(plaintext);
+      const { GET } = await import("@/app/api/client/documents/[id]/route");
+      const res = await GET(
+        buildRequest(`http://localhost/api/client/documents/${world.b.documentId}`) as never,
+        { params: Promise.resolve({ id: world.b.documentId }) },
+      );
+      expect(res.status).toBe(404);
+    });
+
     it("message POST stores a Note with fromClient=true and authorUserId=null", async () => {
       const { row: token } = await seedLinkToken({
         caseId: world.a.caseId,

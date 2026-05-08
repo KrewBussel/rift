@@ -73,7 +73,7 @@ export async function POST(
 
   const sent = await sendEmail(rolloverCase.clientEmail, subject, html).catch((err) => {
     console.error("[client-link] email send failed", err);
-    return false;
+    return { ok: false, reason: err instanceof Error ? err.message : "email send threw" };
   });
 
   const meta = extractRequestMeta(request);
@@ -83,7 +83,7 @@ export async function POST(
     action: "client_portal.link_issued",
     resource: "RolloverCase",
     resourceId: caseId,
-    metadata: { tokenId, emailSent: sent, recipient: rolloverCase.clientEmail },
+    metadata: { tokenId, emailSent: sent.ok, recipient: rolloverCase.clientEmail, emailError: sent.reason ?? null },
     ...meta,
   });
 
@@ -91,7 +91,9 @@ export async function POST(
     ok: true,
     tokenId,
     expiresAt: expiresAt.toISOString(),
-    emailSent: sent,
+    emailSent: sent.ok,
+    emailError: sent.reason ?? null,
+    portalUrl,
   });
 }
 

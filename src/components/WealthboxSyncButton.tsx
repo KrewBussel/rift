@@ -11,15 +11,23 @@ type SyncResult = {
   errors: Array<{ opportunityId: string; message: string }>;
 };
 
+type CrmProvider = "WEALTHBOX" | "SALESFORCE";
+
+const PROVIDER_LABELS: Record<CrmProvider, string> = {
+  WEALTHBOX: "Wealthbox",
+  SALESFORCE: "Salesforce",
+};
+
 /**
- * Inline "Sync from Wealthbox" trigger for the cases page header. Posts to
- * the same /api/integrations/wealthbox/poll endpoint the cron uses, then
- * refreshes the page so any newly-created cases show up immediately.
+ * Inline "Sync from CRM" trigger for the cases page header. Posts to the
+ * provider-neutral poll endpoint, which scans both bookend stages
+ * (Proposal Accepted → create cases, Won → close cases) and refreshes the
+ * page so any newly-created cases show up immediately.
  *
  * Errors are surfaced in a small popover so a stage-mapping or contact-link
  * misconfiguration is visible without digging into Settings.
  */
-export default function WealthboxSyncButton() {
+export default function CrmSyncButton({ provider }: { provider: CrmProvider }) {
   const router = useRouter();
   const [busy, setBusy] = useState(false);
   const [result, setResult] = useState<SyncResult | null>(null);
@@ -29,7 +37,7 @@ export default function WealthboxSyncButton() {
     setBusy(true);
     setErr(null);
     setResult(null);
-    const res = await fetch("/api/integrations/wealthbox/poll", { method: "POST" });
+    const res = await fetch("/api/integrations/crm/poll", { method: "POST" });
     setBusy(false);
     if (!res.ok) {
       const body = (await res.json().catch(() => ({}))) as { error?: string };
@@ -59,7 +67,7 @@ export default function WealthboxSyncButton() {
             strokeLinejoin="round"
           />
         </svg>
-        {busy ? "Syncing…" : "Sync Wealthbox"}
+        {busy ? "Syncing…" : `Sync ${PROVIDER_LABELS[provider]}`}
       </button>
       {result && (
         <span className="text-[11px] tabular-nums" style={{ color: "#7d8590" }}>

@@ -52,7 +52,7 @@ interface RolloverCase {
   activityEvents: ActivityEvent[];
   tasks: Task[];
 }
-interface ChecklistDocument { id: string; name: string; fileType: string; fileSize: number; createdAt: string; uploadedBy: { id: string; firstName: string; lastName: string }; checklistItem: { id: string; name: string } | null; }
+interface ChecklistDocument { id: string; name: string; fileType: string; fileSize: number; createdAt: string; uploadedBy: { id: string; firstName: string; lastName: string } | null; uploadedByClientSessionId: string | null; checklistItem: { id: string; name: string } | null; }
 type ChecklistStatus = "NOT_STARTED" | "REQUESTED" | "RECEIVED" | "REVIEWED" | "COMPLETE";
 interface ChecklistItem { id: string; name: string; required: boolean; status: ChecklistStatus; notes: string | null; sortOrder: number; documents: ChecklistDocument[]; }
 
@@ -88,8 +88,9 @@ const CARD = { background: "#161b22", border: "1px solid #21262d" };
 const CARD_HEADER_BORDER = { borderBottom: "1px solid #21262d" };
 const ICON_BOX = { background: "#21262d", width: 28, height: 28, borderRadius: 8, display: "flex", alignItems: "center", justifyContent: "center", flexShrink: 0 as const };
 
-export default function CaseDetail({ rolloverCase: initial, users, currentUserId, userRole, initialChecklist, initialDocuments, crmConnected = false, crmProviderLabel = null, stageConfig = null }: {
+export default function CaseDetail({ rolloverCase: initial, users, currentUserId, userRole, initialChecklist, initialDocuments, crmConnected = false, crmProviderLabel = null, stageConfig = null, clientLinkActive = false }: {
   rolloverCase: RolloverCase; users: User[]; currentUserId: string; userRole: string; initialChecklist: ChecklistItem[]; initialDocuments: ChecklistDocument[]; crmConnected?: boolean; crmProviderLabel?: string | null; stageConfig?: StageConfigRow[] | null;
+  clientLinkActive?: boolean;
 }) {
   // Visible options in the status dropdown: enabled stages from the firm's
   // overlay, with custom labels swapped in. If the case is currently sitting
@@ -111,12 +112,14 @@ export default function CaseDetail({ rolloverCase: initial, users, currentUserId
   const [editingDetails, setEditingDetails] = useState(false);
   const [clientLinkBusy, setClientLinkBusy] = useState<"idle" | "issuing" | "revoking">("idle");
   const [clientLinkMsg, setClientLinkMsg] = useState<string | null>(null);
+  const [clientLinkFallback, setClientLinkFallback] = useState<{ url: string; reason: string } | null>(null);
   const canManageClientLink = userRole === "ADMIN" || userRole === "OPS";
 
   async function handleIssueClientLink() {
     if (!canManageClientLink) return;
     setClientLinkBusy("issuing");
     setClientLinkMsg(null);
+    setClientLinkFallback(null);
     const res = await fetch(`/api/cases/${rolloverCase.id}/client-link`, {
       method: "POST",
       headers: { "Content-Type": "application/json" },
@@ -127,8 +130,24 @@ export default function CaseDetail({ rolloverCase: initial, users, currentUserId
       setClientLinkMsg("Failed to send portal invite.");
       return;
     }
-    const body = await res.json();
-    setClientLinkMsg(body.emailSent ? "Portal invite sent." : "Link issued (email not sent — check config).");
+    const body = await res.json() as { emailSent: boolean; emailError: string | null; portalUrl: string };
+    if (body.emailSent) {
+      setClientLinkMsg(`Portal invite sent to ${rolloverCase.clientEmail}.`);
+    } else {
+      // Email blocked — surface the reason and the link so the user can paste it manually.
+      setClientLinkMsg(`Link issued — couldn't send email: ${body.emailError ?? "unknown error"}.`);
+      setClientLinkFallback({ url: body.portalUrl, reason: body.emailError ?? "" });
+    }
+  }
+
+  async function handleCopyClientLink() {
+    if (!clientLinkFallback) return;
+    try {
+      await navigator.clipboard.writeText(clientLinkFallback.url);
+      setClientLinkMsg("Portal link copied to clipboard.");
+    } catch {
+      setClientLinkMsg("Couldn't copy — select and copy manually.");
+    }
   }
 
   async function handleRevokeClientAccess() {
@@ -136,6 +155,7 @@ export default function CaseDetail({ rolloverCase: initial, users, currentUserId
     if (!confirm("Revoke all active client portal access for this case?")) return;
     setClientLinkBusy("revoking");
     setClientLinkMsg(null);
+    setClientLinkFallback(null);
     const res = await fetch(`/api/cases/${rolloverCase.id}/client-link`, { method: "DELETE" });
     setClientLinkBusy("idle");
     setClientLinkMsg(res.ok ? "Client access revoked." : "Failed to revoke.");
@@ -235,6 +255,10 @@ export default function CaseDetail({ rolloverCase: initial, users, currentUserId
   }
 
   const [detailsDraft, setDetailsDraft] = useState({
+    clientFirstName: initial.clientFirstName,
+    clientLastName: initial.clientLastName,
+    clientEmail: initial.clientEmail,
+    clientPhone: initial.clientPhone ?? "",
     sourceProvider: initial.sourceProvider,
     destinationCustodian: initial.destinationCustodian,
     accountType: initial.accountType,
@@ -257,7 +281,19 @@ export default function CaseDetail({ rolloverCase: initial, users, currentUserId
   async function handleStatusChange(status: string) { await patchCase({ status }); }
 
   async function handleSaveDetails() {
-    await patchCase({ sourceProvider: detailsDraft.sourceProvider, destinationCustodian: detailsDraft.destinationCustodian, accountType: detailsDraft.accountType, assignedAdvisorId: detailsDraft.assignedAdvisorId, assignedOpsId: detailsDraft.assignedOpsId, highPriority: detailsDraft.highPriority, internalNotes: detailsDraft.internalNotes });
+    await patchCase({
+      clientFirstName: detailsDraft.clientFirstName,
+      clientLastName: detailsDraft.clientLastName,
+      clientEmail: detailsDraft.clientEmail,
+      clientPhone: detailsDraft.clientPhone || null,
+      sourceProvider: detailsDraft.sourceProvider,
+      destinationCustodian: detailsDraft.destinationCustodian,
+      accountType: detailsDraft.accountType,
+      assignedAdvisorId: detailsDraft.assignedAdvisorId,
+      assignedOpsId: detailsDraft.assignedOpsId,
+      highPriority: detailsDraft.highPriority,
+      internalNotes: detailsDraft.internalNotes,
+    });
     setEditingDetails(false);
   }
 
@@ -291,7 +327,7 @@ export default function CaseDetail({ rolloverCase: initial, users, currentUserId
 
       {rolloverCase.needsReview && (
         <div className="mb-5 rounded-lg p-3" style={{ background: "#2d2208", border: "1px solid #5c4419" }}>
-          <p className="text-sm font-semibold" style={{ color: "#e09937" }}>Auto-created from Wealthbox — needs review</p>
+          <p className="text-sm font-semibold" style={{ color: "#e09937" }}>Auto-created from {crmProviderLabel ?? "CRM"} — needs review</p>
           {rolloverCase.reviewReason && (
             <p className="text-xs mt-1" style={{ color: "#d4a05c" }}>{rolloverCase.reviewReason}</p>
           )}
@@ -340,27 +376,61 @@ export default function CaseDetail({ rolloverCase: initial, users, currentUserId
             Opened {formatDate(rolloverCase.createdAt)}
           </p>
           {canManageClientLink && (
-            <div className="flex items-center gap-2 mt-2">
-              <button
-                type="button"
-                onClick={handleIssueClientLink}
-                disabled={clientLinkBusy !== "idle"}
-                className="text-xs px-2.5 py-1 rounded-md transition-colors disabled:opacity-50"
-                style={{ background: "#1f2937", color: "#c9d1d9", border: "1px solid #30363d" }}
-              >
-                {clientLinkBusy === "issuing" ? "Sending…" : "Send client portal link"}
-              </button>
-              <button
-                type="button"
-                onClick={handleRevokeClientAccess}
-                disabled={clientLinkBusy !== "idle"}
-                className="text-xs px-2.5 py-1 rounded-md transition-colors disabled:opacity-50"
-                style={{ background: "transparent", color: "#9ca3af", border: "1px solid #30363d" }}
-              >
-                {clientLinkBusy === "revoking" ? "Revoking…" : "Revoke access"}
-              </button>
-              {clientLinkMsg && (
-                <span className="text-xs" style={{ color: "#7d8590" }}>{clientLinkMsg}</span>
+            <div className="mt-2">
+              <div className="flex items-center gap-2 flex-wrap">
+                <button
+                  type="button"
+                  onClick={handleIssueClientLink}
+                  disabled={clientLinkBusy !== "idle"}
+                  className="text-xs px-2.5 py-1 rounded-md transition-colors disabled:opacity-50"
+                  style={{ background: "#1f2937", color: "#c9d1d9", border: "1px solid #30363d" }}
+                >
+                  {clientLinkBusy === "issuing" ? "Sending…" : "Send client portal link"}
+                </button>
+                <button
+                  type="button"
+                  onClick={handleRevokeClientAccess}
+                  disabled={clientLinkBusy !== "idle"}
+                  className="text-xs px-2.5 py-1 rounded-md transition-colors disabled:opacity-50"
+                  style={{ background: "transparent", color: "#9ca3af", border: "1px solid #30363d" }}
+                >
+                  {clientLinkBusy === "revoking" ? "Revoking…" : "Revoke access"}
+                </button>
+                {clientLinkMsg && !clientLinkFallback && (
+                  <span className="text-xs" style={{ color: "#7d8590" }}>{clientLinkMsg}</span>
+                )}
+              </div>
+
+              {clientLinkFallback && (
+                <div
+                  className="mt-2 rounded-md p-2.5 max-w-2xl"
+                  style={{ background: "#2d2208", border: "1px solid #5c4419" }}
+                >
+                  <p className="text-xs font-medium" style={{ color: "#e09937" }}>
+                    {clientLinkMsg}
+                  </p>
+                  <p className="text-[11px] mt-1" style={{ color: "#9d7c3a" }}>
+                    The link below works — copy it and send it to the client manually.
+                  </p>
+                  <div className="flex items-center gap-2 mt-2">
+                    <input
+                      type="text"
+                      readOnly
+                      value={clientLinkFallback.url}
+                      onFocus={(e) => e.currentTarget.select()}
+                      className="flex-1 text-xs rounded px-2 py-1 font-mono"
+                      style={{ background: "#0d1117", border: "1px solid #3a2d12", color: "#c9d1d9" }}
+                    />
+                    <button
+                      type="button"
+                      onClick={handleCopyClientLink}
+                      className="text-xs px-2.5 py-1 rounded-md flex-shrink-0"
+                      style={{ background: "#3a2d12", color: "#e09937", border: "1px solid #5c4419" }}
+                    >
+                      Copy
+                    </button>
+                  </div>
+                </div>
               )}
             </div>
           )}
@@ -418,6 +488,44 @@ export default function CaseDetail({ rolloverCase: initial, users, currentUserId
 
             {editingDetails ? (
               <div className="space-y-3 p-5">
+                <EditRow label="Client First Name">
+                  <input
+                    type="text"
+                    value={detailsDraft.clientFirstName}
+                    onChange={(e) => setDetailsDraft((d) => ({ ...d, clientFirstName: e.target.value }))}
+                    className={inputCls}
+                    style={inputStyle}
+                  />
+                </EditRow>
+                <EditRow label="Client Last Name">
+                  <input
+                    type="text"
+                    value={detailsDraft.clientLastName}
+                    onChange={(e) => setDetailsDraft((d) => ({ ...d, clientLastName: e.target.value }))}
+                    className={inputCls}
+                    style={inputStyle}
+                  />
+                </EditRow>
+                <EditRow label="Client Email">
+                  <input
+                    type="email"
+                    placeholder="client@example.com"
+                    value={detailsDraft.clientEmail}
+                    onChange={(e) => setDetailsDraft((d) => ({ ...d, clientEmail: e.target.value }))}
+                    className={inputCls}
+                    style={inputStyle}
+                  />
+                </EditRow>
+                <EditRow label="Client Phone">
+                  <input
+                    type="tel"
+                    placeholder="555-123-4567"
+                    value={detailsDraft.clientPhone}
+                    onChange={(e) => setDetailsDraft((d) => ({ ...d, clientPhone: e.target.value }))}
+                    className={inputCls}
+                    style={inputStyle}
+                  />
+                </EditRow>
                 {[
                   { label: "Source Provider", key: "sourceProvider", type: "input" },
                   { label: "Destination Custodian", key: "destinationCustodian", type: "input" },
@@ -462,7 +570,76 @@ export default function CaseDetail({ rolloverCase: initial, users, currentUserId
           <TaskList caseId={rolloverCase.id} initialTasks={rolloverCase.tasks} users={users} />
 
           {/* Checklist */}
-          <ChecklistPanel caseId={rolloverCase.id} initialItems={initialChecklist} userRole={userRole} onDocumentUploaded={() => setDocRefreshKey((k) => k + 1)} />
+          <ChecklistPanel
+            caseId={rolloverCase.id}
+            initialItems={initialChecklist}
+            userRole={userRole}
+            onDocumentUploaded={() => setDocRefreshKey((k) => k + 1)}
+            clientLinkActive={clientLinkActive}
+            onIssueClientLink={canManageClientLink ? handleIssueClientLink : undefined}
+          />
+
+          {/* Notes — moved into the left column so the user doesn't have to
+              scroll past the right-column CRM + Activity blocks to reach it. */}
+          <section className="rounded-xl" style={CARD}>
+            <div className="flex items-center gap-2.5 px-5 pt-4 pb-3" style={CARD_HEADER_BORDER}>
+              <div style={ICON_BOX}>
+                <svg width="14" height="14" viewBox="0 0 14 14" fill="none" style={{ color: "#7d8590" }}>
+                  <path d="M2 2.5h10v7a1 1 0 0 1-1 1H3a1 1 0 0 1-1-1v-7z" stroke="currentColor" strokeWidth="1.3"/>
+                  <path d="M2 5h10" stroke="currentColor" strokeWidth="1.2"/>
+                  <path d="M5 2v3M9 2v3" stroke="currentColor" strokeWidth="1.2" strokeLinecap="round"/>
+                </svg>
+              </div>
+              <h2 className="text-sm font-semibold" style={{ color: "#e4e6ea" }}>Notes</h2>
+              <span className="text-xs rounded-full px-2 py-0.5 ml-auto" style={{ background: "#21262d", color: "#7d8590" }}>{rolloverCase.notes.length}</span>
+            </div>
+            <div className="p-5">
+              <form onSubmit={handleAddNote} className="flex gap-2 mb-4">
+                <textarea
+                  value={noteText}
+                  onChange={(e) => setNoteText(e.target.value)}
+                  placeholder="Write a note…"
+                  rows={2}
+                  className="flex-1 rounded-lg px-3 py-2 text-sm focus:outline-none focus:ring-0 resize-none"
+                  style={{ background: "#0d1117", border: "1px solid #30363d", color: "#c9d1d9" }}
+                />
+                <button
+                  type="submit"
+                  disabled={submittingNote || !noteText.trim()}
+                  className="self-end rounded-lg bg-blue-600 px-3 py-2 text-sm font-medium text-white hover:bg-blue-500 disabled:opacity-50 transition-colors"
+                >
+                  Add
+                </button>
+              </form>
+              <div className="space-y-3">
+                {rolloverCase.notes.length === 0 && (
+                  <p className="text-sm py-1" style={{ color: "#7d8590" }}>No notes yet.</p>
+                )}
+                {[...rolloverCase.notes].reverse().map((note) => (
+                  <div key={note.id} className="rounded-lg p-3" style={{ background: "#0d1117", border: "1px solid #21262d" }}>
+                    <div className="flex items-center justify-between mb-1.5">
+                      <div className="flex items-center gap-2">
+                        {note.author ? (
+                          <Avatar userId={note.author.id} firstName={note.author.firstName} lastName={note.author.lastName} size={20} />
+                        ) : (
+                          <div className="w-5 h-5 rounded-full flex items-center justify-center flex-shrink-0" style={{ background: "#2d333b" }}>
+                            <span className="text-[9px] font-semibold" style={{ color: "#8b949e" }}>
+                              {note.fromClient ? "C" : "S"}
+                            </span>
+                          </div>
+                        )}
+                        <span className="text-xs font-medium" style={{ color: "#c9d1d9" }}>
+                          {note.author ? `${note.author.firstName} ${note.author.lastName}` : note.fromClient ? "Client" : "System"}
+                        </span>
+                      </div>
+                      <span className="text-xs" style={{ color: "#7d8590" }}>{formatDateTime(note.createdAt)}</span>
+                    </div>
+                    <p className="text-sm whitespace-pre-wrap leading-relaxed" style={{ color: "#c9d1d9" }}>{note.body}</p>
+                  </div>
+                ))}
+              </div>
+            </div>
+          </section>
 
         </div>
 
@@ -650,66 +827,6 @@ export default function CaseDetail({ rolloverCase: initial, users, currentUserId
             </div>
           </section>
 
-          {/* Notes */}
-          <section className="rounded-xl overflow-hidden" style={CARD}>
-            <div className="flex items-center gap-2.5 px-5 pt-4 pb-3" style={CARD_HEADER_BORDER}>
-              <div style={ICON_BOX}>
-                <svg width="14" height="14" viewBox="0 0 14 14" fill="none" style={{ color: "#7d8590" }}>
-                  <path d="M2 2.5h10v7a1 1 0 0 1-1 1H3a1 1 0 0 1-1-1v-7z" stroke="currentColor" strokeWidth="1.3"/>
-                  <path d="M2 5h10" stroke="currentColor" strokeWidth="1.2"/>
-                  <path d="M5 2v3M9 2v3" stroke="currentColor" strokeWidth="1.2" strokeLinecap="round"/>
-                </svg>
-              </div>
-              <h2 className="text-sm font-semibold" style={{ color: "#e4e6ea" }}>Notes</h2>
-              <span className="text-xs rounded-full px-2 py-0.5 ml-auto" style={{ background: "#21262d", color: "#7d8590" }}>{rolloverCase.notes.length}</span>
-            </div>
-            <div className="p-5">
-              <div className="space-y-3 mb-4">
-                {rolloverCase.notes.length === 0 && (
-                  <p className="text-sm py-1" style={{ color: "#7d8590" }}>No notes yet.</p>
-                )}
-                {rolloverCase.notes.map((note) => (
-                  <div key={note.id} className="rounded-lg p-3" style={{ background: "#0d1117", border: "1px solid #21262d" }}>
-                    <div className="flex items-center justify-between mb-1.5">
-                      <div className="flex items-center gap-2">
-                        {note.author ? (
-                          <Avatar userId={note.author.id} firstName={note.author.firstName} lastName={note.author.lastName} size={20} />
-                        ) : (
-                          <div className="w-5 h-5 rounded-full flex items-center justify-center flex-shrink-0" style={{ background: "#2d333b" }}>
-                            <span className="text-[9px] font-semibold" style={{ color: "#8b949e" }}>
-                              {note.fromClient ? "C" : "S"}
-                            </span>
-                          </div>
-                        )}
-                        <span className="text-xs font-medium" style={{ color: "#c9d1d9" }}>
-                          {note.author ? `${note.author.firstName} ${note.author.lastName}` : note.fromClient ? "Client" : "System"}
-                        </span>
-                      </div>
-                      <span className="text-xs" style={{ color: "#7d8590" }}>{formatDateTime(note.createdAt)}</span>
-                    </div>
-                    <p className="text-sm whitespace-pre-wrap leading-relaxed" style={{ color: "#c9d1d9" }}>{note.body}</p>
-                  </div>
-                ))}
-              </div>
-              <form onSubmit={handleAddNote} className="flex gap-2">
-                <textarea
-                  value={noteText}
-                  onChange={(e) => setNoteText(e.target.value)}
-                  placeholder="Write a note…"
-                  rows={2}
-                  className="flex-1 rounded-lg px-3 py-2 text-sm focus:outline-none focus:ring-0 resize-none"
-                  style={{ background: "#0d1117", border: "1px solid #30363d", color: "#c9d1d9" }}
-                />
-                <button
-                  type="submit"
-                  disabled={submittingNote || !noteText.trim()}
-                  className="self-end rounded-lg bg-blue-600 px-3 py-2 text-sm font-medium text-white hover:bg-blue-500 disabled:opacity-50 transition-colors"
-                >
-                  Add
-                </button>
-              </form>
-            </div>
-          </section>
         </div>
       </div>
     </div>

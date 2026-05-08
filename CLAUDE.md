@@ -6,7 +6,15 @@ This file provides guidance to Claude Code (claude.ai/code) when working with co
 
 ## What this is
 
-Rift is a multi-tenant rollover-case-management SaaS for independent RIAs (registered investment advisors). One firm = many users (ADMIN / ADVISOR / OPS) = many `RolloverCase` records moving through 7 stages (INTAKE → AWAITING_CLIENT_ACTION → READY_TO_SUBMIT → SUBMITTED → PROCESSING → IN_TRANSIT → COMPLETED). Around the case, the app layers a custodian-knowledge hub, a magic-link client portal, CRM sync (Wealthbox + Salesforce), and an admin dashboard with customizable widgets.
+Rift is a multi-tenant rollover-case-management SaaS for independent RIAs (registered investment advisors). One firm = many users (ADMIN / ADVISOR / OPS) = many `RolloverCase` records moving through a 7-stage pipeline:
+
+```
+PROPOSAL_ACCEPTED → AWAITING_CLIENT_ACTION → READY_TO_SUBMIT → SUBMITTED → PROCESSING → IN_TRANSIT → WON
+```
+
+The two **bookend** stages (`PROPOSAL_ACCEPTED`, `WON`) sync bidirectionally with the firm's CRM. The five **intermediate** stages are Rift-only — the CRM never sees them. Each firm can rename and selectively disable the intermediate stages via a `CaseStageConfig` overlay (the bookends are always enabled because Wealthbox sync depends on them).
+
+Around the case, the app layers a custodian-knowledge hub, a magic-link client portal, CRM sync (Wealthbox now, Salesforce stubbed), an admin dashboard with customizable widgets, and a guided first-time onboarding wizard.
 
 ## Commands
 
@@ -79,17 +87,35 @@ There are **two independent auth systems**:
 
 ### Firm onboarding flow
 
-There is **no public signup route**. A firm's first record is created by us (the platform) after a contract is signed. The flow is:
+There is **no public signup route**. A firm's first record is created by us (the platform) after a contract is signed. From there, the admin walks through a 6-step onboarding wizard at `/onboarding` before they can use the dashboard.
 
-1. **Platform creates the Firm + first ADMIN.** Run a one-off script (or future internal admin tool) that inserts a `Firm` row and a single `User` with `role: ADMIN` and a `PasswordResetToken` (longer TTL acting as a "set initial password" token). The admin receives an email with a set-password link — never a plaintext password.
-2. **Admin completes a setup wizard on first login.** Confirms firm details (legal name, website, support email), optionally connects a CRM (Wealthbox token paste or Salesforce OAuth), and invites their team.
-3. **Team invites use `/api/firm/team` (ADMIN-only).** The admin types a name + email and picks `ADVISOR` or `OPS`. The route creates the user row and emails a set-password link. Seats are gated by `Firm.seatsLimit`.
-4. **CRM-assisted invite is a UX accelerator, not an auto-import.** When a CRM is connected, the invite UI fetches the CRM's team list and renders it as a checklist with a role dropdown next to each name. The admin still picks who to onboard and what Rift role each gets. CRMs do **not** know the difference between `ADVISOR` and `OPS`, and not every CRM team member belongs in Rift (seats are billable).
+**Step 0 — platform creates the Firm + first ADMIN.** A one-off script inserts a `Firm` row (with `onboardedAt: null`) and a single `User` with `role: ADMIN`. A `PasswordResetToken` is issued; the admin receives an email with a set-password link.
 
-Why CRM is never the source of truth for Rift access:
+**Steps 1–6 — guided wizard at `/onboarding`** (gated on `Firm.onboardedAt IS NULL` for ADMIN; non-admins see a "setup in progress" screen):
+
+| # | Step | What it does |
+|---|---|---|
+| 1 | **Choose CRM** | Wealthbox today, Salesforce shown but disabled |
+| 2 | **Connect** | Token paste with inline how-to + an illustrated mock of the Wealthbox API Access screen. Hits `POST /api/integrations/wealthbox` |
+| 3 | **Trigger stage** | Live-loads the firm's Wealthbox stages, admin picks which one creates Rift cases (typically "Proposal Accepted") |
+| 4 | **Won stage** | Picks the Wealthbox stage to push to when a case is moved to `WON` in Rift |
+| 5 | **Rift stages** | Per-firm `CaseStageConfig`: rename or disable any of the five intermediate stages. Bookends always-enabled |
+| 6 | **Invite team** | Pulls the firm's Wealthbox account members via `getOrgUsers()`. Admin assigns Advisor/Ops/Skip per row. Each invite hits the existing `POST /api/firm/team`. Filters out the connected admin themselves; locks rows where the email belongs to another Rift firm |
+
+`POST /api/firm/onboarding` is the completion endpoint. It enforces preconditions: a CRM must be connected and **both** bookend mappings must exist. Sets `Firm.onboardedAt = now()` and unlocks the dashboard.
+
+Existing firms predating the wizard are auto-onboarded via the migration backfill (`onboardedAt = createdAt`) so nothing breaks for them. Default `CaseStageConfig` rows for all 7 statuses are also seeded by the migration.
+
+#### Team invites — single + bulk
+
+- **Single:** `POST /api/firm/team` with `{firstName, lastName, email, role}`. Creates a `User` row, generates a temporary password, returns it to the admin to share. (Email-based set-password is still TODO; the temp password mechanism is the current state.) Seats gated by `Firm.seatsLimit`.
+- **Bulk from CRM:** `GET /api/integrations/crm/users` returns Wealthbox account members annotated with `riftStatus: "available" | "in_firm" | "other_firm"`. The wizard's team step and the Settings → Team panel both consume this and call `POST /api/firm/team` per row.
+
+CRM-assisted invite is **never an auto-import**:
 - `ADVISOR` vs `OPS` is a Rift-only concept (it gates `assignedAdvisorId` vs `assignedOpsId` visibility).
 - Auto-importing every CRM user blows past `Firm.seatsLimit`.
 - CRM-side email and Rift login email are not always the same person.
+- The admin always picks who and what role.
 
 ### CRM integration model
 
@@ -99,16 +125,100 @@ Firm  ──1:1──  CrmConnection  (provider: WEALTHBOX | SALESFORCE)
                   encryptedToken / refreshTokenCiphertext (AES-256-GCM via AUTH_SECRET)
                   ↓
                   CrmStageMapping[]  (firmId, riftStatus → crmStageId/Name)
-RolloverCase  ──  wealthboxOpportunityId, wealthboxLastSyncedAt, wealthboxLastSyncError
+                  └─ capped at the two bookends: PROPOSAL_ACCEPTED + WON
+
+Firm  ──1:n──  CaseStageConfig  (firmId, status, customLabel?, isEnabled, sortOrder)
+                  └─ seeded for all 7 statuses; bookends forced isEnabled=true server-side
+
+RolloverCase  ──  Wealthbox-shadowed metadata (snapshot from the linked opp):
+                    wealthboxOpportunityId
+                    wealthboxOpportunityName
+                    wealthboxAmount + wealthboxAmountCurrency
+                    wealthboxTargetClose
+                    wealthboxProbability
+                    wealthboxOppCreatedAt
+                    wealthboxLinkedAt / wealthboxLastSyncedAt / wealthboxLastSyncError
+                    needsReview + reviewReason  (auto-flagged when missing custom fields)
+                    clientPhone                 (pulled from contact, click-to-call in UI)
 ```
 
-`src/lib/crmClient.ts` is the **provider-polymorphic dispatcher** — every route calls `getProviderClient(connection)` and gets a unified interface (`getStages`, `searchOpportunities`, `updateOpportunityStage`, etc.). Salesforce branch handles OAuth refresh + 401 retry transparently. Don't add provider-specific logic outside `crmClient.ts` / `salesforce.ts` / `wealthbox.ts`.
+#### Polymorphic client
 
-`src/lib/crmSync.ts` is the **non-throwing sync engine**. `syncOpportunityStage(caseId)` is called fire-and-forget from `PATCH /api/cases/[id]` when status changes. Failures land on the case row (`wealthboxLastSyncError`) and the connection (`lastHealthOk = false`); they never block the upstream user action.
+`src/lib/crmClient.ts` is the **provider-polymorphic dispatcher** — every route calls `getProviderClient(connection)` and gets a unified `CrmProviderClient` interface:
 
-The shared routes are at `/api/integrations/crm/*` (stages, mapping, opportunities). The provider-specific bits are `/api/integrations/wealthbox` (token paste — POST only) and `/api/integrations/salesforce/{authorize,callback}` (OAuth dance with PKCE). Per-case link/unlink lives at `/api/cases/[id]/crm`.
+```
+getStages, searchOpportunities, getOpportunity, getOpportunityHydrated,
+listOpportunitiesByStage, updateOpportunityStage, createOpportunity, getOrgUsers
+```
+
+Salesforce branch handles OAuth refresh + 401 retry transparently. Don't add provider-specific logic outside `crmClient.ts` / `salesforce.ts` / `wealthbox.ts`. Salesforce returns empty for `getOrgUsers` — bulk team-import for SF isn't built yet (the user adds team manually). Inbound polling and the reverse Won bookend work for both providers via the same `pollFirmForNewOpportunities` function.
+
+#### Sync engine — `src/lib/crmSync.ts`
+
+Non-throwing throughout. Failures land on the case row and connection but never block the upstream user action.
+
+| Function | Direction | Trigger |
+|---|---|---|
+| `syncOpportunityStage(caseId)` | Rift → CRM | Fire-and-forget from `PATCH /api/cases/[id]` when status changes. Silently no-ops for intermediate (Rift-only) stages |
+| `pollFirmForNewOpportunities(firmId)` | CRM → Rift, **both bookends** | Cron + page-load auto-sync + manual button. Single pass scans the Proposal Accepted stage to create new cases AND scans the Won stage to auto-close linked cases |
+| `refreshCaseFromCrm(caseId, actorUserId)` | CRM → Rift, single case | "Refresh from CRM" button on case detail. Re-pulls stage AND all Wealthbox-shadowed metadata (amount, target close, probability, phone, etc.) |
+| `maybePollOnPageLoad(firmId)` | CRM → Rift, throttled | Server components on the dashboard and cases list pages await this. Throttled to once per 10s per firm; 2.5s timeout. Silent failure |
+
+The reverse Won path inside `pollFirmForNewOpportunities` is what auto-closes a Rift case when its linked opportunity reaches the Won stage in Wealthbox — symmetric to the outbound `syncOpportunityStage` push.
+
+#### Inbound triggers — there are three
+
+The cron is the baseline; the other two cover gaps:
+
+1. **External cron** (cron-job.org → `POST /api/integrations/crm/poll` or the legacy alias `/api/integrations/wealthbox/poll` with `Authorization: Bearer ${CRON_SECRET}`). Polls every connected firm regardless of provider. Cadence is set in cron-job.org; the codebase doesn't care.
+2. **Page-load auto-sync** — `maybePollOnPageLoad` in cases list and dashboard server components. Makes refreshes feel real-time during active use without spamming the API.
+3. **Manual buttons** — "Sync Wealthbox" / "Sync Salesforce" on the cases page (`WealthboxSyncButton.tsx` — the file is named after the original Wealthbox-only version but the component is provider-aware) and "Sync now" in Settings → Integrations both call the same poll endpoint with the active session, scoping to the admin's own firm.
+
+All three call into the same `pollFirmForNewOpportunities` function. The endpoint is fully idempotent — duplicate triggers are safe.
+
+#### Routes
+
+- `/api/integrations/crm/*` — shared: `route.ts` (connection state + DELETE), `stages` (GET CRM stages), `mapping` (PUT bookend mappings), `opportunities` (search), `users` (GET CRM org members for bulk invite)
+- `/api/integrations/wealthbox` — POST token paste (Wealthbox-specific because it's not OAuth)
+- `/api/integrations/crm/poll` — POST inbound trigger (provider-neutral); accepts `Authorization: Bearer ${CRON_SECRET}` for all-firms cron mode, or an active ADMIN session for own-firm-only manual mode. The legacy alias `/api/integrations/wealthbox/poll` forwards here for back-compat with existing cron configurations.
+- `/api/integrations/salesforce/{authorize,callback}` — OAuth dance with PKCE
+- `/api/cases/[id]/crm` — per-case link/unlink
+- `/api/cases/[id]/crm/refresh` — per-case `refreshCaseFromCrm`
+- `/api/firm/stages` — GET/PUT the per-firm `CaseStageConfig` overlay
+- `/api/firm/onboarding` — GET state for the wizard, POST to mark complete
 
 Wealthbox auth header is `ACCESS_TOKEN: <token>` — **not** Bearer. Salesforce uses Bearer.
+
+#### Required CRM-side configuration
+
+Inbound case creation depends on three custom fields on the firm's CRM **Opportunities**. Field names + values are normalized to lowercase Wealthbox-style labels by the provider client, so `crmSync.ts`'s `createCaseFromOpportunity` is provider-agnostic.
+
+**Wealthbox** (Settings → Custom Fields → Opportunities). Defined in `WEALTHBOX_CUSTOM_FIELDS`:
+- `Source Provider` (Text)
+- `Destination Custodian` (Text)
+- `Account Type` (Single-select dropdown)
+
+**Salesforce** (Setup → Object Manager → Opportunity → Fields & Relationships). Defined in `SALESFORCE_OPPORTUNITY_CUSTOM_FIELDS`:
+- `Source_Provider__c` (Text) — label: "Source Provider"
+- `Destination_Custodian__c` (Text) — label: "Destination Custodian"
+- `Account_Type__c` (Picklist) — label: "Account Type"
+
+Both providers funnel through `mapAccountType()`:
+- any value containing "traditional" → `TRADITIONAL_IRA_401K`
+- any value containing "roth" → `ROTH_IRA_401K`
+- any value containing "403" → `IRA_403B`
+- exact "other" → `OTHER`
+- anything else → null → case still created but flagged `needsReview = true`
+
+Plus: for the Won outbound push to actually close the opportunity natively, the firm's Won-mapped stage needs the right "closed" semantics on the CRM side — Wealthbox: stage's win type = "won"; Salesforce: stage IsClosed=true and IsWon=true (Salesforce's "Closed Won" stage has these by default).
+
+#### Stage configuration overlay (`CaseStageConfig`)
+
+Per-firm overlay on the `CaseStatus` enum:
+- `customLabel` — null falls back to canonical label; user-entered string overrides everywhere stage labels render
+- `isEnabled` — only governs the five intermediate stages; bookends are always enabled. Disabled stages disappear from the case status dropdown and from board columns. Existing cases sitting on a now-disabled stage still display correctly via `resolveEnabledStages()` injecting an "orphan" column
+
+Helpers in `src/components/casesDesignTokens.ts` (`resolveStageLabel`, `resolveEnabledStages`) and `src/lib/stageConfig.ts` (`getFirmStageConfig`, `ensureFirmStageConfig`). Server components preload the overlay and pass it to client components as a `stageConfig: StageConfigRow[]` prop. Null-safe — components fall back to canonical defaults if the prop isn't passed.
 
 ### Custodian Intelligence
 
@@ -121,6 +231,18 @@ Admin dashboard (`AdminDashboard.tsx`) is a **bento grid** with three size class
 ### Per-user preferences
 
 `User.preferences` is a Json column. Schema validated in `src/app/api/settings/route.ts` (`PreferencesSchema`). Currently used for: `dashboardWidgets`, `intelligenceSearches`, `pinnedCustodians`, `defaultStatusFilter`, `compactCaseList`, `recentlyViewedCaseIds`. New per-user state goes here unless it's frequently queried (in which case make it a column).
+
+### Per-firm configuration
+
+In addition to `Firm` columns:
+
+- `FirmSettings` — reminders + 2FA + compliance toggles
+- `CrmConnection` — encrypted CRM token + health-check fields
+- `CrmStageMapping` — bookend mappings to CRM stages
+- `CaseStageConfig` — per-firm stage overlay (rename + enable/disable)
+- `Firm.onboardedAt` — gate flag for the `/onboarding` wizard
+
+When adding new firm-level configuration, ask: is this part of "settings" (toggleable defaults) or "integration" (connections to external systems)? Settings go on `FirmSettings`; integrations get their own model.
 
 ## Testing
 
@@ -144,3 +266,10 @@ When adding schema fields used by tests, run **both** `prisma migrate dev` (dev 
 - **Supabase pooled URL gives ECONNREFUSED** for ad-hoc tsx scripts. Use `DIRECT_URL` for those.
 - The shared focus-ring style is intentionally subtle (`focus:ring-0 focus:border-[#3b82f680]`). When adding new inputs, follow the same pattern — avoid Tailwind's default `focus:ring-2 focus:ring-blue-500`.
 - The bento grid's `min-h-0` on the flex chain matters — without it, `flex-1` children grow to content size and the whole page scrolls instead of just the intended panel. Keep `min-h-0` on the dashboard `<main>` and on intermediate flex columns.
+- **`CardSection` is itself a `Card` wrapper** — never nest `<Card><CardSection>...` or you'll render two stacked bordered boxes. If you need a card without a title/description block, use `<Card>` directly with your own padding wrapper (the import-from-Wealthbox panel in `TeamSection.tsx` is the working example).
+- **`@dnd-kit` IDs cause hydration warnings** on the cases board. The library generates incrementing internal IDs (`DndDescribedBy-N`) that diverge between server and client. The fix in `CasesViewBoard.tsx` is a `mounted` flag that gates the draggable wrapper until after first client render — keep that pattern when adding new draggable surfaces.
+- **Wealthbox doesn't support webhooks.** All inbound sync is poll-based. There are three independent triggers (cron, page-load, manual button) and they all converge on `pollFirmForNewOpportunities`. The poll endpoint is idempotent so duplicate triggers are harmless.
+- **Page-load auto-sync is throttled and time-boxed** (`maybePollOnPageLoad`: 10s throttle, 2.5s timeout). Tune via the constants in `src/lib/crmSync.ts` if Wealthbox API quotas become a concern; never remove the timeout — a slow CRM should never block page rendering.
+- **Bookend mappings are required to finish onboarding.** `POST /api/firm/onboarding` 400s if either `PROPOSAL_ACCEPTED` or `WON` mapping is missing, even if the wizard already wrote everything else. Don't skip the bookend save in flows that try to mark onboarding complete.
+- **The `Mark as reviewed` button stayed broken silently for a while** because the case PATCH route validated `needsReview`/`reviewReason` in the Zod schema but didn't include them in the actual update payload. When extending `UpdateCaseSchema` in `src/app/api/cases/[id]/route.ts`, always cross-check that the `prisma.rolloverCase.update` data block actually writes the new field.
+- **Migrations are sequential filename-sorted.** New migrations should be named with a timestamp prefix that's later than existing ones. `prisma migrate deploy` applies in filename order; do not rename existing folders or you'll desync the `_prisma_migrations` table from the filesystem.

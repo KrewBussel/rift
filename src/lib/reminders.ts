@@ -129,7 +129,7 @@ async function sendOverdueTaskReminders(
     });
 
     if (!dryRun) {
-      const ok = await sendEmail(assignee.email, subject, html);
+      const { ok } = await sendEmail(assignee.email, subject, html);
       if (ok) await logReminder(firmId, "OVERDUE_TASKS", refId, assignee.email);
       sent++;
     }
@@ -200,7 +200,7 @@ async function sendStalledCaseReminders(
     });
 
     if (!dryRun) {
-      const ok = await sendEmail(user.email, subject, html);
+      const { ok } = await sendEmail(user.email, subject, html);
       if (ok) await logReminder(firmId, "STALLED_CASES", refId, user.email);
       sent++;
     }
@@ -268,7 +268,7 @@ async function sendMissingDocReminders(
     });
 
     if (!dryRun) {
-      const ok = await sendEmail(user.email, subject, html);
+      const { ok } = await sendEmail(user.email, subject, html);
       if (ok) await logReminder(firmId, "MISSING_DOCS", refId, user.email);
       sent++;
     }

@@ -72,12 +72,28 @@ export default async function CaseDetailPage({ params }: { params: Promise<{ id:
 
   if (!rolloverCase) notFound();
 
-  const [crmConnection, stageConfig] = await Promise.all([
+  const [crmConnection, stageConfig, activeClientLink] = await Promise.all([
     prisma.crmConnection.findUnique({
       where: { firmId },
       select: { id: true, provider: true, connectedUserName: true },
     }),
     getFirmStageConfig(firmId),
+    // Surfaces whether this case currently has a usable client portal link —
+    // either an unconsumed/unrevoked ClientAccessToken, or an active session
+    // born from a token that has since been consumed. Drives the "client
+    // can't see this yet" callout in the checklist panel.
+    prisma.clientAccessToken.findFirst({
+      where: {
+        caseId: id,
+        revokedAt: null,
+        expiresAt: { gt: new Date() },
+        OR: [
+          { consumedAt: null },
+          { sessions: { some: { revokedAt: null, expiresAt: { gt: new Date() } } } },
+        ],
+      },
+      select: { id: true },
+    }),
   ]);
   const crmProviderLabel = crmConnection
     ? crmConnection.provider === "SALESFORCE" ? "Salesforce" : "Wealthbox"
@@ -128,6 +144,7 @@ export default async function CaseDetailPage({ params }: { params: Promise<{ id:
         crmConnected={!!crmConnection}
         crmProviderLabel={crmProviderLabel}
         stageConfig={stageConfig}
+        clientLinkActive={!!activeClientLink}
       />
     </>
   );

@@ -42,20 +42,15 @@ export async function POST(request: NextRequest) {
       caseId: session.caseId,
       case: { firmId: session.firmId },
     },
-    select: { id: true },
+    select: { id: true, status: true },
   });
   if (!item) {
     return NextResponse.json({ error: "Checklist item not found" }, { status: 404 });
   }
 
-  // There is no client User record. Document.uploadedById is required, so we
-  // attribute client uploads to the firm user who issued the link.
-  const token = await prisma.clientAccessToken.findUnique({
-    where: { id: (await prisma.clientSession.findUnique({ where: { id: session.sessionId }, select: { tokenId: true } }))!.tokenId },
-    select: { issuedByUserId: true },
-  });
-  const uploadedById = token!.issuedByUserId;
-
+  // Document is attributed to the client's session, not the firm user who
+  // issued the link. uploadedById stays null for client uploads — the firm
+  // UI renders these as "Client".
   const document = await prisma.document.create({
     data: {
       caseId: session.caseId,
@@ -64,16 +59,21 @@ export async function POST(request: NextRequest) {
       storagePath: key,
       fileType,
       fileSize,
-      uploadedById,
+      uploadedById: null,
+      uploadedByClientSessionId: session.sessionId,
     },
     select: { id: true, name: true, fileType: true, fileSize: true, createdAt: true },
   });
 
   // Move the checklist item to RECEIVED so firm sees it's awaiting review.
-  await prisma.checklistItem.update({
-    where: { id: checklistItemId },
-    data: { status: "RECEIVED" },
-  });
+  // If the firm has already moved past RECEIVED (REVIEWED/COMPLETE), don't
+  // bounce it backward — leave the workflow state alone.
+  if (item.status === "NOT_STARTED" || item.status === "REQUESTED") {
+    await prisma.checklistItem.update({
+      where: { id: checklistItemId },
+      data: { status: "RECEIVED" },
+    });
+  }
 
   await prisma.activityEvent.create({
     data: {

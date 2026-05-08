@@ -3,18 +3,31 @@
 import { useState } from "react";
 import DarkSelect from "./DarkSelect";
 
-interface Document { id: string; name: string; fileType: string; fileSize: number; createdAt: string; uploadedBy: { id: string; firstName: string; lastName: string }; checklistItem: { id: string; name: string } | null; }
+interface Document { id: string; name: string; fileType: string; fileSize: number; createdAt: string; uploadedBy: { id: string; firstName: string; lastName: string } | null; uploadedByClientSessionId: string | null; checklistItem: { id: string; name: string } | null; }
 interface ChecklistItem { id: string; name: string; required: boolean; status: ChecklistStatus; notes: string | null; sortOrder: number; documents: Document[]; }
 type ChecklistStatus = "NOT_STARTED" | "REQUESTED" | "RECEIVED" | "REVIEWED" | "COMPLETE";
-interface Props { caseId: string; initialItems: ChecklistItem[]; userRole: string; onDocumentUploaded: () => void; }
+interface Props {
+  caseId: string;
+  initialItems: ChecklistItem[];
+  userRole: string;
+  onDocumentUploaded: () => void;
+  /** True if the case has an active (unconsumed/unrevoked) ClientAccessToken or an active ClientSession. Drives the inline guidance. */
+  clientLinkActive?: boolean;
+  /** Called when the user wants to issue/refresh the client portal link. */
+  onIssueClientLink?: () => void;
+}
 
-const STATUS_OPTIONS: { value: ChecklistStatus; label: string; bg: string; text: string; dot: string }[] = [
-  { value: "NOT_STARTED", label: "Not Started", bg: "#21262d",  text: "#8b949e",  dot: "#6e7681"  },
-  { value: "REQUESTED",   label: "Requested",   bg: "#2d2208",  text: "#e09937",  dot: "#d29922"  },
-  { value: "RECEIVED",    label: "Received",    bg: "#0d1f38",  text: "#79c0ff",  dot: "#388bfd"  },
-  { value: "REVIEWED",    label: "Reviewed",    bg: "#1d1535",  text: "#c4b5fd",  dot: "#a78bfa"  },
-  { value: "COMPLETE",    label: "Complete",    bg: "#0d2318",  text: "#6ee7b7",  dot: "#3fb950"  },
+const STATUS_OPTIONS: { value: ChecklistStatus; label: string; bg: string; text: string; dot: string; help: string }[] = [
+  { value: "NOT_STARTED", label: "Not Started", bg: "#21262d",  text: "#8b949e",  dot: "#6e7681",  help: "Internal — not visible on the client portal." },
+  { value: "REQUESTED",   label: "Requested",   bg: "#2d2208",  text: "#e09937",  dot: "#d29922",  help: "Visible on the client portal as 'Action needed'. Client can upload a file." },
+  { value: "RECEIVED",    label: "Received",    bg: "#0d1f38",  text: "#79c0ff",  dot: "#388bfd",  help: "Client uploaded — ready for your review." },
+  { value: "REVIEWED",    label: "Reviewed",    bg: "#1d1535",  text: "#c4b5fd",  dot: "#a78bfa",  help: "You've reviewed the upload. Move to Complete when done." },
+  { value: "COMPLETE",    label: "Complete",    bg: "#0d2318",  text: "#6ee7b7",  dot: "#3fb950",  help: "Done. Item is closed." },
 ];
+
+// Statuses that show on the client portal as actively requiring or already
+// containing client action. Keep in sync with the portal's checklist render.
+const CLIENT_VISIBLE: ReadonlySet<ChecklistStatus> = new Set(["REQUESTED", "RECEIVED", "REVIEWED", "COMPLETE"]);
 
 function getStatusStyle(status: ChecklistStatus) {
   return STATUS_OPTIONS.find((s) => s.value === status) ?? STATUS_OPTIONS[0];
@@ -26,7 +39,7 @@ function formatBytes(bytes: number) {
   return `${(bytes / (1024 * 1024)).toFixed(1)} MB`;
 }
 
-export default function ChecklistPanel({ caseId, initialItems, userRole, onDocumentUploaded }: Props) {
+export default function ChecklistPanel({ caseId, initialItems, userRole, onDocumentUploaded, clientLinkActive = false, onIssueClientLink }: Props) {
   const [items, setItems] = useState<ChecklistItem[]>(initialItems);
   const [saving, setSaving] = useState<string | null>(null);
   const [uploadingFor, setUploadingFor] = useState<string | null>(null);
@@ -34,6 +47,10 @@ export default function ChecklistPanel({ caseId, initialItems, userRole, onDocum
   const [newItemName, setNewItemName] = useState("");
   const [expandedNotes, setExpandedNotes] = useState<Set<string>>(new Set());
   const [notesDraft, setNotesDraft] = useState<Record<string, string>>({});
+  const [showHowItWorks, setShowHowItWorks] = useState(false);
+
+  const clientRequestedCount = items.filter((i) => i.status === "REQUESTED").length;
+  const clientReceivedCount = items.filter((i) => i.status === "RECEIVED").length;
 
   const required = items.filter((i) => i.required);
   const optional = items.filter((i) => !i.required);
@@ -113,6 +130,8 @@ export default function ChecklistPanel({ caseId, initialItems, userRole, onDocum
     return list.map((item) => {
       const style = getStatusStyle(item.status);
       const isComplete = item.status === "COMPLETE";
+      const isClientVisible = CLIENT_VISIBLE.has(item.status);
+      const canRequest = item.status === "NOT_STARTED";
 
       return (
         <div key={item.id} className="rounded-lg transition-colors" style={{ border: `1px solid ${isComplete ? "#1a3a26" : "#21262d"}`, background: isComplete ? "rgba(13,35,24,0.5)" : "#0d1117" }}>
@@ -138,6 +157,19 @@ export default function ChecklistPanel({ caseId, initialItems, userRole, onDocum
                 {item.required && (
                   <span className="text-[10px] font-medium px-1.5 py-0.5 rounded uppercase tracking-wide" style={{ background: "#3d1f1f", color: "#f87171" }}>
                     Required
+                  </span>
+                )}
+                {isClientVisible && (
+                  <span
+                    className="text-[10px] font-medium px-1.5 py-0.5 rounded inline-flex items-center gap-1"
+                    style={{ background: "rgba(59,130,246,0.1)", color: "#79c0ff", border: "1px solid rgba(59,130,246,0.25)" }}
+                    title="This item is visible on the client portal."
+                  >
+                    <svg width="9" height="9" viewBox="0 0 9 9" fill="none">
+                      <circle cx="4.5" cy="4.5" r="3.5" stroke="currentColor" strokeWidth="1.2" />
+                      <circle cx="4.5" cy="4.5" r="1" fill="currentColor" />
+                    </svg>
+                    Client-visible
                   </span>
                 )}
               </div>
@@ -183,6 +215,22 @@ export default function ChecklistPanel({ caseId, initialItems, userRole, onDocum
 
             {/* Actions */}
             <div className="flex items-center gap-1 flex-shrink-0">
+              {/* Quick "Request from client" — only shows on items not yet sent to the client. */}
+              {canRequest && (userRole === "ADMIN" || userRole === "OPS") && (
+                <button
+                  type="button"
+                  onClick={() => handleStatusChange(item.id, "REQUESTED")}
+                  disabled={saving === item.id}
+                  className="text-xs px-2 py-1 rounded-md inline-flex items-center gap-1 font-medium transition-colors disabled:opacity-50"
+                  style={{ background: "rgba(245,158,11,0.1)", color: "#e09937", border: "1px solid rgba(245,158,11,0.3)" }}
+                  title="Mark as requested — this makes the item visible on the client portal."
+                >
+                  <svg width="10" height="10" viewBox="0 0 10 10" fill="none">
+                    <path d="M2 5h6M5 2l3 3-3 3" stroke="currentColor" strokeWidth="1.4" strokeLinecap="round" strokeLinejoin="round" />
+                  </svg>
+                  Request
+                </button>
+              )}
               <DarkSelect
                 value={item.status}
                 onChange={(v) => handleStatusChange(item.id, v as ChecklistStatus)}
@@ -243,7 +291,7 @@ export default function ChecklistPanel({ caseId, initialItems, userRole, onDocum
   }
 
   return (
-    <section className="rounded-xl overflow-hidden" style={{ background: "#161b22", border: "1px solid #21262d" }}>
+    <section className="rounded-xl" style={{ background: "#161b22", border: "1px solid #21262d" }}>
       {/* Header */}
       <div className="flex items-center justify-between px-5 pt-4 pb-3" style={{ borderBottom: "1px solid #21262d" }}>
         <div className="flex items-center gap-2.5">
@@ -325,6 +373,97 @@ export default function ChecklistPanel({ caseId, initialItems, userRole, onDocum
                   <span style={{ color: "#484f58" }}>{s.label}</span>
                 </span>
               ))}
+            </div>
+          </div>
+        )}
+
+        {/* Inline guide — collapsible. Always show the toggle for ADMIN/OPS so they can re-read the flow. */}
+        {(userRole === "ADMIN" || userRole === "OPS") && (
+          <div className="mb-4">
+            <button
+              type="button"
+              onClick={() => setShowHowItWorks((v) => !v)}
+              className="text-[11px] inline-flex items-center gap-1 transition-colors"
+              style={{ color: "#7d8590" }}
+              onMouseEnter={(e) => ((e.currentTarget as HTMLElement).style.color = "#c9d1d9")}
+              onMouseLeave={(e) => ((e.currentTarget as HTMLElement).style.color = "#7d8590")}
+            >
+              <svg width="11" height="11" viewBox="0 0 11 11" fill="none" style={{ transform: showHowItWorks ? "rotate(90deg)" : "rotate(0)", transition: "transform 0.15s" }}>
+                <path d="M3.5 2.5l3 3-3 3" stroke="currentColor" strokeWidth="1.4" strokeLinecap="round" strokeLinejoin="round" />
+              </svg>
+              How does the client see this?
+            </button>
+            {showHowItWorks && (
+              <div className="mt-2 rounded-lg p-3 text-[11px] space-y-2" style={{ background: "#0d1117", border: "1px solid #21262d", color: "#9ca3af" }}>
+                <p>
+                  <span className="font-semibold" style={{ color: "#e4e6ea" }}>1. Mark items as <span style={{ color: "#e09937" }}>Requested</span></span> to send them to the client.
+                  Click <em>Request</em> on any item, or change the status dropdown.
+                </p>
+                <p>
+                  <span className="font-semibold" style={{ color: "#e4e6ea" }}>2. Send the client portal link</span> from the case header.
+                  The client can sign in with the magic link, see every Requested item, and upload directly.
+                </p>
+                <p>
+                  <span className="font-semibold" style={{ color: "#e4e6ea" }}>3. Review uploads.</span> When a client uploads, the item moves to <span style={{ color: "#79c0ff" }}>Received</span> automatically.
+                  Mark it <span style={{ color: "#c4b5fd" }}>Reviewed</span> while you check it, then <span style={{ color: "#6ee7b7" }}>Complete</span> when done.
+                </p>
+                <p style={{ color: "#7d8590" }}>
+                  <span className="font-semibold" style={{ color: "#9ca3af" }}>Visibility:</span>{" "}
+                  Items in <em>Not Started</em> are internal only. Anything in Requested / Received / Reviewed / Complete is visible on the client portal.
+                </p>
+              </div>
+            )}
+          </div>
+        )}
+
+        {/* Live callout: there are Requested items but no active client portal link. */}
+        {clientRequestedCount > 0 && !clientLinkActive && (userRole === "ADMIN" || userRole === "OPS") && (
+          <div
+            className="mb-4 rounded-lg p-3 flex items-start gap-2.5"
+            style={{ background: "rgba(245,158,11,0.06)", border: "1px solid rgba(245,158,11,0.25)" }}
+          >
+            <svg width="14" height="14" viewBox="0 0 14 14" fill="none" className="flex-shrink-0 mt-0.5" style={{ color: "#e09937" }}>
+              <path d="M7 1.5L13 11.5H1L7 1.5z" stroke="currentColor" strokeWidth="1.3" strokeLinejoin="round" />
+              <path d="M7 6v2M7 9.5v.3" stroke="currentColor" strokeWidth="1.4" strokeLinecap="round" />
+            </svg>
+            <div className="flex-1 min-w-0">
+              <p className="text-xs font-semibold" style={{ color: "#e09937" }}>
+                {clientRequestedCount} item{clientRequestedCount === 1 ? "" : "s"} requested — but the client can't see them yet
+              </p>
+              <p className="text-[11px] mt-0.5" style={{ color: "#9d7c3a" }}>
+                The client only sees Requested items after you send them a portal link.
+              </p>
+            </div>
+            {onIssueClientLink && (
+              <button
+                type="button"
+                onClick={onIssueClientLink}
+                className="text-xs px-2.5 py-1 rounded-md font-medium flex-shrink-0 transition-colors"
+                style={{ background: "#3a2d12", color: "#e09937", border: "1px solid #5c4419" }}
+              >
+                Send portal link
+              </button>
+            )}
+          </div>
+        )}
+
+        {/* Live callout: client uploads ready for review. */}
+        {clientReceivedCount > 0 && (
+          <div
+            className="mb-4 rounded-lg p-3 flex items-start gap-2.5"
+            style={{ background: "rgba(59,130,246,0.06)", border: "1px solid rgba(59,130,246,0.25)" }}
+          >
+            <svg width="14" height="14" viewBox="0 0 14 14" fill="none" className="flex-shrink-0 mt-0.5" style={{ color: "#79c0ff" }}>
+              <circle cx="7" cy="7" r="5.5" stroke="currentColor" strokeWidth="1.3" />
+              <path d="M5 7.5l1.5 1.5L9.5 5.5" stroke="currentColor" strokeWidth="1.3" strokeLinecap="round" strokeLinejoin="round" />
+            </svg>
+            <div>
+              <p className="text-xs font-semibold" style={{ color: "#79c0ff" }}>
+                {clientReceivedCount} client upload{clientReceivedCount === 1 ? "" : "s"} ready for review
+              </p>
+              <p className="text-[11px] mt-0.5" style={{ color: "#9ca3af" }}>
+                Click an item below to view the file. Move it to <em>Reviewed</em> once you've checked it.
+              </p>
             </div>
           </div>
         )}
