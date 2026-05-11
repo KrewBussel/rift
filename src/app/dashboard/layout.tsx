@@ -3,6 +3,8 @@ import { redirect } from "next/navigation";
 import { prisma } from "@/lib/prisma";
 import Sidebar from "@/components/Sidebar";
 import DashboardHeader from "@/components/DashboardHeader";
+import SidebarV2 from "@/components/v2/SidebarV2";
+import { T } from "@/components/v2/tokens";
 
 export default async function DashboardLayout({ children }: { children: React.ReactNode }) {
   const session = await auth();
@@ -15,7 +17,7 @@ export default async function DashboardLayout({ children }: { children: React.Re
     }),
     prisma.firm.findUnique({
       where: { id: session.user.firmId },
-      select: { name: true, logoUrl: true, updatedAt: true, onboardedAt: true },
+      select: { name: true, logoUrl: true, updatedAt: true, onboardedAt: true, planTier: true },
     }),
   ]);
 
@@ -36,6 +38,63 @@ export default async function DashboardLayout({ children }: { children: React.Re
     );
   }
 
+  const role = session.user.role;
+  const isAdmin = role === "ADMIN";
+
+  /* ── Admin V2 layout (Claude paper palette) ─────────────────────────── */
+  if (isAdmin && user && firm) {
+    const firmId = session.user.firmId;
+    const [activeCases, recent] = await Promise.all([
+      prisma.rolloverCase.count({ where: { firmId, status: { not: "WON" } } }),
+      prisma.rolloverCase.findMany({
+        where: { firmId },
+        select: {
+          id: true,
+          clientFirstName: true,
+          clientLastName: true,
+          sourceProvider: true,
+          destinationCustodian: true,
+        },
+        orderBy: { updatedAt: "desc" },
+        take: 3,
+      }),
+    ]);
+
+    return (
+      <div
+        style={{
+          display: "flex",
+          height: "100vh",
+          overflow: "hidden",
+          background: T.page,
+          color: T.text,
+          fontFamily:
+            'Inter, system-ui, -apple-system, BlinkMacSystemFont, "Segoe UI", Roboto, sans-serif',
+        }}
+      >
+        <SidebarV2
+          user={{
+            id: user.id,
+            name: `${user.firstName} ${user.lastName}`.trim() || user.email,
+            email: user.email,
+            role: user.role,
+          }}
+          firm={{ name: firm.name, plan: firm.planTier }}
+          caseCount={activeCases}
+          recentCases={recent.map((c) => ({
+            id: c.id,
+            name: `${c.clientFirstName} ${c.clientLastName}`.trim(),
+            sub: `${c.sourceProvider} → ${c.destinationCustodian}`,
+          }))}
+        />
+        <div style={{ flex: 1, overflowY: "auto", minWidth: 0, display: "flex", flexDirection: "column" }}>
+          {children}
+        </div>
+      </div>
+    );
+  }
+
+  /* ── Legacy dark layout (non-admins) ────────────────────────────────── */
   return (
     <div className="flex h-screen overflow-hidden" style={{ background: "#0a0d12" }}>
       <Sidebar user={{ ...session.user!, id: session.user!.id }} />

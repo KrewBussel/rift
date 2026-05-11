@@ -175,12 +175,21 @@ export async function proxy(request: NextRequest) {
     return applyCsp(NextResponse.next());
   }
 
+  // Plain-localhost detection: nested *.localhost subdomains don't resolve in
+  // most browsers, so we keep the user on apex when developing this way. This
+  // is a host-based check (no env-var dependency) so it works regardless of
+  // how NEXT_PUBLIC_ROOT_DOMAIN is configured at startup.
+  const hostHeader = (request.headers.get("host") || "").toLowerCase();
+  const isLocalhostApex = /^localhost(:\d+)?$/.test(hostHeader);
+
   if (isApexOnlyPath(pathname)) {
-    // An already-authenticated user who lands on /login goes straight to their firm.
     if (isAuth && pathname === "/login") {
       const slug = session!.user.firmSlug;
-      if (slug) {
+      if (slug && !isLocalhostApex) {
         return NextResponse.redirect(buildFirmUrl(slug, "/dashboard"));
+      }
+      if (isLocalhostApex) {
+        return NextResponse.redirect(new URL("/dashboard", request.url));
       }
     }
     return applyCsp(NextResponse.next());
@@ -190,6 +199,12 @@ export async function proxy(request: NextRequest) {
   // Bounce to the user's firm subdomain if logged in; otherwise, login.
   if (!isAuth) {
     return NextResponse.redirect(new URL("/login", request.url));
+  }
+  // Dev escape hatch: nested *.localhost subdomains don't resolve in most
+  // browsers, so when the request is hitting plain localhost we skip the
+  // subdomain redirect and render the tenant-scoped path here.
+  if (isLocalhostApex) {
+    return applyCsp(NextResponse.next());
   }
   const slug = session!.user.firmSlug;
   if (slug) {

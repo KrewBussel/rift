@@ -2,6 +2,7 @@ import { auth } from "@/lib/auth";
 import { redirect, notFound } from "next/navigation";
 import { prisma } from "@/lib/prisma";
 import CaseDetail from "@/components/CaseDetail";
+import CaseDetailV2 from "@/components/v2/CaseDetailV2";
 import CaseViewTracker from "@/components/CaseViewTracker";
 import { getFirmStageConfig } from "@/lib/stageConfig";
 
@@ -130,6 +131,22 @@ export default async function CaseDetailPage({ params }: { params: Promise<{ id:
     ...d,
     createdAt: d.createdAt.toISOString(),
   }));
+
+  if (userRole === "ADMIN") {
+    return (
+      <>
+        <CaseViewTracker caseId={id} />
+        <CaseDetailV2
+          rolloverCase={serializedCase}
+          users={users}
+          currentUserId={session.user.id}
+          userRole={userRole}
+          initialChecklist={serializedChecklist}
+          stageConfig={stageConfig}
+        />
+      </>
+    );
+  }
 
   return (
     <>

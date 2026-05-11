@@ -4,16 +4,18 @@ import { prisma } from "@/lib/prisma";
 import { CaseStatus } from "@prisma/client";
 import CaseList from "@/components/CaseList";
 import DashboardWidgets from "@/components/DashboardWidgets";
-import AdminDashboard, {
-  type AdminDashboardData,
-  type PipelineBucket,
-  type NeedsAttentionItem,
-  type ActivityItem,
-  type TeamMember,
-} from "@/components/AdminDashboard";
+// AdminDashboard (v1) is still used by non-admin paths indirectly; v2 lives in components/v2
+
+import AdminDashboardV2, {
+  type V2PipelineBucket,
+  type V2NeedsAttentionItem,
+  type V2ActivityItem,
+  type V2WorkloadRow,
+  type V2InflowWeek,
+} from "@/components/v2/AdminDashboardV2";
 import OnboardingChecklist from "@/components/OnboardingChecklist";
+import OnboardingChecklistV2 from "@/components/v2/OnboardingChecklistV2";
 import { computeOnboardingChecklist } from "@/lib/onboarding";
-import { getFirmUsageSummary } from "@/lib/aiUsage";
 import { getOrCreateFirmSettings } from "@/lib/reminders";
 import { getFirmStageConfig } from "@/lib/stageConfig";
 import { maybePollOnPageLoad } from "@/lib/crmSync";
@@ -27,16 +29,6 @@ const DEFAULT_STATUS_LABELS: Record<string, string> = {
   PROCESSING: "Processing",
   IN_TRANSIT: "In Transit",
   WON: "Won",
-};
-
-const STATUS_COLORS: Record<string, string> = {
-  PROPOSAL_ACCEPTED: "#6e7681",
-  AWAITING_CLIENT_ACTION: "#d29922",
-  READY_TO_SUBMIT: "#388bfd",
-  SUBMITTED: "#a78bfa",
-  PROCESSING: "#fb923c",
-  IN_TRANSIT: "#818cf8",
-  WON: "#3fb950",
 };
 
 function describeEvent(type: string): string {
@@ -90,10 +82,6 @@ export default async function DashboardPage({
 
   /* ── ADMIN path ─────────────────────────────────────────────────────── */
   if (role === "ADMIN") {
-    const savedLayout = Array.isArray(prefs.dashboardWidgets)
-      ? (prefs.dashboardWidgets as string[]).filter((x) => typeof x === "string")
-      : null;
-
     const firmSettings = await getOrCreateFirmSettings(firmId);
     const stageConfig = await getFirmStageConfig(firmId);
     const STATUS_LABELS: Record<string, string> = Object.fromEntries(
@@ -111,9 +99,7 @@ export default async function DashboardPage({
       stalledCases,
       overdueTasks,
       activityRows,
-      aiUsage,
       crmConnection,
-      crmLinkedCount,
       teamUsers,
       openedThisMonth,
       completedThisMonth,
@@ -175,18 +161,9 @@ export default async function DashboardPage({
           orderBy: { createdAt: "desc" },
           take: 15,
         }),
-        getFirmUsageSummary(firmId),
         prisma.crmConnection.findUnique({
           where: { firmId },
-          select: {
-            provider: true,
-            lastHealthCheckAt: true,
-            lastHealthOk: true,
-            lastHealthError: true,
-          },
-        }),
-        prisma.rolloverCase.count({
-          where: { firmId, wealthboxOpportunityId: { not: null } },
+          select: { provider: true },
         }),
         prisma.user.findMany({
           where: {
@@ -223,17 +200,54 @@ export default async function DashboardPage({
         }),
       ]);
 
-    const pipeline: PipelineBucket[] = (Object.keys(STATUS_LABELS) as CaseStatus[]).map((status) => ({
+    // Pull all team users (including the admin) for workload panels — note this
+    // is a SECOND user query (the first one excludes ADMIN). The first one
+    // drives velocity-only stats; this one drives the per-person workload UI.
+    const allTeamUsers = await prisma.user.findMany({
+      where: { firmId, deactivatedAt: null },
+      select: {
+        id: true,
+        firstName: true,
+        lastName: true,
+        role: true,
+        assignedCases: {
+          where: { status: { not: "WON" } },
+          select: { status: true },
+        },
+        ownedCases: {
+          where: { status: { not: "WON" } },
+          select: { status: true },
+        },
+      },
+      orderBy: [{ role: "asc" }, { firstName: "asc" }],
+    });
+
+    // Weekly inflow — last 12 weeks of case createdAt counts
+    const inflowSince = new Date(now.getTime() - 12 * 7 * 24 * 60 * 60 * 1000);
+    const inflowCases = await prisma.rolloverCase.findMany({
+      where: { firmId, createdAt: { gte: inflowSince } },
+      select: { createdAt: true },
+    });
+    const inflowBuckets: V2InflowWeek[] = [];
+    for (let i = 11; i >= 0; i--) {
+      const weekStart = new Date(now.getTime() - (i + 1) * 7 * 24 * 60 * 60 * 1000);
+      const weekEnd = new Date(now.getTime() - i * 7 * 24 * 60 * 60 * 1000);
+      inflowBuckets.push({
+        weekStart: weekStart.toISOString(),
+        count: inflowCases.filter((c) => c.createdAt >= weekStart && c.createdAt < weekEnd).length,
+      });
+    }
+
+    const pipeline: V2PipelineBucket[] = (Object.keys(STATUS_LABELS) as CaseStatus[]).map((status) => ({
       status,
       label: STATUS_LABELS[status],
       count: allCases.filter((c) => c.status === status).length,
-      color: STATUS_COLORS[status],
     }));
 
     const daysAgo = (d: Date) => Math.max(1, Math.floor((now.getTime() - d.getTime()) / (1000 * 60 * 60 * 24)));
 
-    const needsAttention: NeedsAttentionItem[] = [
-      ...stalledCases.map<NeedsAttentionItem>((c) => ({
+    const needsAttention: V2NeedsAttentionItem[] = [
+      ...stalledCases.map<V2NeedsAttentionItem>((c) => ({
         id: `case-${c.id}`,
         kind: "stalled_case",
         title: `${c.clientFirstName} ${c.clientLastName}`,
@@ -241,7 +255,7 @@ export default async function DashboardPage({
         href: `/dashboard/cases/${c.id}`,
         daysAgo: daysAgo(c.updatedAt),
       })),
-      ...overdueTasks.map<NeedsAttentionItem>((t) => ({
+      ...overdueTasks.map<V2NeedsAttentionItem>((t) => ({
         id: `task-${t.id}`,
         kind: "overdue_task",
         title: t.title,
@@ -251,7 +265,7 @@ export default async function DashboardPage({
       })),
     ].sort((a, b) => b.daysAgo - a.daysAgo);
 
-    const activity: ActivityItem[] = activityRows.map((e) => ({
+    const activity: V2ActivityItem[] = activityRows.map((e) => ({
       id: e.id,
       actor: e.actor ? `${e.actor.firstName} ${e.actor.lastName}` : null,
       verb: describeEvent(e.eventType),
@@ -260,14 +274,37 @@ export default async function DashboardPage({
       createdAt: e.createdAt.toISOString(),
     }));
 
-    const team: TeamMember[] = teamUsers
-      .map<TeamMember>((u) => ({
-        id: u.id,
-        name: `${u.firstName} ${u.lastName}`,
-        role: u.role as "ADVISOR" | "OPS",
-        activeCases: u.role === "ADVISOR" ? u._count.assignedCases : u._count.ownedCases,
-      }))
-      .sort((a, b) => b.activeCases - a.activeCases);
+    const workloadAdvisors: V2WorkloadRow[] = allTeamUsers
+      .filter((u) => u.role === "ADVISOR" || u.role === "ADMIN")
+      .map((u) => {
+        const byStatus: Record<string, number> = {};
+        for (const c of u.assignedCases) byStatus[c.status] = (byStatus[c.status] ?? 0) + 1;
+        return {
+          id: u.id,
+          name: `${u.firstName} ${u.lastName}`.trim(),
+          role: u.role as "ADMIN" | "ADVISOR",
+          total: u.assignedCases.length,
+          byStatus: Object.entries(byStatus).map(([status, count]) => ({ status, count })),
+        };
+      })
+      .filter((r) => r.total > 0)
+      .sort((a, b) => b.total - a.total);
+
+    const workloadOps: V2WorkloadRow[] = allTeamUsers
+      .filter((u) => u.role === "OPS" || u.role === "ADMIN")
+      .map((u) => {
+        const byStatus: Record<string, number> = {};
+        for (const c of u.ownedCases) byStatus[c.status] = (byStatus[c.status] ?? 0) + 1;
+        return {
+          id: u.id,
+          name: `${u.firstName} ${u.lastName}`.trim(),
+          role: u.role as "ADMIN" | "OPS",
+          total: u.ownedCases.length,
+          byStatus: Object.entries(byStatus).map(([status, count]) => ({ status, count })),
+        };
+      })
+      .filter((r) => r.total > 0)
+      .sort((a, b) => b.total - a.total);
 
     const totalMs = recentlyCompleted.reduce(
       (sum, c) => sum + (c.statusUpdatedAt.getTime() - c.createdAt.getTime()),
@@ -278,37 +315,8 @@ export default async function DashboardPage({
         ? null
         : totalMs / recentlyCompleted.length / (1000 * 60 * 60 * 24);
 
-    const data: AdminDashboardData = {
-      pipeline,
-      needsAttention,
-      activity,
-      team,
-      throughput: {
-        openedThisMonth,
-        completedThisMonth,
-        openedLastMonth,
-        completedLastMonth,
-      },
-      velocity: {
-        avgDaysToComplete,
-        completedIn30Days: recentlyCompleted.length,
-      },
-      aiUsage: {
-        planName: aiUsage.planName,
-        tokensUsed: aiUsage.tokensUsed,
-        tokensLimit: aiUsage.monthlyTokenLimit,
-        percentUsed: aiUsage.percentUsed,
-        periodResetsAt: aiUsage.periodEnd.toISOString(),
-      },
-      crm: {
-        connected: !!crmConnection,
-        provider: crmConnection?.provider ?? null,
-        lastSyncedAt: crmConnection?.lastHealthCheckAt?.toISOString() ?? null,
-        healthOk: crmConnection?.lastHealthOk ?? true,
-        healthError: crmConnection?.lastHealthError ?? null,
-        linkedCaseCount: crmLinkedCount,
-      },
-    };
+    const awaitingClientCount = allCases.filter((c) => c.status === "AWAITING_CLIENT_ACTION").length;
+    const activeCount = allCases.filter((c) => c.status !== "WON").length;
 
     const onboarding = onboardingHidden
       ? null
@@ -333,24 +341,31 @@ export default async function DashboardPage({
 
     return (
       <>
-        <div className="mb-6 flex items-start justify-between gap-6">
-          <div className="min-w-0">
-            <h1 className="text-2xl font-semibold tracking-tight" style={{ color: "#e4e6ea" }}>
-              {userName}&rsquo;s Dashboard
-            </h1>
-            <p className="text-sm mt-1" style={{ color: "#7d8590" }}>
-              Firm-wide overview. Customize widgets to match how your team works.
-            </p>
+        {onboarding && (
+          <div style={{ padding: "20px 36px 0" }}>
+            <OnboardingChecklistV2 {...onboarding} />
           </div>
-          <div className="flex-shrink-0 text-right">
-            <p className="text-[11px] uppercase tracking-widest" style={{ color: "#7d8590" }}>Today</p>
-            <p className="text-base font-semibold mt-1 font-[family-name:var(--font-inter-tight)]" style={{ color: "#e4e6ea" }}>
-              {new Date().toLocaleDateString("en-US", { weekday: "long", month: "long", day: "numeric" })}
-            </p>
-          </div>
-        </div>
-        {onboarding && <OnboardingChecklist {...onboarding} />}
-        <AdminDashboard data={data} initialLayout={savedLayout as never} />
+        )}
+        <AdminDashboardV2
+          firmName={firm?.name ?? "Workspace"}
+          userFirstName={userName}
+          pipeline={pipeline}
+          needsAttention={needsAttention}
+          activity={activity}
+          team={[]}
+          workloadAdvisors={workloadAdvisors}
+          workloadOps={workloadOps}
+          throughput={{
+            activeCases: activeCount,
+            awaitingClient: awaitingClientCount,
+            avgCycleDays: avgDaysToComplete,
+            completedThisMonth,
+            completedLastMonth,
+            openedThisMonth,
+            openedLastMonth,
+          }}
+          inflow={inflowBuckets}
+        />
       </>
     );
   }

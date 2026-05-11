@@ -5,6 +5,11 @@ import { getOrCreateFirmSettings } from "@/lib/reminders";
 import { getFirmUsageSummary } from "@/lib/aiUsage";
 import { platformConfig } from "@/lib/platformConfig";
 import SettingsForm from "@/components/SettingsForm";
+import SettingsV2, {
+  type SettingsV2User,
+  type SettingsV2Firm,
+  type SettingsV2FirmSettings,
+} from "@/components/v2/SettingsV2";
 
 export default async function SettingsPage() {
   const session = await auth();
@@ -66,14 +71,76 @@ export default async function SettingsPage() {
     ? await prisma.user.count({ where: { firmId, deactivatedAt: null, lastLoginAt: null } })
     : 0;
 
+  const userPrefs: Record<string, unknown> =
+    user.preferences !== null && typeof user.preferences === "object" && !Array.isArray(user.preferences)
+      ? (user.preferences as Record<string, unknown>)
+      : {};
+
+  /* ── Admin V2 path ──────────────────────────────────────────────────── */
+  if (isAdmin) {
+    const v2User: SettingsV2User = {
+      id: user.id,
+      firstName: user.firstName,
+      lastName: user.lastName,
+      email: user.email,
+      role: user.role as "ADMIN" | "ADVISOR" | "OPS",
+      bio: user.bio,
+      emailSignature: user.emailSignature,
+      twoFactorEnabled: user.twoFactorEnabled,
+      createdAt: user.createdAt.toISOString(),
+      preferences: userPrefs,
+    };
+    const v2Firm: SettingsV2Firm | null = firm
+      ? {
+          id: firm.id,
+          name: firm.name,
+          slug: firm.slug,
+          legalName: firm.legalName,
+          taxId: firm.taxId,
+          businessAddress: firm.businessAddress,
+          supportEmail: firm.supportEmail,
+          supportPhone: firm.supportPhone,
+          websiteUrl: firm.websiteUrl,
+          logoUrl: firm.logoUrl,
+          planTier: firm.planTier,
+          seatsLimit: firm.seatsLimit,
+          billingEmail: firm.billingEmail,
+          renewalDate: firm.renewalDate?.toISOString() ?? null,
+        }
+      : null;
+    const v2FirmSettings: SettingsV2FirmSettings | null = firmSettings
+      ? {
+          remindersEnabled: firmSettings.remindersEnabled,
+          stalledCaseDays: firmSettings.stalledCaseDays,
+          overdueTaskReminders: firmSettings.overdueTaskReminders,
+          stalledCaseReminders: firmSettings.stalledCaseReminders,
+          missingDocsReminders: firmSettings.missingDocsReminders,
+          require2FA: firmSettings.require2FA,
+          operatingStates: firmSettings.operatingStates,
+        }
+      : null;
+
+    return (
+      <SettingsV2
+        user={v2User}
+        firm={v2Firm}
+        firmSettings={v2FirmSettings}
+        seatsUsed={seatsUsed}
+        aiUsage={{
+          planName: aiUsage.planName,
+          percentUsed: aiUsage.percentUsed,
+          periodResetsAt: aiUsage.periodEnd.toISOString(),
+        }}
+      />
+    );
+  }
+
+  /* ── Legacy non-admin path ──────────────────────────────────────────── */
   return (
     <SettingsForm
       user={{
         ...user,
-        preferences:
-          user.preferences !== null && typeof user.preferences === "object" && !Array.isArray(user.preferences)
-            ? (user.preferences as Record<string, unknown>)
-            : {},
+        preferences: userPrefs,
         createdAt: user.createdAt.toISOString(),
       }}
       firmSettings={firmSettings}

@@ -15,7 +15,10 @@
 // per-environment (e.g. "riftira.com" in prod, "localhost:3000" locally).
 // Falls back to localhost:3000 so a fresh checkout boots without env config.
 export function getRootDomain(): string {
-  return process.env.NEXT_PUBLIC_ROOT_DOMAIN ?? "localhost:3000";
+  // Treat empty string the same as unset — local dev sometimes ships
+  // NEXT_PUBLIC_ROOT_DOMAIN="" to disable the subdomain redirect, and `??`
+  // alone wouldn't catch that.
+  return process.env.NEXT_PUBLIC_ROOT_DOMAIN || "localhost:3000";
 }
 
 /**

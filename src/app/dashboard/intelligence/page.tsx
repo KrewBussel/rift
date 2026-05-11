@@ -3,6 +3,8 @@ import { redirect } from "next/navigation";
 import { prisma } from "@/lib/prisma";
 import { getOrCreateFirmSettings } from "@/lib/reminders";
 import IntelligenceWorkspace from "@/components/IntelligenceWorkspace";
+import IntelligenceV2, { type V2Custodian } from "@/components/v2/IntelligenceV2";
+import { getFirmUsageSummary } from "@/lib/aiUsage";
 import type { CustodianActivity } from "@/components/CustodianActivityTab";
 
 export default async function IntelligencePage() {
@@ -165,6 +167,44 @@ export default async function IntelligencePage() {
   const initialPinnedIds: string[] = pinnedRaw
     .filter((p): p is string => typeof p === "string")
     .slice(0, 3);
+
+  const role = session.user.role;
+
+  if (role === "ADMIN") {
+    const aiUsage = await getFirmUsageSummary(firmId);
+    const v2Custodians: V2Custodian[] = serialized.map((c) => ({
+      id: c.id,
+      name: c.name,
+      legalName: c.legalName,
+      tags: c.tags,
+      typicalProcessingDays: c.typicalProcessingDays,
+      minProcessingDays: c.minProcessingDays,
+      maxProcessingDays: c.maxProcessingDays,
+      signatureRequirements: c.signatureRequirements,
+      medallionRequired: c.medallionRequired,
+      acceptsElectronic: c.acceptsElectronic,
+      supportsACATS: c.supportsACATS,
+      overview: c.overview,
+      quirks: c.quirks,
+      noteCount: c.notes.length,
+      notes: c.notes.map((n) => ({
+        id: n.id,
+        title: n.title,
+        body: n.body,
+        pinned: n.pinned,
+        author: n.author,
+      })),
+    }));
+    return (
+      <IntelligenceV2
+        custodians={v2Custodians}
+        aiUsage={{
+          used: Math.round(aiUsage.tokensUsed / 1000),
+          limit: Math.round(aiUsage.monthlyTokenLimit / 1000),
+        }}
+      />
+    );
+  }
 
   return (
     <div className="flex-1 flex flex-col min-h-0">
