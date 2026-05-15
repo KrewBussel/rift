@@ -1,8 +1,8 @@
 import { auth } from "@/lib/auth";
 import { redirect, notFound } from "next/navigation";
 import { prisma } from "@/lib/prisma";
+import LegacyCaseDetail from "@/components/legacy/CaseDetail";
 import CaseDetail from "@/components/CaseDetail";
-import CaseDetailV2 from "@/components/v2/CaseDetailV2";
 import CaseViewTracker from "@/components/CaseViewTracker";
 import { getFirmStageConfig } from "@/lib/stageConfig";
 
@@ -136,7 +136,7 @@ export default async function CaseDetailPage({ params }: { params: Promise<{ id:
     return (
       <>
         <CaseViewTracker caseId={id} />
-        <CaseDetailV2
+        <CaseDetail
           rolloverCase={serializedCase}
           users={users}
           currentUserId={session.user.id}
@@ -151,7 +151,7 @@ export default async function CaseDetailPage({ params }: { params: Promise<{ id:
   return (
     <>
       <CaseViewTracker caseId={id} />
-      <CaseDetail
+      <LegacyCaseDetail
         rolloverCase={serializedCase}
         users={users}
         currentUserId={session.user.id}

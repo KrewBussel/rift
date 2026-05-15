@@ -3,302 +3,365 @@
 import { signOut } from "next-auth/react";
 import Link from "next/link";
 import { usePathname } from "next/navigation";
-import { useState, useEffect, useRef } from "react";
+import { useState } from "react";
 import { buildApexUrl } from "@/lib/firmDomain";
+import { T, avatarColor, HEADLINE_STACK } from "./tokens";
+import { Icon, Avatar } from "./primitives";
 
-interface Props {
-  user: { id?: string; name?: string | null; email?: string | null };
-}
+type NavItem = {
+  href: string;
+  label: string;
+  icon: string;
+  exact?: boolean;
+  badge?: number;
+};
 
-const NAV_ITEMS = [
-  {
-    href: "/dashboard",
-    label: "Overview",
-    matchPrefixes: [] as string[],
-    exact: true,
-    icon: (
-      <svg width="16" height="16" viewBox="0 0 16 16" fill="none" aria-hidden>
-        <path
-          d="M1.5 6.5L8 1.5L14.5 6.5V13.5a.5.5 0 0 1-.5.5H10V10H6v4H2a.5.5 0 0 1-.5-.5V6.5Z"
-          stroke="currentColor"
-          strokeWidth="1.3"
-          strokeLinejoin="round"
-        />
-      </svg>
-    ),
-  },
-  {
-    href: "/dashboard/cases",
-    label: "Cases",
-    matchPrefixes: [] as string[],
-    exact: false,
-    icon: (
-      <svg width="16" height="16" viewBox="0 0 16 16" fill="none" aria-hidden>
-        <rect x="2" y="3" width="12" height="10" rx="1.5" stroke="currentColor" strokeWidth="1.3" />
-        <path d="M5 7h6M5 10h4" stroke="currentColor" strokeWidth="1.3" strokeLinecap="round" />
-      </svg>
-    ),
-  },
-  {
-    href: "/dashboard/intelligence",
-    label: "Intelligence",
-    matchPrefixes: [] as string[],
-    exact: false,
-    icon: (
-      <svg width="16" height="16" viewBox="0 0 16 16" fill="none" aria-hidden>
-        <path
-          d="M8 1.5a5 5 0 0 0-3 9V12a.5.5 0 0 0 .5.5h5A.5.5 0 0 0 11 12v-1.5a5 5 0 0 0-3-9Z"
-          stroke="currentColor"
-          strokeWidth="1.3"
-          strokeLinejoin="round"
-        />
-        <path d="M6 14h4M6.5 15.5h3" stroke="currentColor" strokeWidth="1.3" strokeLinecap="round" />
-      </svg>
-    ),
-  },
-  {
-    href: "/dashboard/settings",
-    label: "Settings",
-    matchPrefixes: [] as string[],
-    exact: false,
-    icon: (
-      <svg width="16" height="16" viewBox="0 0 16 16" fill="none" aria-hidden>
-        <path
-          d="M8 10a2 2 0 1 0 0-4 2 2 0 0 0 0 4Z"
-          stroke="currentColor"
-          strokeWidth="1.3"
-        />
-        <path
-          d="M13.07 9.53a1 1 0 0 0 .2 1.1l.03.03a1.21 1.21 0 0 1-1.71 1.71l-.03-.03a1 1 0 0 0-1.1-.2 1 1 0 0 0-.6.91V13a1.21 1.21 0 0 1-2.42 0v-.06a1 1 0 0 0-.65-.92 1 1 0 0 0-1.1.2l-.03.03a1.21 1.21 0 0 1-1.71-1.71l.03-.03a1 1 0 0 0 .2-1.1A1 1 0 0 0 3.27 9H3a1.21 1.21 0 0 1 0-2.42h.06a1 1 0 0 0 .92-.65 1 1 0 0 0-.2-1.1l-.03-.03A1.21 1.21 0 0 1 5.46 3.09l.03.03a1 1 0 0 0 1.1.2A1 1 0 0 0 7.2 2.4V2a1.21 1.21 0 0 1 2.42 0v.06a1 1 0 0 0 .65.91 1 1 0 0 0 1.1-.2l.03-.03a1.21 1.21 0 0 1 1.71 1.71l-.03.03a1 1 0 0 0-.2 1.1A1 1 0 0 0 12.79 7H13a1.21 1.21 0 0 1 0 2.42h-.06a1 1 0 0 0-.87.11Z"
-          stroke="currentColor"
-          strokeWidth="1.3"
-        />
-      </svg>
-    ),
-  },
+type NavItemDef = NavItem & { adminOnly?: boolean };
+
+const NAV: NavItemDef[] = [
+  { href: "/dashboard",              label: "Dashboard",    icon: "home",  exact: true },
+  { href: "/dashboard/cases",        label: "Cases",        icon: "cases" },
+  { href: "/dashboard/intelligence", label: "Intelligence", icon: "spark" },
+  { href: "/dashboard/team",         label: "Team",         icon: "users", adminOnly: true },
+  { href: "/dashboard/settings",     label: "Settings",     icon: "cog"   },
 ];
 
-export default function Sidebar({ user }: Props) {
+export type SidebarRecentCase = {
+  id: string;
+  name: string;
+  sub: string;
+};
+
+export default function SidebarV2({
+  user,
+  firm,
+  caseCount,
+  recentCases,
+}: {
+  user: { id: string; name: string | null; email: string | null; role?: string | null; avatarUrl?: string | null };
+  firm: { name: string; plan?: string | null };
+  caseCount: number;
+  recentCases: SidebarRecentCase[];
+}) {
   const pathname = usePathname();
-  const [collapsed, setCollapsed] = useState(false);
   const [confirmOpen, setConfirmOpen] = useState(false);
-  const [mounted, setMounted] = useState(false);
-  const [avatarError, setAvatarError] = useState(false);
-  const avatarRef = useRef<HTMLImageElement>(null);
 
-  useEffect(() => {
-    const saved = localStorage.getItem("rift-sidebar-collapsed");
-    if (saved !== null) setCollapsed(saved === "true");
-    setMounted(true);
-  }, []);
-
-  useEffect(() => {
-    const img = avatarRef.current;
-    if (img && img.complete && img.naturalWidth === 0) {
-      setAvatarError(true);
-    }
-  }, []);
-
-  function toggle() {
-    setCollapsed((prev) => {
-      const next = !prev;
-      localStorage.setItem("rift-sidebar-collapsed", String(next));
-      return next;
-    });
+  function isActive(item: NavItem) {
+    if (item.exact) return pathname === item.href;
+    return pathname === item.href || pathname.startsWith(item.href + "/");
   }
 
-  function isActive(item: (typeof NAV_ITEMS)[number]) {
-    if (item.exact && pathname === item.href) return true;
-    if (!item.exact && pathname.startsWith(item.href)) return true;
-    return item.matchPrefixes?.some((p) => pathname.startsWith(p)) ?? false;
-  }
-
-  // Avoid flash of wrong collapsed state before localStorage loads
-  const width = !mounted ? 220 : collapsed ? 60 : 220;
+  const userName = user.name?.trim() || user.email || "User";
 
   return (
     <>
       <aside
-        className="flex flex-col flex-shrink-0 h-screen sticky top-0 overflow-hidden transition-all duration-200"
         style={{
-          width,
-          minWidth: width,
-          background: "#161b22",
-          borderRight: "1px solid #21262d",
+          width: 232,
+          flexShrink: 0,
+          height: "100vh",
+          position: "sticky",
+          top: 0,
+          background: T.sidebar,
+          borderRight: `1px solid ${T.border}`,
+          display: "flex",
+          flexDirection: "column",
+          padding: "14px 12px 12px",
         }}
       >
-        {/* Logo + toggle */}
-        <div
-          className="flex items-center h-14 flex-shrink-0 px-3"
-          style={{ borderBottom: "1px solid #21262d", justifyContent: collapsed ? "center" : "space-between" }}
+        {/* Brand / firm */}
+        <Link
+          href="/dashboard"
+          style={{
+            display: "flex",
+            alignItems: "center",
+            gap: 10,
+            padding: "6px 8px 14px",
+            textDecoration: "none",
+          }}
         >
-          {!collapsed && (
-            <Link
-              href="/dashboard"
-              className="flex items-center gap-2.5 select-none min-w-0"
-            >
-              <svg width="22" height="22" viewBox="0 0 28 28" fill="none" className="flex-shrink-0">
-                <defs>
-                  <linearGradient id="sb-logo-a" x1="0" y1="0" x2="1" y2="1">
-                    <stop offset="0" stopColor="#60a5fa" />
-                    <stop offset="1" stopColor="#1d4ed8" />
-                  </linearGradient>
-                  <linearGradient id="sb-logo-b" x1="0" y1="0" x2="1" y2="1">
-                    <stop offset="0" stopColor="#a78bfa" />
-                    <stop offset="1" stopColor="#4f46e5" />
-                  </linearGradient>
-                  <linearGradient id="sb-logo-c" x1="0" y1="0" x2="1" y2="1">
-                    <stop offset="0" stopColor="#67e8f9" />
-                    <stop offset="1" stopColor="#0891b2" />
-                  </linearGradient>
-                </defs>
-                <rect x="0"  y="2"  width="10" height="24" rx="2.5" fill="url(#sb-logo-a)" />
-                <rect x="6"  y="6"  width="14" height="16" rx="2.5" fill="url(#sb-logo-b)" opacity="0.92" />
-                <rect x="14" y="10" width="14" height="12" rx="2.5" fill="url(#sb-logo-c)" opacity="0.85" />
-              </svg>
-              <span
-                className="font-black text-[15px] truncate"
-                style={{ color: "#e4e6ea", letterSpacing: "-0.02em" }}
-              >
-                Rift
-              </span>
-            </Link>
-          )}
-
-          <button
-            onClick={toggle}
-            className="flex-shrink-0 flex items-center justify-center w-7 h-7 rounded-md transition-colors hover:bg-[#21262d]"
-            style={{ color: "#7d8590" }}
-            title={collapsed ? "Expand sidebar" : "Collapse sidebar"}
+          <div
+            style={{
+              width: 28,
+              height: 28,
+              borderRadius: 7,
+              background: T.accent,
+              color: T.surface1,
+              display: "grid",
+              placeItems: "center",
+              fontFamily: HEADLINE_STACK,
+              fontWeight: 700,
+              fontSize: 15,
+              letterSpacing: -0.5,
+            }}
           >
-            {collapsed ? (
-              <svg width="14" height="14" viewBox="0 0 14 14" fill="none" aria-hidden>
-                <path d="M5 2l5 5-5 5" stroke="currentColor" strokeWidth="1.5" strokeLinecap="round" strokeLinejoin="round" />
-              </svg>
-            ) : (
-              <svg width="14" height="14" viewBox="0 0 14 14" fill="none" aria-hidden>
-                <path d="M9 2L4 7l5 5" stroke="currentColor" strokeWidth="1.5" strokeLinecap="round" strokeLinejoin="round" />
-              </svg>
+            R
+          </div>
+          <div style={{ flex: 1, minWidth: 0 }}>
+            <div
+              style={{
+                fontSize: 13,
+                fontWeight: 600,
+                color: T.text,
+                letterSpacing: -0.1,
+                whiteSpace: "nowrap",
+                overflow: "hidden",
+                textOverflow: "ellipsis",
+              }}
+            >
+              {firm.name}
+            </div>
+            {firm.plan && (
+              <div style={{ fontSize: 11, color: T.textTertiary, marginTop: 1 }}>{firm.plan}</div>
             )}
-          </button>
+          </div>
+        </Link>
+
+        {/* Search shortcut */}
+        <div style={{ padding: "0 4px 12px" }}>
+          <div
+            style={{
+              display: "flex",
+              alignItems: "center",
+              gap: 8,
+              height: 30,
+              padding: "0 10px",
+              background: T.surface1,
+              border: `1px solid ${T.border}`,
+              borderRadius: 7,
+              color: T.textTertiary,
+              cursor: "pointer",
+            }}
+          >
+            <Icon name="search" size={14} />
+            <span style={{ fontSize: 12.5, flex: 1 }}>Search cases…</span>
+            <span
+              style={{
+                fontSize: 10.5,
+                fontFamily: "ui-monospace, monospace",
+                padding: "1px 5px",
+                border: `1px solid ${T.border}`,
+                borderRadius: 4,
+                background: T.surface2,
+              }}
+            >
+              ⌘K
+            </span>
+          </div>
         </div>
 
-        {/* Nav items */}
-        <nav className="flex-1 overflow-y-auto overflow-x-hidden py-3 px-2">
-          {NAV_ITEMS.map((item) => {
-            const active = isActive(item);
-            return (
-              <Link
-                key={item.href}
-                href={item.href}
-                title={collapsed ? item.label : undefined}
-                className="flex items-center gap-2.5 px-2.5 py-2 rounded-md text-sm font-medium transition-colors mb-0.5"
+        {/* Nav */}
+        <nav style={{ flex: 1, overflowY: "auto" }}>
+          <div
+            style={{
+              fontSize: 10,
+              fontWeight: 500,
+              color: T.textTertiary,
+              padding: "8px 10px 6px",
+              textTransform: "uppercase",
+              letterSpacing: 0.6,
+            }}
+          >
+            Workspace
+          </div>
+          {NAV.filter((n) => !n.adminOnly || user.role === "ADMIN").map((n) => (
+            <NavItemRow
+              key={n.href}
+              item={n}
+              badge={n.href === "/dashboard/cases" ? caseCount : undefined}
+              active={isActive(n)}
+            />
+          ))}
+
+          {recentCases.length > 0 && (
+            <>
+              <div
                 style={{
-                  background: active ? "#21262d" : "transparent",
-                  color: active ? "#e4e6ea" : "#7d8590",
-                  whiteSpace: "nowrap",
+                  fontSize: 10,
+                  fontWeight: 500,
+                  color: T.textTertiary,
+                  padding: "20px 10px 6px",
+                  textTransform: "uppercase",
+                  letterSpacing: 0.6,
                 }}
               >
-                <span className="flex-shrink-0">{item.icon}</span>
-                {!collapsed && <span className="truncate">{item.label}</span>}
-              </Link>
-            );
-          })}
+                Recent cases
+              </div>
+              {recentCases.map((c) => (
+                <Link
+                  key={c.id}
+                  href={`/dashboard/cases/${c.id}`}
+                  style={{ textDecoration: "none" }}
+                >
+                  <div
+                    style={{
+                      display: "flex",
+                      alignItems: "center",
+                      gap: 10,
+                      padding: "7px 10px",
+                      borderRadius: 7,
+                      cursor: "pointer",
+                      color: T.textSecondary,
+                      fontSize: 12.5,
+                    }}
+                    onMouseEnter={(e) => {
+                      e.currentTarget.style.background = T.surface3;
+                    }}
+                    onMouseLeave={(e) => {
+                      e.currentTarget.style.background = "transparent";
+                    }}
+                  >
+                    <div
+                      style={{
+                        width: 6,
+                        height: 6,
+                        borderRadius: 999,
+                        background: avatarColor(c.name),
+                        flexShrink: 0,
+                      }}
+                    />
+                    <div style={{ flex: 1, minWidth: 0 }}>
+                      <div
+                        style={{
+                          color: T.text,
+                          fontWeight: 500,
+                          whiteSpace: "nowrap",
+                          overflow: "hidden",
+                          textOverflow: "ellipsis",
+                        }}
+                      >
+                        {c.name}
+                      </div>
+                      <div style={{ fontSize: 10.5, color: T.textTertiary, marginTop: 1 }}>
+                        {c.sub}
+                      </div>
+                    </div>
+                  </div>
+                </Link>
+              ))}
+            </>
+          )}
         </nav>
 
-        {/* User + sign out */}
-        <div className="flex-shrink-0 px-2 pb-3" style={{ borderTop: "1px solid #21262d" }}>
-          <div className="pt-3">
-            <Link
-              href="/dashboard/settings"
-              title={collapsed ? (user.name ?? user.email ?? "Settings") : undefined}
-              className="flex items-center gap-2.5 px-2.5 py-2 rounded-md transition-colors hover:bg-[#21262d] mb-0.5"
-              style={{ color: "#8b949e" }}
+        {/* User card */}
+        <div
+          style={{
+            marginTop: 8,
+            padding: "10px 8px",
+            borderTop: `1px solid ${T.border}`,
+            display: "flex",
+            alignItems: "center",
+            gap: 10,
+          }}
+        >
+          <Avatar
+            name={userName}
+            size={28}
+            image={user.id ? `/api/users/${user.id}/avatar` : undefined}
+          />
+          <div style={{ flex: 1, minWidth: 0 }}>
+            <div
+              style={{
+                fontSize: 12.5,
+                fontWeight: 500,
+                color: T.text,
+                whiteSpace: "nowrap",
+                overflow: "hidden",
+                textOverflow: "ellipsis",
+              }}
             >
-              {!avatarError && user.id ? (
-                <img
-                  ref={avatarRef}
-                  src={`/api/users/${user.id}/avatar`}
-                  alt=""
-                  className="w-6 h-6 rounded-full object-cover flex-shrink-0"
-                  onError={() => setAvatarError(true)}
-                />
-              ) : (
-                <div
-                  className="w-6 h-6 rounded-full flex items-center justify-center flex-shrink-0 text-xs font-semibold"
-                  style={{ background: "#2d333b", color: "#e4e6ea" }}
-                >
-                  {user.name?.charAt(0).toUpperCase() ?? "?"}
-                </div>
-              )}
-              {!collapsed && (
-                <span className="text-sm truncate" style={{ color: "#8b949e" }}>
-                  {user.name ?? user.email}
-                </span>
-              )}
-            </Link>
-
-            <button
-              onClick={() => setConfirmOpen(true)}
-              title={collapsed ? "Sign out" : undefined}
-              className="flex items-center gap-2.5 w-full px-2.5 py-2 rounded-md text-sm transition-colors hover:bg-[#21262d]"
-              style={{ color: "#7d8590" }}
+              {userName}
+            </div>
+            <div
+              style={{
+                fontSize: 10.5,
+                color: T.textTertiary,
+                whiteSpace: "nowrap",
+                overflow: "hidden",
+                textOverflow: "ellipsis",
+              }}
             >
-              <svg width="16" height="16" viewBox="0 0 16 16" fill="none" className="flex-shrink-0" aria-hidden>
-                <path
-                  d="M6 2H3.5A1.5 1.5 0 0 0 2 3.5v9A1.5 1.5 0 0 0 3.5 14H6M10.5 11L14 8m0 0L10.5 5M14 8H6"
-                  stroke="currentColor"
-                  strokeWidth="1.3"
-                  strokeLinecap="round"
-                  strokeLinejoin="round"
-                />
-              </svg>
-              {!collapsed && <span className="truncate">Sign out</span>}
-            </button>
+              {user.email}
+            </div>
           </div>
+          <button
+            onClick={() => setConfirmOpen(true)}
+            title="Sign out"
+            style={{
+              background: "transparent",
+              border: "none",
+              padding: 4,
+              cursor: "pointer",
+              color: T.textTertiary,
+              display: "inline-flex",
+            }}
+          >
+            <Icon name="logout" size={16} />
+          </button>
         </div>
       </aside>
 
-      {/* Sign-out confirmation modal */}
       {confirmOpen && (
         <div
-          className="fixed inset-0 z-50 flex items-center justify-center"
-          style={{ background: "rgba(0,0,0,0.5)" }}
+          style={{
+            position: "fixed",
+            inset: 0,
+            zIndex: 50,
+            display: "flex",
+            alignItems: "center",
+            justifyContent: "center",
+            background: "rgba(31,30,26,0.35)",
+          }}
           onClick={() => setConfirmOpen(false)}
         >
           <div
-            className="rounded-xl p-6 w-full max-w-sm mx-4"
-            style={{
-              background: "#161b22",
-              border: "1px solid #30363d",
-              boxShadow: "0 16px 48px rgba(0,0,0,0.5)",
-            }}
             onClick={(e) => e.stopPropagation()}
+            style={{
+              maxWidth: 380,
+              width: "100%",
+              margin: "0 16px",
+              background: T.surface1,
+              border: `1px solid ${T.border}`,
+              borderRadius: 12,
+              padding: 22,
+              boxShadow: "0 16px 48px rgba(60,55,40,0.18)",
+            }}
           >
-            <h2 className="text-base font-semibold mb-1" style={{ color: "#e4e6ea" }}>
-              Sign out?
-            </h2>
-            <p className="text-sm mb-5" style={{ color: "#7d8590" }}>
+            <h2 style={{ margin: 0, fontSize: 16, fontWeight: 600, color: T.text }}>Sign out?</h2>
+            <p style={{ fontSize: 13, color: T.textSecondary, margin: "6px 0 18px" }}>
               Are you sure you want to sign out?
             </p>
-            <div className="flex justify-end gap-2">
+            <div style={{ display: "flex", justifyContent: "flex-end", gap: 8 }}>
               <button
                 onClick={() => setConfirmOpen(false)}
-                className="px-4 py-2 text-sm font-medium rounded-lg transition-colors hover:bg-[#21262d]"
-                style={{ color: "#8b949e" }}
+                style={{
+                  padding: "8px 14px",
+                  fontSize: 13,
+                  fontWeight: 500,
+                  border: `1px solid ${T.border}`,
+                  borderRadius: 7,
+                  background: T.surface1,
+                  color: T.text,
+                  cursor: "pointer",
+                }}
               >
                 Cancel
               </button>
               <button
                 onClick={async () => {
-                  // Cookie is .riftira.com-scoped; signing out clears it on
-                  // every subdomain. Redirect straight to the apex login so
-                  // the user doesn't pass through the tenant root.
                   await signOut({ redirect: false });
                   window.location.assign(buildApexUrl("/login"));
                 }}
-                className="px-4 py-2 text-sm font-semibold rounded-lg transition-colors hover:bg-red-700"
-                style={{ background: "#b91c1c", color: "#fff" }}
+                style={{
+                  padding: "8px 14px",
+                  fontSize: 13,
+                  fontWeight: 600,
+                  border: `1px solid ${T.danger}`,
+                  borderRadius: 7,
+                  background: T.danger,
+                  color: T.surface1,
+                  cursor: "pointer",
+                }}
               >
                 Sign out
               </button>
@@ -307,5 +370,60 @@ export default function Sidebar({ user }: Props) {
         </div>
       )}
     </>
+  );
+}
+
+function NavItemRow({
+  item,
+  active,
+  badge,
+}: {
+  item: NavItem;
+  active: boolean;
+  badge?: number;
+}) {
+  const [hover, setHover] = useState(false);
+  return (
+    <Link href={item.href} style={{ textDecoration: "none" }}>
+      <div
+        onMouseEnter={() => setHover(true)}
+        onMouseLeave={() => setHover(false)}
+        style={{
+          position: "relative",
+          display: "flex",
+          alignItems: "center",
+          gap: 10,
+          padding: "7px 10px",
+          margin: "1px 0",
+          borderRadius: 7,
+          cursor: "pointer",
+          color: active ? T.accent : hover ? T.text : T.textSecondary,
+          background: active ? T.accentSoft : hover ? T.surface3 : "transparent",
+          fontSize: 13,
+          fontWeight: 500,
+          border: active ? `1px solid ${T.accentBorder}` : "1px solid transparent",
+          transition: "background 100ms, color 100ms, border-color 100ms",
+        }}
+      >
+        <Icon name={item.icon} size={15} />
+        <span style={{ flex: 1 }}>{item.label}</span>
+        {badge != null && badge > 0 && (
+          <span
+            style={{
+              fontSize: 10.5,
+              padding: "1px 6px",
+              borderRadius: 999,
+              background: active ? T.surface1 : T.surface1,
+              color: active ? T.accent : T.textTertiary,
+              border: `1px solid ${active ? T.accentBorder : T.border}`,
+              fontWeight: 600,
+              fontFamily: "ui-monospace, monospace",
+            }}
+          >
+            {badge}
+          </span>
+        )}
+      </div>
+    </Link>
   );
 }

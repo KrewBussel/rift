@@ -1,7 +1,7 @@
 import { auth } from "@/lib/auth";
 import { redirect } from "next/navigation";
 import { prisma } from "@/lib/prisma";
-import TeamPageV2, { type V2TeamMemberFull } from "@/components/v2/TeamPageV2";
+import TeamComponent, { type V2TeamMemberFull } from "@/components/TeamPage";
 
 export default async function TeamPage() {
   const session = await auth();
@@ -68,7 +68,7 @@ export default async function TeamPage() {
   }));
 
   return (
-    <TeamPageV2
+    <TeamComponent
       members={members}
       firmName={firm.name}
       seatsLimit={firm.seatsLimit}

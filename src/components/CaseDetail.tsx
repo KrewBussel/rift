@@ -3,23 +3,54 @@
 import { useState } from "react";
 import { useRouter } from "next/navigation";
 import Link from "next/link";
-import { formatDate, formatDateTime } from "@/lib/utils";
-import TaskList from "./TaskList";
-import ChecklistPanel from "./ChecklistPanel";
-import DocumentsPanel from "./DocumentsPanel";
-import DarkSelect from "./DarkSelect";
-import Avatar from "./Avatar";
+import { T, STAGE_HUE, STAGE_COLOR, fmtMoney, timeAgo, HEADLINE_STACK, TAB_NUM_STYLE } from "./tokens";
+import { Card, Pill, Btn, Icon, Avatar, TextInput, SelectInput } from "./primitives";
 import {
-  resolveEnabledStages,
   resolveStageLabel,
+  resolveEnabledStages,
   type StageConfigRow,
-} from "./casesDesignTokens";
+} from "@/components/casesDesignTokens";
 
-interface User { id: string; firstName: string; lastName: string; role: string; }
-interface Note { id: string; body: string; createdAt: string; fromClient: boolean; author: { id: string; firstName: string; lastName: string } | null; }
-interface ActivityEvent { id: string; eventType: string; eventDetails: string | null; createdAt: string; clientSessionId: string | null; actor: { id: string; firstName: string; lastName: string } | null; }
-interface Task { id: string; title: string; description: string | null; status: "OPEN" | "COMPLETED" | "BLOCKED"; dueDate: string | null; assignee: { id: string; firstName: string; lastName: string } | null; createdBy: { id: string; firstName: string; lastName: string }; createdAt: string; }
-interface RolloverCase {
+type RoleStr = "ADMIN" | "ADVISOR" | "OPS";
+
+interface User {
+  id: string;
+  firstName: string;
+  lastName: string;
+  role: string;
+}
+interface Note {
+  id: string;
+  body: string;
+  createdAt: string;
+  fromClient: boolean;
+  author: { id: string; firstName: string; lastName: string } | null;
+}
+interface ActivityEvent {
+  id: string;
+  eventType: string;
+  eventDetails: string | null;
+  createdAt: string;
+  actor: { id: string; firstName: string; lastName: string } | null;
+}
+interface Task {
+  id: string;
+  title: string;
+  description: string | null;
+  status: "OPEN" | "COMPLETED" | "BLOCKED";
+  dueDate: string | null;
+  assignee: { id: string; firstName: string; lastName: string } | null;
+  createdAt: string;
+}
+interface ChecklistItem {
+  id: string;
+  name: string;
+  required: boolean;
+  status: "NOT_STARTED" | "REQUESTED" | "RECEIVED" | "REVIEWED" | "COMPLETE";
+  notes: string | null;
+  sortOrder: number;
+}
+interface CaseShape {
   id: string;
   clientFirstName: string;
   clientLastName: string;
@@ -36,838 +67,1093 @@ interface RolloverCase {
   statusUpdatedAt: string;
   createdAt: string;
   updatedAt: string;
-  wealthboxOpportunityId: string | null;
   wealthboxOpportunityName: string | null;
   wealthboxAmount: number | null;
-  wealthboxAmountCurrency: string | null;
   wealthboxTargetClose: string | null;
   wealthboxProbability: number | null;
-  wealthboxOppCreatedAt: string | null;
-  wealthboxLinkedAt: string | null;
-  wealthboxLastSyncedAt: string | null;
-  wealthboxLastSyncError: string | null;
   assignedAdvisor: { id: string; firstName: string; lastName: string } | null;
   assignedOps: { id: string; firstName: string; lastName: string } | null;
   notes: Note[];
   activityEvents: ActivityEvent[];
   tasks: Task[];
 }
-interface ChecklistDocument { id: string; name: string; fileType: string; fileSize: number; createdAt: string; uploadedBy: { id: string; firstName: string; lastName: string } | null; uploadedByClientSessionId: string | null; checklistItem: { id: string; name: string } | null; }
-type ChecklistStatus = "NOT_STARTED" | "REQUESTED" | "RECEIVED" | "REVIEWED" | "COMPLETE";
-interface ChecklistItem { id: string; name: string; required: boolean; status: ChecklistStatus; notes: string | null; sortOrder: number; documents: ChecklistDocument[]; }
 
 const ACCOUNT_TYPES: Record<string, string> = {
-  TRADITIONAL_IRA_401K: "401(k) to Traditional IRA",
-  ROTH_IRA_401K: "401(k) to Roth IRA",
-  IRA_403B: "403(b) to IRA",
+  TRADITIONAL_IRA_401K: "401(k) → Traditional IRA",
+  ROTH_IRA_401K: "401(k) → Roth IRA",
+  IRA_403B: "403(b) → IRA",
   OTHER: "Other",
 };
 
-const STATUS_COLORS: Record<string, { bg: string; text: string; dot: string }> = {
-  PROPOSAL_ACCEPTED:      { bg: "#21262d",         text: "#8b949e",   dot: "#6e7681"   },
-  AWAITING_CLIENT_ACTION: { bg: "#2d2208",         text: "#e09937",   dot: "#d29922"   },
-  READY_TO_SUBMIT:        { bg: "#0d1f38",         text: "#79c0ff",   dot: "#388bfd"   },
-  SUBMITTED:              { bg: "#1d1535",         text: "#c4b5fd",   dot: "#a78bfa"   },
-  PROCESSING:             { bg: "#2d1f0e",         text: "#fdba74",   dot: "#fb923c"   },
-  IN_TRANSIT:             { bg: "#0d1535",         text: "#a5b4fc",   dot: "#818cf8"   },
-  WON:                    { bg: "#0d2318",         text: "#6ee7b7",   dot: "#3fb950"   },
+const CHECKLIST_PILL: Record<string, { hue: "slate" | "amber" | "blue" | "violet" | "green"; label: string }> = {
+  NOT_STARTED: { hue: "slate", label: "Not started" },
+  REQUESTED:   { hue: "amber", label: "Requested" },
+  RECEIVED:    { hue: "blue", label: "Received" },
+  REVIEWED:    { hue: "violet", label: "Reviewed" },
+  COMPLETE:    { hue: "green", label: "Complete" },
 };
 
-const EVENT_LABELS: Record<string, string> = {
-  CASE_CREATED: "Case created",
-  CASE_UPDATED: "Case updated",
-  STATUS_CHANGED: "Status changed",
-  NOTE_ADDED: "Note added",
-  OWNER_CHANGED: "Owner changed",
+const EVENT_VERB: Record<string, string> = {
+  CASE_CREATED: "created the case",
+  CASE_UPDATED: "updated the case",
+  STATUS_CHANGED: "changed status",
+  NOTE_ADDED: "added a note",
+  OWNER_CHANGED: "reassigned the case",
+  TASK_CREATED: "added a task",
+  TASK_COMPLETED: "completed a task",
+  TASK_REOPENED: "reopened a task",
+  FILE_UPLOADED: "uploaded a file",
+  FILE_DELETED: "deleted a file",
+  CHECKLIST_ITEM_UPDATED: "updated the checklist",
 };
 
-const inputCls = "w-full rounded-lg px-3 py-1.5 text-sm focus:outline-none focus:ring-0 focus:border-transparent";
-const inputStyle = { background: "#0d1117", border: "1px solid #30363d", color: "#c9d1d9" };
-
-const CARD = { background: "#161b22", border: "1px solid #21262d" };
-const CARD_HEADER_BORDER = { borderBottom: "1px solid #21262d" };
-const ICON_BOX = { background: "#21262d", width: 28, height: 28, borderRadius: 8, display: "flex", alignItems: "center", justifyContent: "center", flexShrink: 0 as const };
-
-export default function CaseDetail({ rolloverCase: initial, users, currentUserId, userRole, initialChecklist, initialDocuments, crmConnected = false, crmProviderLabel = null, stageConfig = null, clientLinkActive = false }: {
-  rolloverCase: RolloverCase; users: User[]; currentUserId: string; userRole: string; initialChecklist: ChecklistItem[]; initialDocuments: ChecklistDocument[]; crmConnected?: boolean; crmProviderLabel?: string | null; stageConfig?: StageConfigRow[] | null;
-  clientLinkActive?: boolean;
+export default function CaseDetailV2({
+  rolloverCase: initial,
+  users,
+  initialChecklist,
+  stageConfig,
+}: {
+  rolloverCase: CaseShape;
+  users: User[];
+  currentUserId: string;
+  userRole: RoleStr;
+  initialChecklist: ChecklistItem[];
+  stageConfig: StageConfigRow[] | null;
 }) {
-  // Visible options in the status dropdown: enabled stages from the firm's
-  // overlay, with custom labels swapped in. If the case is currently sitting
-  // on a now-disabled stage, we still include it (with its canonical label) so
-  // the dropdown can show "current" without an empty cell.
-  const enabledStages = resolveEnabledStages(stageConfig);
-  const statusOptions = enabledStages.some((s) => s.value === initial.status)
-    ? enabledStages
-    : [
-        ...enabledStages,
-        { value: initial.status, label: resolveStageLabel(initial.status, stageConfig), short: "", hue: "slate" as const },
-      ];
-  const [docRefreshKey, setDocRefreshKey] = useState(0);
   const router = useRouter();
-  const [rolloverCase, setRolloverCase] = useState(initial);
-  const [saving, setSaving] = useState(false);
-  const [noteText, setNoteText] = useState("");
-  const [submittingNote, setSubmittingNote] = useState(false);
-  const [editingDetails, setEditingDetails] = useState(false);
-  const [clientLinkBusy, setClientLinkBusy] = useState<"idle" | "issuing" | "revoking">("idle");
-  const [clientLinkMsg, setClientLinkMsg] = useState<string | null>(null);
-  const [clientLinkFallback, setClientLinkFallback] = useState<{ url: string; reason: string } | null>(null);
-  const canManageClientLink = userRole === "ADMIN" || userRole === "OPS";
+  const [c, setC] = useState(initial);
+  const [editing, setEditing] = useState(false);
+  const [stageOpen, setStageOpen] = useState(false);
+  const [taskInput, setTaskInput] = useState("");
+  const [noteInput, setNoteInput] = useState("");
 
-  async function handleIssueClientLink() {
-    if (!canManageClientLink) return;
-    setClientLinkBusy("issuing");
-    setClientLinkMsg(null);
-    setClientLinkFallback(null);
-    const res = await fetch(`/api/cases/${rolloverCase.id}/client-link`, {
-      method: "POST",
-      headers: { "Content-Type": "application/json" },
-      body: JSON.stringify({}),
-    });
-    setClientLinkBusy("idle");
-    if (!res.ok) {
-      setClientLinkMsg("Failed to send portal invite.");
-      return;
-    }
-    const body = await res.json() as { emailSent: boolean; emailError: string | null; portalUrl: string };
-    if (body.emailSent) {
-      setClientLinkMsg(`Portal invite sent to ${rolloverCase.clientEmail}.`);
-    } else {
-      // Email blocked — surface the reason and the link so the user can paste it manually.
-      setClientLinkMsg(`Link issued — couldn't send email: ${body.emailError ?? "unknown error"}.`);
-      setClientLinkFallback({ url: body.portalUrl, reason: body.emailError ?? "" });
-    }
-  }
-
-  async function handleCopyClientLink() {
-    if (!clientLinkFallback) return;
-    try {
-      await navigator.clipboard.writeText(clientLinkFallback.url);
-      setClientLinkMsg("Portal link copied to clipboard.");
-    } catch {
-      setClientLinkMsg("Couldn't copy — select and copy manually.");
-    }
-  }
-
-  async function handleRevokeClientAccess() {
-    if (!canManageClientLink) return;
-    if (!confirm("Revoke all active client portal access for this case?")) return;
-    setClientLinkBusy("revoking");
-    setClientLinkMsg(null);
-    setClientLinkFallback(null);
-    const res = await fetch(`/api/cases/${rolloverCase.id}/client-link`, { method: "DELETE" });
-    setClientLinkBusy("idle");
-    setClientLinkMsg(res.ok ? "Client access revoked." : "Failed to revoke.");
-  }
-  const [wbBusy, setWbBusy] = useState<"idle" | "search" | "linking" | "creating" | "unlinking" | "refreshing">("idle");
-  const [wbSearch, setWbSearch] = useState("");
-  const [wbResults, setWbResults] = useState<Array<{ id: string; name: string; stage: string | null }>>([]);
-  const [wbMsg, setWbMsg] = useState<string | null>(null);
-  const canManageWealthbox = userRole === "ADMIN" || userRole === "OPS";
-
-  async function wbRefresh() {
-    setWbBusy("refreshing");
-    setWbMsg(null);
-    const res = await fetch(`/api/cases/${rolloverCase.id}/crm/refresh`, { method: "POST" });
-    setWbBusy("idle");
-    if (!res.ok) {
-      setWbMsg("Refresh failed.");
-      return;
-    }
-    const body = await res.json();
-    if (body.ok === false) {
-      const reasonLabel: Record<string, string> = {
-        no_connection: "CRM not connected.",
-        not_linked: "Case isn't linked to a CRM opportunity.",
-        no_mapping: `Stage "${body.error ?? ""}" isn't mapped to a Rift status.`,
-        opp_no_stage: "Opportunity has no stage in CRM yet.",
-        api_error: `CRM error: ${body.error ?? "unknown"}`,
-      };
-      setWbMsg(reasonLabel[body.reason] ?? "Refresh failed.");
-    } else if (body.changed) {
-      setWbMsg(`Updated to ${body.newStatus.replace(/_/g, " ").toLowerCase()} (from CRM stage "${body.stageName ?? ""}").`);
-    } else {
-      setWbMsg("Already in sync.");
-    }
-    const full = await fetch(`/api/cases/${rolloverCase.id}`).then((r) => r.json());
-    setRolloverCase(full);
-  }
-
-  async function wbSearchOpportunities() {
-    setWbBusy("search");
-    setWbMsg(null);
-    const qs = wbSearch.trim() ? `?q=${encodeURIComponent(wbSearch.trim())}` : "";
-    const res = await fetch(`/api/integrations/crm/opportunities${qs}`);
-    setWbBusy("idle");
-    if (!res.ok) { setWbMsg("Couldn't fetch opportunities."); return; }
-    const body = await res.json();
-    setWbResults(body.opportunities ?? []);
-  }
-
-  async function wbLink(opportunityId: string) {
-    setWbBusy("linking");
-    setWbMsg(null);
-    const res = await fetch(`/api/cases/${rolloverCase.id}/crm`, {
-      method: "POST",
-      headers: { "Content-Type": "application/json" },
-      body: JSON.stringify({ mode: "link", opportunityId }),
-    });
-    setWbBusy("idle");
-    if (!res.ok) {
-      const body = await res.json().catch(() => ({}));
-      setWbMsg(body.error ?? "Link failed.");
-      return;
-    }
-    const full = await fetch(`/api/cases/${rolloverCase.id}`).then((r) => r.json());
-    setRolloverCase(full);
-    setWbResults([]);
-    setWbSearch("");
-  }
-
-  async function wbCreate() {
-    setWbBusy("creating");
-    setWbMsg(null);
-    const res = await fetch(`/api/cases/${rolloverCase.id}/crm`, {
-      method: "POST",
-      headers: { "Content-Type": "application/json" },
-      body: JSON.stringify({ mode: "create" }),
-    });
-    setWbBusy("idle");
-    if (!res.ok) {
-      const body = await res.json().catch(() => ({}));
-      setWbMsg(body.error ?? "Create failed.");
-      return;
-    }
-    const full = await fetch(`/api/cases/${rolloverCase.id}`).then((r) => r.json());
-    setRolloverCase(full);
-  }
-
-  async function wbUnlink() {
-    if (!confirm("Unlink this case from its CRM opportunity?")) return;
-    setWbBusy("unlinking");
-    const res = await fetch(`/api/cases/${rolloverCase.id}/crm`, { method: "DELETE" });
-    setWbBusy("idle");
-    if (res.ok) {
-      const full = await fetch(`/api/cases/${rolloverCase.id}`).then((r) => r.json());
-      setRolloverCase(full);
-    }
-  }
-
-  const [detailsDraft, setDetailsDraft] = useState({
-    clientFirstName: initial.clientFirstName,
-    clientLastName: initial.clientLastName,
-    clientEmail: initial.clientEmail,
-    clientPhone: initial.clientPhone ?? "",
-    sourceProvider: initial.sourceProvider,
-    destinationCustodian: initial.destinationCustodian,
-    accountType: initial.accountType,
-    assignedAdvisorId: initial.assignedAdvisor?.id ?? "",
-    assignedOpsId: initial.assignedOps?.id ?? "",
-    highPriority: initial.highPriority,
-    internalNotes: initial.internalNotes ?? "",
+  const [edit, setEdit] = useState({
+    sourceProvider: c.sourceProvider,
+    destinationCustodian: c.destinationCustodian,
+    accountType: c.accountType,
+    advisorId: c.assignedAdvisor?.id ?? "",
+    opsId: c.assignedOps?.id ?? "",
+    internalNotes: c.internalNotes ?? "",
   });
-
-  async function patchCase(body: object) {
-    setSaving(true);
-    const res = await fetch(`/api/cases/${rolloverCase.id}`, { method: "PATCH", headers: { "Content-Type": "application/json" }, body: JSON.stringify(body) });
-    setSaving(false);
-    if (res.ok) {
-      const full = await fetch(`/api/cases/${rolloverCase.id}`).then((r) => r.json());
-      setRolloverCase(full);
-    }
-  }
-
-  async function handleStatusChange(status: string) { await patchCase({ status }); }
-
-  async function handleSaveDetails() {
-    await patchCase({
-      clientFirstName: detailsDraft.clientFirstName,
-      clientLastName: detailsDraft.clientLastName,
-      clientEmail: detailsDraft.clientEmail,
-      clientPhone: detailsDraft.clientPhone || null,
-      sourceProvider: detailsDraft.sourceProvider,
-      destinationCustodian: detailsDraft.destinationCustodian,
-      accountType: detailsDraft.accountType,
-      assignedAdvisorId: detailsDraft.assignedAdvisorId,
-      assignedOpsId: detailsDraft.assignedOpsId,
-      highPriority: detailsDraft.highPriority,
-      internalNotes: detailsDraft.internalNotes,
-    });
-    setEditingDetails(false);
-  }
-
-  async function handleAddNote(e: React.FormEvent) {
-    e.preventDefault();
-    if (!noteText.trim()) return;
-    setSubmittingNote(true);
-    const res = await fetch(`/api/cases/${rolloverCase.id}/notes`, { method: "POST", headers: { "Content-Type": "application/json" }, body: JSON.stringify({ body: noteText }) });
-    setSubmittingNote(false);
-    if (res.ok) {
-      setNoteText("");
-      const full = await fetch(`/api/cases/${rolloverCase.id}`).then((r) => r.json());
-      setRolloverCase(full);
-    }
-  }
 
   const advisors = users.filter((u) => u.role === "ADVISOR" || u.role === "ADMIN");
   const ops = users.filter((u) => u.role === "OPS" || u.role === "ADMIN");
-  const statusColors = STATUS_COLORS[rolloverCase.status] ?? STATUS_COLORS["PROPOSAL_ACCEPTED"];
+
+  const allStages = resolveEnabledStages(stageConfig);
+  const currentStageIdx = allStages.findIndex((s) => s.value === c.status);
+  const stageHue = STAGE_HUE[c.status] ?? "slate";
+  const stageLabel = resolveStageLabel(c.status, stageConfig);
+
+  async function refresh() {
+    try {
+      const fresh = (await fetch(`/api/cases/${c.id}`).then((r) => r.json())) as CaseShape;
+      setC(fresh);
+    } catch {
+      router.refresh();
+    }
+  }
+
+  async function patchCase(body: Record<string, unknown>) {
+    const res = await fetch(`/api/cases/${c.id}`, {
+      method: "PATCH",
+      headers: { "content-type": "application/json" },
+      body: JSON.stringify(body),
+    });
+    if (res.ok) await refresh();
+  }
+
+  async function setStatus(status: string) {
+    setStageOpen(false);
+    setC((p) => ({ ...p, status }));
+    await patchCase({ status });
+  }
+
+  async function togglePriority() {
+    const next = !c.highPriority;
+    setC((p) => ({ ...p, highPriority: next }));
+    await patchCase({ highPriority: next });
+  }
+
+  async function saveEdits() {
+    await patchCase({
+      sourceProvider: edit.sourceProvider,
+      destinationCustodian: edit.destinationCustodian,
+      accountType: edit.accountType,
+      assignedAdvisorId: edit.advisorId || null,
+      assignedOpsId: edit.opsId || null,
+      internalNotes: edit.internalNotes,
+    });
+    setEditing(false);
+  }
+
+  async function addTask() {
+    if (!taskInput.trim()) return;
+    const title = taskInput.trim();
+    setTaskInput("");
+    await fetch(`/api/cases/${c.id}/tasks`, {
+      method: "POST",
+      headers: { "content-type": "application/json" },
+      body: JSON.stringify({ title }),
+    });
+    await refresh();
+  }
+
+  async function toggleTask(t: Task) {
+    const next = t.status === "COMPLETED" ? "OPEN" : "COMPLETED";
+    await fetch(`/api/tasks/${t.id}`, {
+      method: "PATCH",
+      headers: { "content-type": "application/json" },
+      body: JSON.stringify({ status: next }),
+    });
+    await refresh();
+  }
+
+  async function addNote() {
+    if (!noteInput.trim()) return;
+    const body = noteInput.trim();
+    setNoteInput("");
+    await fetch(`/api/cases/${c.id}/notes`, {
+      method: "POST",
+      headers: { "content-type": "application/json" },
+      body: JSON.stringify({ body }),
+    });
+    await refresh();
+  }
+
+  async function setChecklistStatus(itemId: string, status: string) {
+    await fetch(`/api/checklist/${itemId}`, {
+      method: "PATCH",
+      headers: { "content-type": "application/json" },
+      body: JSON.stringify({ status }),
+    });
+    router.refresh();
+  }
+
+  const openTasks = c.tasks.filter((t) => t.status !== "COMPLETED");
+  const doneTasks = c.tasks.filter((t) => t.status === "COMPLETED");
+  const checklistDone = initialChecklist.filter((k) => k.status === "COMPLETE").length;
+  const checklistPct =
+    initialChecklist.length === 0 ? 0 : Math.round((checklistDone / initialChecklist.length) * 100);
+
+  const fullName = (u: { firstName: string; lastName: string } | null) =>
+    u ? `${u.firstName} ${u.lastName}`.trim() : "Unassigned";
 
   return (
-    <div>
+    <div style={{ flex: 1, display: "flex", flexDirection: "column", minHeight: 0, background: T.page }}>
       {/* Breadcrumb */}
-      <div className="flex items-center gap-1.5 text-sm mb-5" style={{ color: "#7d8590" }}>
-        <Link href="/dashboard/cases" className="transition-colors hover:text-[#c9d1d9]">Cases</Link>
-        <svg width="12" height="12" viewBox="0 0 12 12" fill="none" style={{ color: "#484f58" }}>
-          <path d="M4.5 2.5L8 6l-3.5 3.5" stroke="currentColor" strokeWidth="1.4" strokeLinecap="round" strokeLinejoin="round"/>
-        </svg>
-        <span style={{ color: "#c9d1d9" }}>{rolloverCase.clientFirstName} {rolloverCase.clientLastName}</span>
-      </div>
-
-      {rolloverCase.needsReview && (
-        <div className="mb-5 rounded-lg p-3" style={{ background: "#2d2208", border: "1px solid #5c4419" }}>
-          <p className="text-sm font-semibold" style={{ color: "#e09937" }}>Auto-created from {crmProviderLabel ?? "CRM"} — needs review</p>
-          {rolloverCase.reviewReason && (
-            <p className="text-xs mt-1" style={{ color: "#d4a05c" }}>{rolloverCase.reviewReason}</p>
-          )}
-          <p className="text-xs mt-2" style={{ color: "#9d7c3a" }}>
-            Fill in the missing case details below, then click <em>Mark as reviewed</em>.
-          </p>
+      <div
+        style={{
+          padding: "16px 36px 0",
+          display: "flex",
+          alignItems: "center",
+          gap: 8,
+          flexWrap: "wrap",
+        }}
+      >
+        <Link href="/dashboard/cases" style={{ textDecoration: "none" }}>
           <button
-            type="button"
-            onClick={() => patchCase({ needsReview: false, reviewReason: null })}
-            className="mt-2 text-xs px-3 py-1 rounded-md"
-            style={{ background: "#3a2d12", color: "#e09937", border: "1px solid #5c4419" }}
+            style={{
+              height: 28,
+              padding: "0 10px",
+              borderRadius: 7,
+              background: "transparent",
+              border: "1px solid transparent",
+              color: T.textSecondary,
+              fontSize: 12.5,
+              fontFamily: "inherit",
+              cursor: "pointer",
+              display: "inline-flex",
+              alignItems: "center",
+              gap: 6,
+            }}
           >
-            Mark as reviewed
+            <Icon name="left" size={13} /> Cases
           </button>
-        </div>
-      )}
+        </Link>
+        <span style={{ color: T.textDisabled }}>/</span>
+        <span style={{ fontSize: 12.5, color: T.textSecondary }}>{stageLabel}</span>
+        <span style={{ color: T.textDisabled }}>/</span>
+        <span style={{ fontSize: 12.5, color: T.text, fontWeight: 500 }}>
+          {c.clientFirstName} {c.clientLastName}
+        </span>
+        <div style={{ flex: 1 }} />
+      </div>
 
       {/* Header */}
-      <div className="flex items-start justify-between mb-6">
-        <div>
-          <div className="flex items-center gap-2.5 flex-wrap">
-            <h1 className="text-xl font-bold tracking-tight" style={{ color: "#e4e6ea" }}>
-              {rolloverCase.clientFirstName} {rolloverCase.clientLastName}
-            </h1>
-            {rolloverCase.highPriority && (
-              <span className="text-[10px] font-bold px-2 py-0.5 rounded-full uppercase tracking-wide" style={{ background: "#3d1f1f", color: "#f87171", border: "1px solid #5a2020" }}>
-                High Priority
+      <div style={{ padding: "18px 36px 18px", borderBottom: `1px solid ${T.border}` }}>
+        <div style={{ display: "flex", alignItems: "flex-end", gap: 18 }}>
+          <Avatar name={`${c.clientFirstName} ${c.clientLastName}`} size={56} />
+          <div style={{ flex: 1, minWidth: 0 }}>
+            <div style={{ display: "flex", alignItems: "center", gap: 8 }}>
+              <h1
+                style={{
+                  margin: 0,
+                  fontSize: 28,
+                  fontWeight: 600,
+                  color: T.text,
+                  letterSpacing: -0.5,
+                  fontFamily: HEADLINE_STACK,
+                }}
+              >
+                {c.clientFirstName} {c.clientLastName}
+              </h1>
+              <button
+                onClick={togglePriority}
+                title="Priority"
+                style={{
+                  background: "transparent",
+                  border: "none",
+                  cursor: "pointer",
+                  padding: 4,
+                  color: c.highPriority ? T.accent : T.textTertiary,
+                  display: "inline-flex",
+                }}
+              >
+                <Icon name="flag" size={17} />
+              </button>
+            </div>
+            <div
+              style={{
+                marginTop: 6,
+                display: "flex",
+                alignItems: "center",
+                gap: 14,
+                fontSize: 13,
+                color: T.textSecondary,
+                flexWrap: "wrap",
+              }}
+            >
+              <span style={{ display: "inline-flex", alignItems: "center", gap: 5 }}>
+                <Icon name="mail" size={12} color={T.textTertiary} /> {c.clientEmail}
               </span>
-            )}
+              {c.clientPhone && (
+                <>
+                  <span style={{ color: T.textDisabled }}>·</span>
+                  <span>{c.clientPhone}</span>
+                </>
+              )}
+              <span style={{ color: T.textDisabled }}>·</span>
+              <span>Opened {new Date(c.createdAt).toLocaleDateString("en-US", { month: "short", day: "numeric", year: "numeric" })}</span>
+            </div>
           </div>
-          <p className="text-sm mt-1" style={{ color: "#7d8590" }}>
-            {rolloverCase.clientEmail}
-            {rolloverCase.clientPhone && (
-              <>
-                <span className="mx-1.5" style={{ color: "#30363d" }}>·</span>
-                <a
-                  href={`tel:${rolloverCase.clientPhone.replace(/[^+0-9x]/gi, "")}`}
-                  style={{ color: "#7d8590" }}
-                  className="hover:underline"
-                >
-                  {rolloverCase.clientPhone}
-                </a>
-              </>
-            )}
-            <span className="mx-1.5" style={{ color: "#30363d" }}>·</span>
-            Opened {formatDate(rolloverCase.createdAt)}
-          </p>
-          {canManageClientLink && (
-            <div className="mt-2">
-              <div className="flex items-center gap-2 flex-wrap">
-                <button
-                  type="button"
-                  onClick={handleIssueClientLink}
-                  disabled={clientLinkBusy !== "idle"}
-                  className="text-xs px-2.5 py-1 rounded-md transition-colors disabled:opacity-50"
-                  style={{ background: "#1f2937", color: "#c9d1d9", border: "1px solid #30363d" }}
-                >
-                  {clientLinkBusy === "issuing" ? "Sending…" : "Send client portal link"}
-                </button>
-                <button
-                  type="button"
-                  onClick={handleRevokeClientAccess}
-                  disabled={clientLinkBusy !== "idle"}
-                  className="text-xs px-2.5 py-1 rounded-md transition-colors disabled:opacity-50"
-                  style={{ background: "transparent", color: "#9ca3af", border: "1px solid #30363d" }}
-                >
-                  {clientLinkBusy === "revoking" ? "Revoking…" : "Revoke access"}
-                </button>
-                {clientLinkMsg && !clientLinkFallback && (
-                  <span className="text-xs" style={{ color: "#7d8590" }}>{clientLinkMsg}</span>
-                )}
-              </div>
 
-              {clientLinkFallback && (
+          <div style={{ display: "flex", flexDirection: "column", alignItems: "flex-end", gap: 10 }}>
+            {c.wealthboxAmount && (
+              <div
+                style={{
+                  fontSize: 22,
+                  fontWeight: 600,
+                  color: T.text,
+                  letterSpacing: -0.4,
+                  fontFamily: HEADLINE_STACK,
+                  ...TAB_NUM_STYLE,
+                }}
+              >
+                {fmtMoney(c.wealthboxAmount)}
+              </div>
+            )}
+            <div style={{ position: "relative" }}>
+              <button
+                onClick={() => setStageOpen((o) => !o)}
+                style={{
+                  height: 32,
+                  padding: "0 12px",
+                  background: T.surface1,
+                  border: `1px solid ${T.borderStrong}`,
+                  borderRadius: 8,
+                  cursor: "pointer",
+                  fontFamily: "inherit",
+                  display: "inline-flex",
+                  alignItems: "center",
+                  gap: 10,
+                  fontSize: 13,
+                  color: T.text,
+                  fontWeight: 500,
+                }}
+              >
+                <Pill hue={stageHue} dot small>
+                  {stageLabel}
+                </Pill>
+                <Icon name="down" size={13} color={T.textTertiary} />
+              </button>
+              {stageOpen && (
                 <div
-                  className="mt-2 rounded-md p-2.5 max-w-2xl"
-                  style={{ background: "#2d2208", border: "1px solid #5c4419" }}
+                  style={{
+                    position: "absolute",
+                    right: 0,
+                    top: 38,
+                    zIndex: 30,
+                    minWidth: 240,
+                    background: T.surface1,
+                    border: `1px solid ${T.borderStrong}`,
+                    borderRadius: 10,
+                    padding: 6,
+                    boxShadow: "0 8px 24px rgba(60,55,40,0.12)",
+                  }}
                 >
-                  <p className="text-xs font-medium" style={{ color: "#e09937" }}>
-                    {clientLinkMsg}
-                  </p>
-                  <p className="text-[11px] mt-1" style={{ color: "#9d7c3a" }}>
-                    The link below works — copy it and send it to the client manually.
-                  </p>
-                  <div className="flex items-center gap-2 mt-2">
-                    <input
-                      type="text"
-                      readOnly
-                      value={clientLinkFallback.url}
-                      onFocus={(e) => e.currentTarget.select()}
-                      className="flex-1 text-xs rounded px-2 py-1 font-mono"
-                      style={{ background: "#0d1117", border: "1px solid #3a2d12", color: "#c9d1d9" }}
-                    />
-                    <button
-                      type="button"
-                      onClick={handleCopyClientLink}
-                      className="text-xs px-2.5 py-1 rounded-md flex-shrink-0"
-                      style={{ background: "#3a2d12", color: "#e09937", border: "1px solid #5c4419" }}
-                    >
-                      Copy
-                    </button>
-                  </div>
-                </div>
-              )}
-            </div>
-          )}
-        </div>
-
-        {/* Status selector */}
-        <div className="flex items-center gap-2 flex-shrink-0">
-          {saving && (
-            <span className="text-xs flex items-center gap-1" style={{ color: "#7d8590" }}>
-              <svg width="10" height="10" viewBox="0 0 10 10" fill="none" className="animate-spin">
-                <circle cx="5" cy="5" r="3.5" stroke="currentColor" strokeWidth="1.5" strokeDasharray="10 6"/>
-              </svg>
-              Saving
-            </span>
-          )}
-          <DarkSelect
-            value={rolloverCase.status}
-            onChange={handleStatusChange}
-            options={statusOptions.map((s) => ({ value: s.value, label: s.label }))}
-            renderTrigger={(selected) => (
-              <span className="inline-flex items-center gap-1.5">
-                <span className="w-1.5 h-1.5 rounded-full flex-shrink-0" style={{ background: statusColors.dot }} />
-                <span className="text-xs font-semibold" style={{ color: statusColors.text }}>{selected?.label}</span>
-              </span>
-            )}
-            className="w-52"
-          />
-        </div>
-      </div>
-
-      <div className="grid grid-cols-1 lg:grid-cols-3 gap-5">
-        {/* Left column */}
-        <div className="lg:col-span-2 space-y-5">
-          {/* Case details */}
-          <section className="rounded-xl overflow-hidden" style={CARD}>
-            <div className="flex items-center justify-between px-5 pt-4 pb-3" style={CARD_HEADER_BORDER}>
-              <div className="flex items-center gap-2.5">
-                <div style={ICON_BOX}>
-                  <svg width="14" height="14" viewBox="0 0 14 14" fill="none" style={{ color: "#7d8590" }}>
-                    <rect x="1.5" y="1.5" width="11" height="11" rx="2" stroke="currentColor" strokeWidth="1.3"/>
-                    <path d="M4 5h6M4 7.5h6M4 10h4" stroke="currentColor" strokeWidth="1.2" strokeLinecap="round"/>
-                  </svg>
-                </div>
-                <h2 className="text-sm font-semibold" style={{ color: "#e4e6ea" }}>Case Details</h2>
-              </div>
-              {!editingDetails ? (
-                <button onClick={() => setEditingDetails(true)} className="text-xs text-blue-400 hover:text-blue-300 transition-colors">Edit</button>
-              ) : (
-                <div className="flex gap-2">
-                  <button onClick={handleSaveDetails} disabled={saving} className="text-xs text-blue-400 hover:text-blue-300 disabled:opacity-50 transition-colors">Save</button>
-                  <button onClick={() => setEditingDetails(false)} className="text-xs transition-colors" style={{ color: "#7d8590" }}>Cancel</button>
-                </div>
-              )}
-            </div>
-
-            {editingDetails ? (
-              <div className="space-y-3 p-5">
-                <EditRow label="Client First Name">
-                  <input
-                    type="text"
-                    value={detailsDraft.clientFirstName}
-                    onChange={(e) => setDetailsDraft((d) => ({ ...d, clientFirstName: e.target.value }))}
-                    className={inputCls}
-                    style={inputStyle}
-                  />
-                </EditRow>
-                <EditRow label="Client Last Name">
-                  <input
-                    type="text"
-                    value={detailsDraft.clientLastName}
-                    onChange={(e) => setDetailsDraft((d) => ({ ...d, clientLastName: e.target.value }))}
-                    className={inputCls}
-                    style={inputStyle}
-                  />
-                </EditRow>
-                <EditRow label="Client Email">
-                  <input
-                    type="email"
-                    placeholder="client@example.com"
-                    value={detailsDraft.clientEmail}
-                    onChange={(e) => setDetailsDraft((d) => ({ ...d, clientEmail: e.target.value }))}
-                    className={inputCls}
-                    style={inputStyle}
-                  />
-                </EditRow>
-                <EditRow label="Client Phone">
-                  <input
-                    type="tel"
-                    placeholder="555-123-4567"
-                    value={detailsDraft.clientPhone}
-                    onChange={(e) => setDetailsDraft((d) => ({ ...d, clientPhone: e.target.value }))}
-                    className={inputCls}
-                    style={inputStyle}
-                  />
-                </EditRow>
-                {[
-                  { label: "Source Provider", key: "sourceProvider", type: "input" },
-                  { label: "Destination Custodian", key: "destinationCustodian", type: "input" },
-                ].map(({ label, key, type }) => (
-                  <EditRow key={key} label={label}>
-                    <input type="text" value={detailsDraft[key as keyof typeof detailsDraft] as string} onChange={(e) => setDetailsDraft((d) => ({ ...d, [key]: e.target.value }))} className={inputCls} style={inputStyle} />
-                  </EditRow>
-                ))}
-                <EditRow label="Account Type">
-                  <DarkSelect value={detailsDraft.accountType} onChange={(v) => setDetailsDraft((d) => ({ ...d, accountType: v }))}
-                    options={Object.entries(ACCOUNT_TYPES).map(([value, label]) => ({ value, label }))} />
-                </EditRow>
-                <EditRow label="Assigned Advisor">
-                  <DarkSelect value={detailsDraft.assignedAdvisorId} onChange={(v) => setDetailsDraft((d) => ({ ...d, assignedAdvisorId: v }))}
-                    options={[{ value: "", label: "— None —" }, ...advisors.map((u) => ({ value: u.id, label: `${u.firstName} ${u.lastName}` }))]} />
-                </EditRow>
-                <EditRow label="Assigned Ops">
-                  <DarkSelect value={detailsDraft.assignedOpsId} onChange={(v) => setDetailsDraft((d) => ({ ...d, assignedOpsId: v }))}
-                    options={[{ value: "", label: "— None —" }, ...ops.map((u) => ({ value: u.id, label: `${u.firstName} ${u.lastName}` }))]} />
-                </EditRow>
-                <EditRow label="Internal Notes">
-                  <textarea value={detailsDraft.internalNotes} onChange={(e) => setDetailsDraft((d) => ({ ...d, internalNotes: e.target.value }))} rows={3} className={inputCls} style={{ ...inputStyle, resize: "vertical" }} />
-                </EditRow>
-                <label className="flex items-center gap-2 cursor-pointer">
-                  <input type="checkbox" checked={detailsDraft.highPriority} onChange={(e) => setDetailsDraft((d) => ({ ...d, highPriority: e.target.checked }))} className="rounded" style={{ accentColor: "#f87171" }} />
-                  <span className="text-sm" style={{ color: "#c9d1d9" }}>High priority</span>
-                </label>
-              </div>
-            ) : (
-              <dl className="px-5">
-                <DetailRow label="Source Provider" value={rolloverCase.sourceProvider} />
-                <DetailRow label="Destination Custodian" value={rolloverCase.destinationCustodian} />
-                <DetailRow label="Account Type" value={ACCOUNT_TYPES[rolloverCase.accountType] ?? rolloverCase.accountType} />
-                <DetailRow label="Assigned Advisor" value={rolloverCase.assignedAdvisor ? `${rolloverCase.assignedAdvisor.firstName} ${rolloverCase.assignedAdvisor.lastName}` : "—"} />
-                <DetailRow label="Assigned Ops" value={rolloverCase.assignedOps ? `${rolloverCase.assignedOps.firstName} ${rolloverCase.assignedOps.lastName}` : "—"} />
-                {rolloverCase.internalNotes && <DetailRow label="Internal Notes" value={rolloverCase.internalNotes} />}
-              </dl>
-            )}
-          </section>
-
-          {/* Tasks */}
-          <TaskList caseId={rolloverCase.id} initialTasks={rolloverCase.tasks} users={users} />
-
-          {/* Checklist */}
-          <ChecklistPanel
-            caseId={rolloverCase.id}
-            initialItems={initialChecklist}
-            userRole={userRole}
-            onDocumentUploaded={() => setDocRefreshKey((k) => k + 1)}
-            clientLinkActive={clientLinkActive}
-            onIssueClientLink={canManageClientLink ? handleIssueClientLink : undefined}
-          />
-
-          {/* Notes — moved into the left column so the user doesn't have to
-              scroll past the right-column CRM + Activity blocks to reach it. */}
-          <section className="rounded-xl" style={CARD}>
-            <div className="flex items-center gap-2.5 px-5 pt-4 pb-3" style={CARD_HEADER_BORDER}>
-              <div style={ICON_BOX}>
-                <svg width="14" height="14" viewBox="0 0 14 14" fill="none" style={{ color: "#7d8590" }}>
-                  <path d="M2 2.5h10v7a1 1 0 0 1-1 1H3a1 1 0 0 1-1-1v-7z" stroke="currentColor" strokeWidth="1.3"/>
-                  <path d="M2 5h10" stroke="currentColor" strokeWidth="1.2"/>
-                  <path d="M5 2v3M9 2v3" stroke="currentColor" strokeWidth="1.2" strokeLinecap="round"/>
-                </svg>
-              </div>
-              <h2 className="text-sm font-semibold" style={{ color: "#e4e6ea" }}>Notes</h2>
-              <span className="text-xs rounded-full px-2 py-0.5 ml-auto" style={{ background: "#21262d", color: "#7d8590" }}>{rolloverCase.notes.length}</span>
-            </div>
-            <div className="p-5">
-              <form onSubmit={handleAddNote} className="flex gap-2 mb-4">
-                <textarea
-                  value={noteText}
-                  onChange={(e) => setNoteText(e.target.value)}
-                  placeholder="Write a note…"
-                  rows={2}
-                  className="flex-1 rounded-lg px-3 py-2 text-sm focus:outline-none focus:ring-0 resize-none"
-                  style={{ background: "#0d1117", border: "1px solid #30363d", color: "#c9d1d9" }}
-                />
-                <button
-                  type="submit"
-                  disabled={submittingNote || !noteText.trim()}
-                  className="self-end rounded-lg bg-blue-600 px-3 py-2 text-sm font-medium text-white hover:bg-blue-500 disabled:opacity-50 transition-colors"
-                >
-                  Add
-                </button>
-              </form>
-              <div className="space-y-3">
-                {rolloverCase.notes.length === 0 && (
-                  <p className="text-sm py-1" style={{ color: "#7d8590" }}>No notes yet.</p>
-                )}
-                {[...rolloverCase.notes].reverse().map((note) => (
-                  <div key={note.id} className="rounded-lg p-3" style={{ background: "#0d1117", border: "1px solid #21262d" }}>
-                    <div className="flex items-center justify-between mb-1.5">
-                      <div className="flex items-center gap-2">
-                        {note.author ? (
-                          <Avatar userId={note.author.id} firstName={note.author.firstName} lastName={note.author.lastName} size={20} />
-                        ) : (
-                          <div className="w-5 h-5 rounded-full flex items-center justify-center flex-shrink-0" style={{ background: "#2d333b" }}>
-                            <span className="text-[9px] font-semibold" style={{ color: "#8b949e" }}>
-                              {note.fromClient ? "C" : "S"}
-                            </span>
-                          </div>
-                        )}
-                        <span className="text-xs font-medium" style={{ color: "#c9d1d9" }}>
-                          {note.author ? `${note.author.firstName} ${note.author.lastName}` : note.fromClient ? "Client" : "System"}
-                        </span>
-                      </div>
-                      <span className="text-xs" style={{ color: "#7d8590" }}>{formatDateTime(note.createdAt)}</span>
-                    </div>
-                    <p className="text-sm whitespace-pre-wrap leading-relaxed" style={{ color: "#c9d1d9" }}>{note.body}</p>
-                  </div>
-                ))}
-              </div>
-            </div>
-          </section>
-
-        </div>
-
-        {/* Right column */}
-        <div className="space-y-5">
-          <DocumentsPanel caseId={rolloverCase.id} initialDocuments={initialDocuments} userRole={userRole} refreshKey={docRefreshKey} />
-
-          {/* CRM (Wealthbox / Salesforce) */}
-          {crmConnected && (
-            <section className="rounded-xl overflow-hidden" style={CARD}>
-              <div className="flex items-center justify-between gap-2.5 px-5 pt-4 pb-3" style={CARD_HEADER_BORDER}>
-                <div className="flex items-center gap-2.5">
-                  <div style={ICON_BOX}>
-                    <svg width="14" height="14" viewBox="0 0 14 14" fill="none" style={{ color: "#7d8590" }}>
-                      <path d="M2 4.5A2.5 2.5 0 014.5 2h5A2.5 2.5 0 0112 4.5v5A2.5 2.5 0 019.5 12h-5A2.5 2.5 0 012 9.5v-5z" stroke="currentColor" strokeWidth="1.3"/>
-                      <path d="M5 7l1.5 1.5L9 5.5" stroke="currentColor" strokeWidth="1.3" strokeLinecap="round" strokeLinejoin="round"/>
-                    </svg>
-                  </div>
-                  <h2 className="text-sm font-semibold" style={{ color: "#e4e6ea" }}>{crmProviderLabel ?? "CRM"}</h2>
-                </div>
-                {rolloverCase.wealthboxLastSyncedAt && (
-                  <span className="text-xs" style={{ color: rolloverCase.wealthboxLastSyncError ? "#f87171" : "#6ee7b7" }}>
-                    {rolloverCase.wealthboxLastSyncError ? "Sync error" : `Synced ${formatDateTime(rolloverCase.wealthboxLastSyncedAt)}`}
-                  </span>
-                )}
-              </div>
-              <div className="px-5 py-4 space-y-3">
-                {rolloverCase.wealthboxOpportunityId ? (
-                  <>
-                    <p className="text-sm" style={{ color: "#c9d1d9" }}>
-                      Linked to opportunity{" "}
-                      {rolloverCase.wealthboxOpportunityName ? (
-                        <span style={{ color: "#c9d1d9" }}>
-                          &ldquo;{rolloverCase.wealthboxOpportunityName}&rdquo;
-                        </span>
-                      ) : null}{" "}
-                      <span style={{ fontFamily: "monospace", color: "#79c0ff" }}>#{rolloverCase.wealthboxOpportunityId}</span>
-                    </p>
-
-                    {(rolloverCase.wealthboxAmount !== null
-                      || rolloverCase.wealthboxTargetClose
-                      || rolloverCase.wealthboxProbability !== null
-                      || rolloverCase.wealthboxOppCreatedAt) && (
-                      <dl
-                        className="grid grid-cols-2 gap-x-4 gap-y-2 text-xs rounded-md p-3"
-                        style={{ background: "#0d1117", border: "1px solid #21262d" }}
+                  {allStages.map((s) => {
+                    const h = STAGE_HUE[s.value] ?? "slate";
+                    return (
+                      <div
+                        key={s.value}
+                        onClick={() => setStatus(s.value)}
+                        style={{
+                          display: "flex",
+                          alignItems: "center",
+                          gap: 8,
+                          padding: "8px 10px",
+                          borderRadius: 6,
+                          cursor: "pointer",
+                          background: s.value === c.status ? T.surface2 : "transparent",
+                        }}
+                        onMouseEnter={(e) => {
+                          e.currentTarget.style.background = T.surface3;
+                        }}
+                        onMouseLeave={(e) => {
+                          e.currentTarget.style.background =
+                            s.value === c.status ? T.surface2 : "transparent";
+                        }}
                       >
-                        {rolloverCase.wealthboxAmount !== null && (
-                          <CrmFact
-                            label="Amount"
-                            value={formatCurrency(rolloverCase.wealthboxAmount, rolloverCase.wealthboxAmountCurrency ?? "USD")}
+                        <Pill hue={h} dot small>
+                          {s.label}
+                        </Pill>
+                        {s.value === c.status && (
+                          <Icon
+                            name="check"
+                            size={13}
+                            color={T.textSecondary}
+                            style={{ marginLeft: "auto" }}
                           />
                         )}
-                        {rolloverCase.wealthboxProbability !== null && (
-                          <CrmFact label="Probability" value={`${rolloverCase.wealthboxProbability}%`} />
-                        )}
-                        {rolloverCase.wealthboxTargetClose && (
-                          <CrmFact label="Target close" value={formatDate(rolloverCase.wealthboxTargetClose)} />
-                        )}
-                        {rolloverCase.wealthboxOppCreatedAt && (
-                          <CrmFact label="Opp created" value={formatDate(rolloverCase.wealthboxOppCreatedAt)} />
-                        )}
-                      </dl>
-                    )}
-
-                    {rolloverCase.wealthboxLastSyncError && (
-                      <p className="text-xs" style={{ color: "#f87171" }}>{rolloverCase.wealthboxLastSyncError}</p>
-                    )}
-                    {canManageWealthbox && (
-                      <div className="flex items-center gap-2">
-                        <button
-                          onClick={wbRefresh}
-                          disabled={wbBusy === "refreshing"}
-                          className="text-xs px-3 py-1.5 rounded-md disabled:opacity-50"
-                          style={{ background: "#1f2937", border: "1px solid #30363d", color: "#c9d1d9" }}
-                        >
-                          {wbBusy === "refreshing" ? "Refreshing…" : "Refresh from CRM"}
-                        </button>
-                        <button
-                          onClick={wbUnlink}
-                          disabled={wbBusy === "unlinking"}
-                          className="text-xs px-3 py-1.5 rounded-md disabled:opacity-50"
-                          style={{ background: "#1f2937", border: "1px solid #30363d", color: "#c9d1d9" }}
-                        >
-                          {wbBusy === "unlinking" ? "Unlinking…" : "Unlink"}
-                        </button>
                       </div>
-                    )}
-                    {wbMsg && <p className="text-xs" style={{ color: "#7d8590" }}>{wbMsg}</p>}
-                  </>
-                ) : canManageWealthbox ? (
-                  <>
-                    <div className="flex gap-2">
-                      <input
-                        type="text"
-                        value={wbSearch}
-                        onChange={(e) => setWbSearch(e.target.value)}
-                        placeholder="Search opportunities by name"
-                        className={inputCls}
-                        style={inputStyle}
-                      />
-                      <button
-                        onClick={wbSearchOpportunities}
-                        disabled={wbBusy === "search"}
-                        className="text-xs px-3 py-1.5 rounded-md disabled:opacity-50"
-                        style={{ background: "#1f2937", border: "1px solid #30363d", color: "#c9d1d9" }}
-                      >
-                        {wbBusy === "search" ? "Searching…" : "Search"}
-                      </button>
-                    </div>
-                    {wbResults.length > 0 && (
-                      <ul className="space-y-1">
-                        {wbResults.map((o) => (
-                          <li key={o.id} className="flex items-center justify-between gap-2 text-xs p-2 rounded-md" style={{ background: "#0d1117", border: "1px solid #21262d" }}>
-                            <span style={{ color: "#c9d1d9" }}>
-                              {o.name}
-                              {o.stage && <span style={{ color: "#7d8590" }}> · {o.stage}</span>}
-                            </span>
-                            <button
-                              onClick={() => wbLink(o.id)}
-                              disabled={wbBusy === "linking"}
-                              className="text-xs px-2 py-1 rounded-md disabled:opacity-50"
-                              style={{ background: "#2563eb", color: "#fff" }}
-                            >
-                              Link
-                            </button>
-                          </li>
-                        ))}
-                      </ul>
-                    )}
-                    <div className="text-xs" style={{ color: "#7d8590" }}>Or</div>
-                    <button
-                      onClick={wbCreate}
-                      disabled={wbBusy === "creating"}
-                      className="text-xs px-3 py-1.5 rounded-md disabled:opacity-50"
-                      style={{ background: "#2563eb", color: "#fff" }}
-                    >
-                      {wbBusy === "creating" ? "Creating…" : "Create new opportunity"}
-                    </button>
-                    {wbMsg && <p className="text-xs" style={{ color: "#f87171" }}>{wbMsg}</p>}
-                  </>
-                ) : (
-                  <p className="text-xs" style={{ color: "#7d8590" }}>Not linked to a CRM opportunity.</p>
-                )}
-              </div>
-            </section>
-          )}
-
-          {/* Activity */}
-          <section className="rounded-xl overflow-hidden" style={CARD}>
-            <div className="flex items-center gap-2.5 px-5 pt-4 pb-3" style={CARD_HEADER_BORDER}>
-              <div style={ICON_BOX}>
-                <svg width="14" height="14" viewBox="0 0 14 14" fill="none" style={{ color: "#7d8590" }}>
-                  <circle cx="7" cy="7" r="5.5" stroke="currentColor" strokeWidth="1.3"/>
-                  <path d="M7 4v3.5l2 1.5" stroke="currentColor" strokeWidth="1.3" strokeLinecap="round" strokeLinejoin="round"/>
-                </svg>
-              </div>
-              <h2 className="text-sm font-semibold" style={{ color: "#e4e6ea" }}>Activity</h2>
-            </div>
-            <div className="p-5">
-              {rolloverCase.activityEvents.length === 0 ? (
-                <p className="text-sm" style={{ color: "#7d8590" }}>No activity yet.</p>
-              ) : (
-                <ol className="space-y-0">
-                  {[...rolloverCase.activityEvents].reverse().map((event, i, arr) => (
-                    <li key={event.id} className="flex gap-3">
-                      <div className="flex flex-col items-center flex-shrink-0">
-                        <div className="w-2 h-2 rounded-full mt-1.5 flex-shrink-0" style={{ background: "#30363d" }} />
-                        {i < arr.length - 1 && <div className="w-px flex-1 mt-1" style={{ background: "#21262d" }} />}
-                      </div>
-                      <div className={i < arr.length - 1 ? "pb-4" : ""}>
-                        <p className="text-xs leading-relaxed" style={{ color: "#8b949e" }}>
-                          <span className="font-medium" style={{ color: "#c9d1d9" }}>
-                            {event.actor ? `${event.actor.firstName} ${event.actor.lastName}` : event.clientSessionId ? "Client" : "System"}
-                          </span>
-                          {" "}
-                          {event.eventDetails ?? EVENT_LABELS[event.eventType] ?? event.eventType}
-                        </p>
-                        <p className="text-xs mt-0.5" style={{ color: "#7d8590" }}>{formatDateTime(event.createdAt)}</p>
-                      </div>
-                    </li>
-                  ))}
-                </ol>
+                    );
+                  })}
+                </div>
               )}
             </div>
-          </section>
+          </div>
+        </div>
 
+        {/* Stage progress strip */}
+        {currentStageIdx >= 0 && (
+          <div style={{ marginTop: 16, display: "flex", gap: 4 }}>
+            {allStages.map((s, i) => {
+              const past = i < currentStageIdx;
+              const now = i === currentStageIdx;
+              const color = STAGE_COLOR[s.value] ?? T.textTertiary;
+              return (
+                <div key={s.value} style={{ flex: 1, minWidth: 0 }}>
+                  <div
+                    style={{
+                      height: 5,
+                      borderRadius: 999,
+                      background: past || now ? color : T.surface3,
+                      opacity: past ? 0.55 : 1,
+                      border: now ? `1px solid ${color}` : "none",
+                      boxShadow: now ? `0 0 0 3px ${T.accentSoft}` : "none",
+                    }}
+                  />
+                  <div
+                    style={{
+                      marginTop: 6,
+                      fontSize: 10.5,
+                      color: now ? T.text : past ? T.textSecondary : T.textTertiary,
+                      fontWeight: now ? 600 : 400,
+                      textTransform: "uppercase",
+                      letterSpacing: 0.5,
+                      whiteSpace: "nowrap",
+                      overflow: "hidden",
+                      textOverflow: "ellipsis",
+                    }}
+                  >
+                    {s.label}
+                  </div>
+                </div>
+              );
+            })}
+          </div>
+        )}
+      </div>
+
+      {/* Body */}
+      <div
+        style={{
+          flex: 1,
+          padding: "20px 36px 28px",
+          display: "grid",
+          gridTemplateColumns: "1.5fr 1fr",
+          gap: 16,
+          overflowY: "auto",
+          minHeight: 0,
+        }}
+      >
+        {/* LEFT */}
+        <div style={{ display: "flex", flexDirection: "column", gap: 16, minWidth: 0 }}>
+          {/* Case details */}
+          <Card>
+            <div
+              style={{
+                padding: "16px 22px 12px",
+                borderBottom: `1px solid ${T.border}`,
+                display: "flex",
+                alignItems: "center",
+              }}
+            >
+              <div style={{ flex: 1, fontSize: 14, fontWeight: 600, color: T.text }}>Case details</div>
+              {!editing ? (
+                <Btn small ghost onClick={() => setEditing(true)}>
+                  <Icon name="key" size={12} /> Edit
+                </Btn>
+              ) : (
+                <div style={{ display: "flex", gap: 6 }}>
+                  <Btn small ghost onClick={() => setEditing(false)}>
+                    Cancel
+                  </Btn>
+                  <Btn small primary onClick={saveEdits}>
+                    <Icon name="check" size={12} /> Save
+                  </Btn>
+                </div>
+              )}
+            </div>
+            <div style={{ padding: "8px 22px 14px" }}>
+              <DetailField label="Source provider" hint="Where the assets are coming from.">
+                {editing ? (
+                  <TextInput
+                    value={edit.sourceProvider}
+                    onChange={(v) => setEdit((p) => ({ ...p, sourceProvider: v }))}
+                  />
+                ) : (
+                  <span style={{ fontSize: 13, color: T.text, fontWeight: 500 }}>
+                    {c.sourceProvider}
+                  </span>
+                )}
+              </DetailField>
+              <DetailField label="Destination custodian">
+                {editing ? (
+                  <TextInput
+                    value={edit.destinationCustodian}
+                    onChange={(v) => setEdit((p) => ({ ...p, destinationCustodian: v }))}
+                  />
+                ) : (
+                  <span style={{ fontSize: 13, color: T.text, fontWeight: 500 }}>
+                    {c.destinationCustodian}
+                  </span>
+                )}
+              </DetailField>
+              <DetailField label="Account type">
+                {editing ? (
+                  <SelectInput
+                    value={edit.accountType}
+                    onChange={(v) => setEdit((p) => ({ ...p, accountType: v }))}
+                    options={Object.entries(ACCOUNT_TYPES).map(([value, label]) => ({ value, label }))}
+                  />
+                ) : (
+                  <span style={{ fontSize: 13, color: T.text, fontWeight: 500 }}>
+                    {ACCOUNT_TYPES[c.accountType] ?? c.accountType}
+                  </span>
+                )}
+              </DetailField>
+              <DetailField label="Assigned advisor">
+                {editing ? (
+                  <SelectInput
+                    value={edit.advisorId}
+                    onChange={(v) => setEdit((p) => ({ ...p, advisorId: v }))}
+                    options={[
+                      { value: "", label: "Unassigned" },
+                      ...advisors.map((u) => ({ value: u.id, label: `${u.firstName} ${u.lastName}` })),
+                    ]}
+                  />
+                ) : (
+                  <span style={{ display: "inline-flex", alignItems: "center", gap: 8 }}>
+                    {c.assignedAdvisor && <Avatar name={fullName(c.assignedAdvisor)} size={22} />}
+                    <span style={{ fontSize: 13, color: T.text, fontWeight: 500 }}>
+                      {fullName(c.assignedAdvisor)}
+                    </span>
+                  </span>
+                )}
+              </DetailField>
+              <DetailField label="Assigned ops">
+                {editing ? (
+                  <SelectInput
+                    value={edit.opsId}
+                    onChange={(v) => setEdit((p) => ({ ...p, opsId: v }))}
+                    options={[
+                      { value: "", label: "Unassigned" },
+                      ...ops.map((u) => ({ value: u.id, label: `${u.firstName} ${u.lastName}` })),
+                    ]}
+                  />
+                ) : (
+                  <span style={{ display: "inline-flex", alignItems: "center", gap: 8 }}>
+                    {c.assignedOps && <Avatar name={fullName(c.assignedOps)} size={22} />}
+                    <span style={{ fontSize: 13, color: T.text, fontWeight: 500 }}>
+                      {fullName(c.assignedOps)}
+                    </span>
+                  </span>
+                )}
+              </DetailField>
+              <DetailField label="Internal notes" full last>
+                {editing ? (
+                  <textarea
+                    value={edit.internalNotes}
+                    onChange={(e) => setEdit((p) => ({ ...p, internalNotes: e.target.value }))}
+                    style={{
+                      width: "100%",
+                      minHeight: 72,
+                      background: T.input,
+                      border: `1px solid ${T.border}`,
+                      borderRadius: 7,
+                      padding: "8px 10px",
+                      color: T.text,
+                      fontSize: 13,
+                      fontFamily: "inherit",
+                      lineHeight: 1.5,
+                      outline: "none",
+                      resize: "vertical",
+                    }}
+                  />
+                ) : c.internalNotes ? (
+                  <div
+                    style={{
+                      width: "100%",
+                      padding: "10px 12px",
+                      background: T.surface2,
+                      border: `1px solid ${T.borderSoft}`,
+                      borderRadius: 7,
+                      fontSize: 12.5,
+                      color: T.text,
+                      lineHeight: 1.55,
+                      whiteSpace: "pre-wrap",
+                    }}
+                  >
+                    {c.internalNotes}
+                  </div>
+                ) : (
+                  <span style={{ fontSize: 12.5, color: T.textTertiary }}>—</span>
+                )}
+              </DetailField>
+            </div>
+          </Card>
+
+          {/* Tasks */}
+          <Card>
+            <div
+              style={{
+                padding: "16px 22px 12px",
+                borderBottom: `1px solid ${T.border}`,
+                display: "flex",
+                alignItems: "center",
+              }}
+            >
+              <div style={{ flex: 1 }}>
+                <div style={{ fontSize: 14, fontWeight: 600, color: T.text }}>Tasks</div>
+                <div style={{ fontSize: 11.5, color: T.textSecondary, marginTop: 2 }}>
+                  {openTasks.length} open · {doneTasks.length} completed
+                </div>
+              </div>
+            </div>
+            <div style={{ padding: "12px 22px" }}>
+              <div style={{ display: "flex", gap: 6, marginBottom: 12 }}>
+                <TextInput
+                  value={taskInput}
+                  onChange={setTaskInput}
+                  placeholder="Add a task…"
+                  prefix={<Icon name="plus" size={13} color={T.textTertiary} />}
+                  onKeyDown={(e) => {
+                    if (e.key === "Enter") addTask();
+                  }}
+                />
+                <Btn small primary onClick={addTask}>
+                  Add
+                </Btn>
+              </div>
+              {openTasks.length === 0 && doneTasks.length === 0 && (
+                <div
+                  style={{
+                    padding: "20px 0",
+                    textAlign: "center",
+                    fontSize: 12.5,
+                    color: T.textTertiary,
+                  }}
+                >
+                  No tasks yet.
+                </div>
+              )}
+              {openTasks.map((t, i) => (
+                <div
+                  key={t.id}
+                  style={{
+                    display: "flex",
+                    alignItems: "center",
+                    gap: 10,
+                    padding: "10px 0",
+                    borderTop: i === 0 ? `1px solid ${T.border}` : `1px solid ${T.borderSoft}`,
+                  }}
+                >
+                  <button
+                    onClick={() => toggleTask(t)}
+                    style={{
+                      width: 18,
+                      height: 18,
+                      borderRadius: 5,
+                      border: `1.5px solid ${T.borderStrong}`,
+                      background: T.surface1,
+                      cursor: "pointer",
+                      padding: 0,
+                    }}
+                    aria-label="Mark complete"
+                  />
+                  <div style={{ flex: 1, minWidth: 0 }}>
+                    <div style={{ fontSize: 13, color: T.text, fontWeight: 500 }}>{t.title}</div>
+                    {t.dueDate && (
+                      <div
+                        style={{
+                          fontSize: 11.5,
+                          marginTop: 2,
+                          color:
+                            new Date(t.dueDate) < new Date() ? T.danger : T.textTertiary,
+                          display: "inline-flex",
+                          alignItems: "center",
+                          gap: 4,
+                        }}
+                      >
+                        <Icon name="bell" size={10} />
+                        Due {new Date(t.dueDate).toLocaleDateString("en-US", { month: "short", day: "numeric" })}
+                      </div>
+                    )}
+                  </div>
+                  {t.assignee && <Avatar name={fullName(t.assignee)} size={20} />}
+                </div>
+              ))}
+              {doneTasks.length > 0 && (
+                <>
+                  <div
+                    style={{
+                      marginTop: 12,
+                      fontSize: 11,
+                      color: T.textTertiary,
+                      textTransform: "uppercase",
+                      letterSpacing: 0.5,
+                      padding: "10px 0 4px",
+                    }}
+                  >
+                    Completed
+                  </div>
+                  {doneTasks.map((t) => (
+                    <div
+                      key={t.id}
+                      style={{
+                        display: "flex",
+                        alignItems: "center",
+                        gap: 10,
+                        padding: "8px 0",
+                        borderTop: `1px solid ${T.borderSoft}`,
+                      }}
+                    >
+                      <button
+                        onClick={() => toggleTask(t)}
+                        style={{
+                          width: 18,
+                          height: 18,
+                          borderRadius: 5,
+                          background: T.success,
+                          border: "none",
+                          cursor: "pointer",
+                          display: "grid",
+                          placeItems: "center",
+                          padding: 0,
+                        }}
+                        aria-label="Reopen"
+                      >
+                        <Icon name="check" size={12} color={T.surface1} />
+                      </button>
+                      <div
+                        style={{
+                          flex: 1,
+                          fontSize: 12.5,
+                          color: T.textSecondary,
+                          textDecoration: "line-through",
+                        }}
+                      >
+                        {t.title}
+                      </div>
+                      {t.assignee && <Avatar name={fullName(t.assignee)} size={18} />}
+                    </div>
+                  ))}
+                </>
+              )}
+            </div>
+          </Card>
+
+          {/* Checklist */}
+          {initialChecklist.length > 0 && (
+            <Card>
+              <div style={{ padding: "16px 22px 12px", borderBottom: `1px solid ${T.border}` }}>
+                <div style={{ display: "flex", alignItems: "center", gap: 10 }}>
+                  <div style={{ flex: 1 }}>
+                    <div style={{ fontSize: 14, fontWeight: 600, color: T.text }}>
+                      Document checklist
+                    </div>
+                    <div style={{ fontSize: 11.5, color: T.textSecondary, marginTop: 2 }}>
+                      {checklistDone} of {initialChecklist.length} complete
+                    </div>
+                  </div>
+                  <span
+                    style={{
+                      fontSize: 14,
+                      fontWeight: 600,
+                      color: T.text,
+                      fontFamily: "ui-monospace, monospace",
+                    }}
+                  >
+                    {checklistPct}%
+                  </span>
+                </div>
+                <div style={{ marginTop: 10, display: "flex", height: 5, gap: 2 }}>
+                  {initialChecklist.map((k) => {
+                    const map: Record<string, string> = {
+                      COMPLETE: T.success,
+                      REVIEWED: T.violet,
+                      RECEIVED: T.info,
+                      REQUESTED: T.warning,
+                      NOT_STARTED: T.surface3,
+                    };
+                    return (
+                      <div
+                        key={k.id}
+                        style={{ flex: 1, background: map[k.status], borderRadius: 99 }}
+                      />
+                    );
+                  })}
+                </div>
+              </div>
+              <div style={{ padding: "6px 22px 14px" }}>
+                {initialChecklist.map((k, i) => {
+                  return (
+                    <div
+                      key={k.id}
+                      style={{
+                        display: "grid",
+                        gridTemplateColumns: "1fr auto",
+                        gap: 10,
+                        padding: "12px 0",
+                        borderBottom:
+                          i === initialChecklist.length - 1 ? "none" : `1px solid ${T.borderSoft}`,
+                        alignItems: "center",
+                      }}
+                    >
+                      <div style={{ minWidth: 0 }}>
+                        <div
+                          style={{
+                            fontSize: 13,
+                            fontWeight: 500,
+                            color: T.text,
+                            display: "flex",
+                            alignItems: "center",
+                            gap: 6,
+                          }}
+                        >
+                          {k.name}
+                          {k.required && (
+                            <span style={{ fontSize: 10, color: T.danger }}>· required</span>
+                          )}
+                        </div>
+                        {k.notes && (
+                          <div style={{ fontSize: 11.5, color: T.textTertiary, marginTop: 3 }}>
+                            {k.notes}
+                          </div>
+                        )}
+                      </div>
+                      <div style={{ display: "flex", gap: 6, alignItems: "center", minWidth: 160 }}>
+                        <SelectInput
+                          value={k.status}
+                          onChange={(v) => setChecklistStatus(k.id, v)}
+                          options={Object.entries(CHECKLIST_PILL).map(([value, p]) => ({
+                            value,
+                            label: p.label,
+                          }))}
+                          style={{ width: 160 }}
+                        />
+                      </div>
+                    </div>
+                  );
+                })}
+              </div>
+            </Card>
+          )}
+        </div>
+
+        {/* RIGHT */}
+        <div style={{ display: "flex", flexDirection: "column", gap: 16, minWidth: 0 }}>
+          {/* Quick actions */}
+          <Card padded>
+            <div
+              style={{
+                fontSize: 11,
+                color: T.textTertiary,
+                textTransform: "uppercase",
+                letterSpacing: 0.5,
+                fontWeight: 500,
+                marginBottom: 10,
+              }}
+            >
+              Quick actions
+            </div>
+            <div style={{ display: "grid", gridTemplateColumns: "1fr 1fr", gap: 6 }}>
+              <a
+                href={`mailto:${c.clientEmail}`}
+                style={{ textDecoration: "none" }}
+              >
+                <Btn small>
+                  <Icon name="mail" size={12} /> Email client
+                </Btn>
+              </a>
+              <Btn small>
+                <Icon name="bell" size={12} /> Send reminder
+              </Btn>
+              <Link href={`/dashboard/intelligence`} style={{ textDecoration: "none" }}>
+                <Btn small>
+                  <Icon name="spark" size={12} /> Ask Claude
+                </Btn>
+              </Link>
+              <Btn small>
+                <Icon name="ext" size={12} /> Open in CRM
+              </Btn>
+            </div>
+          </Card>
+
+          {/* Notes */}
+          <Card>
+            <div
+              style={{
+                padding: "16px 20px 12px",
+                borderBottom: `1px solid ${T.border}`,
+                display: "flex",
+                alignItems: "center",
+              }}
+            >
+              <div style={{ flex: 1, fontSize: 14, fontWeight: 600, color: T.text }}>Notes</div>
+              <span style={{ fontSize: 11, color: T.textTertiary }}>{c.notes.length}</span>
+            </div>
+            <div style={{ padding: 16, display: "flex", flexDirection: "column", gap: 12 }}>
+              <div style={{ display: "flex", gap: 6 }}>
+                <TextInput
+                  value={noteInput}
+                  onChange={setNoteInput}
+                  placeholder="Add a note…"
+                  onKeyDown={(e) => {
+                    if (e.key === "Enter") addNote();
+                  }}
+                />
+                <Btn small primary onClick={addNote}>
+                  Add
+                </Btn>
+              </div>
+              {c.notes.length === 0 && (
+                <div
+                  style={{
+                    padding: "12px 0",
+                    textAlign: "center",
+                    fontSize: 12.5,
+                    color: T.textTertiary,
+                  }}
+                >
+                  No notes yet.
+                </div>
+              )}
+              {c.notes
+                .slice()
+                .reverse()
+                .map((n, i) => (
+                  <div
+                    key={n.id}
+                    style={{
+                      padding: "10px 12px",
+                      borderRadius: 9,
+                      background: i === 0 ? T.accentSoft : T.surface2,
+                      border: `1px solid ${i === 0 ? T.accentBorder : T.borderSoft}`,
+                    }}
+                  >
+                    <div
+                      style={{
+                        display: "flex",
+                        alignItems: "center",
+                        gap: 8,
+                        marginBottom: 6,
+                      }}
+                    >
+                      <Avatar name={n.author ? fullName(n.author) : "Client"} size={20} />
+                      <span style={{ fontSize: 12, color: T.text, fontWeight: 600 }}>
+                        {n.author ? fullName(n.author) : "Client"}
+                      </span>
+                      <span style={{ fontSize: 11, color: T.textTertiary }}>
+                        {timeAgo(n.createdAt)}
+                      </span>
+                    </div>
+                    <div
+                      style={{
+                        fontSize: 12.5,
+                        color: T.text,
+                        lineHeight: 1.55,
+                        whiteSpace: "pre-wrap",
+                      }}
+                    >
+                      {n.body}
+                    </div>
+                  </div>
+                ))}
+            </div>
+          </Card>
+
+          {/* Activity */}
+          <Card>
+            <div style={{ padding: "16px 20px 12px", borderBottom: `1px solid ${T.border}` }}>
+              <div style={{ fontSize: 14, fontWeight: 600, color: T.text }}>Activity</div>
+            </div>
+            <div style={{ padding: "10px 20px 16px" }}>
+              {c.activityEvents.length === 0 && (
+                <div
+                  style={{
+                    padding: "12px 0",
+                    textAlign: "center",
+                    fontSize: 12.5,
+                    color: T.textTertiary,
+                  }}
+                >
+                  No activity yet.
+                </div>
+              )}
+              {c.activityEvents
+                .slice()
+                .reverse()
+                .slice(0, 15)
+                .map((a, i, arr) => (
+                  <div
+                    key={a.id}
+                    style={{
+                      display: "flex",
+                      gap: 10,
+                      padding: "8px 0",
+                      position: "relative",
+                    }}
+                  >
+                    <div
+                      style={{
+                        display: "flex",
+                        flexDirection: "column",
+                        alignItems: "center",
+                        flexShrink: 0,
+                        width: 18,
+                      }}
+                    >
+                      <div
+                        style={{
+                          width: 8,
+                          height: 8,
+                          borderRadius: 999,
+                          background: T.surface1,
+                          border: `1.5px solid ${i === 0 ? T.accent : T.borderStrong}`,
+                          zIndex: 1,
+                        }}
+                      />
+                      {i < arr.length - 1 && (
+                        <div
+                          style={{
+                            position: "absolute",
+                            top: 16,
+                            bottom: -4,
+                            left: 9,
+                            width: 1,
+                            background: T.border,
+                          }}
+                        />
+                      )}
+                    </div>
+                    <div
+                      style={{
+                        flex: 1,
+                        minWidth: 0,
+                        fontSize: 12.5,
+                        color: T.textSecondary,
+                        lineHeight: 1.5,
+                      }}
+                    >
+                      <b style={{ color: T.text, fontWeight: 600 }}>
+                        {a.actor ? fullName(a.actor) : "System"}
+                      </b>{" "}
+                      {EVENT_VERB[a.eventType] ?? "updated the case"}
+                      {a.eventDetails && (
+                        <span style={{ color: T.textTertiary }}> · {a.eventDetails}</span>
+                      )}
+                      <div
+                        style={{
+                          fontSize: 10.5,
+                          color: T.textTertiary,
+                          marginTop: 1,
+                          fontFamily: "ui-monospace, monospace",
+                        }}
+                      >
+                        {timeAgo(a.createdAt)}
+                      </div>
+                    </div>
+                  </div>
+                ))}
+            </div>
+          </Card>
         </div>
       </div>
     </div>
   );
 }
 
-function DetailRow({ label, value }: { label: string; value: string }) {
+function DetailField({
+  label,
+  hint,
+  full,
+  last,
+  children,
+}: {
+  label: string;
+  hint?: string;
+  full?: boolean;
+  last?: boolean;
+  children: React.ReactNode;
+}) {
   return (
-    <div className="flex justify-between gap-4 py-2.5" style={{ borderBottom: "1px solid #21262d" }}>
-      <dt className="text-xs font-medium flex-shrink-0" style={{ color: "#7d8590" }}>{label}</dt>
-      <dd className="text-xs text-right font-medium" style={{ color: "#c9d1d9" }}>{value}</dd>
+    <div
+      style={{
+        display: "grid",
+        gridTemplateColumns: full ? "1fr" : "180px 1fr",
+        gap: full ? 8 : 24,
+        padding: "12px 0",
+        borderBottom: last ? "none" : `1px solid ${T.borderSoft}`,
+      }}
+    >
+      <div>
+        <div style={{ fontSize: 12.5, fontWeight: 500, color: T.text }}>{label}</div>
+        {hint && (
+          <div
+            style={{
+              fontSize: 11,
+              color: T.textTertiary,
+              marginTop: 3,
+              lineHeight: 1.5,
+            }}
+          >
+            {hint}
+          </div>
+        )}
+      </div>
+      <div
+        style={{
+          display: "flex",
+          alignItems: "center",
+          minHeight: 32,
+          gap: 8,
+          flexWrap: "wrap",
+        }}
+      >
+        {children}
+      </div>
     </div>
   );
-}
-
-function EditRow({ label, children }: { label: string; children: React.ReactNode }) {
-  return (
-    <div>
-      <label className="block text-xs font-medium mb-1 uppercase tracking-wide" style={{ color: "#7d8590" }}>{label}</label>
-      {children}
-    </div>
-  );
-}
-
-function CrmFact({ label, value }: { label: string; value: string }) {
-  return (
-    <div>
-      <dt className="text-[10px] uppercase tracking-wide" style={{ color: "#7d8590" }}>{label}</dt>
-      <dd className="text-sm mt-0.5" style={{ color: "#c9d1d9" }}>{value}</dd>
-    </div>
-  );
-}
-
-function formatCurrency(amount: number, currency: string): string {
-  try {
-    return new Intl.NumberFormat("en-US", {
-      style: "currency",
-      currency,
-      maximumFractionDigits: amount % 1 === 0 ? 0 : 2,
-    }).format(amount);
-  } catch {
-    return `${currency} ${amount.toLocaleString()}`;
-  }
 }

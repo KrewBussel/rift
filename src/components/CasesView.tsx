@@ -1,35 +1,24 @@
 "use client";
 
-import { useEffect, useMemo, useRef, useState } from "react";
+import { useMemo, useState, useEffect } from "react";
+import { useRouter } from "next/navigation";
 import Link from "next/link";
-import CasesViewBoard from "./CasesViewBoard";
-import CasesViewWorkbench from "./CasesViewWorkbench";
+import { T, STAGE_HUE, fmtMoney, timeAgo, HEADLINE_STACK, TAB_NUM_STYLE } from "./tokens";
+import { Card, Pill, Btn, Icon, Avatar, TextInput, ChipSelect } from "./primitives";
 import {
-  STATUSES as STATUS_DEFS,
-  HUE,
-  BOARD_TEXT,
-  BOARD_MUTED,
-  BOARD_TERTIARY,
-  BOARD_BORDER,
-  BOARD_BORDER_STRONG,
-  BOARD_SURFACE_2,
-  BOARD_SURFACE_3,
-  BOARD_INPUT,
-  BOARD_ACCENT,
-  resolveEnabledStages,
+  STATUSES,
+  resolveStageLabel,
   type StageConfigRow,
-} from "./casesDesignTokens";
+} from "@/components/casesDesignTokens";
 
-/* ─── Types ──────────────────────────────────────────────────────────────── */
-
-export type CasesViewUser = {
+export type V2CasesUser = {
   id: string;
   firstName: string;
   lastName: string;
   role: string;
 };
 
-export type CasesViewCase = {
+export type V2CasesCase = {
   id: string;
   clientFirstName: string;
   clientLastName: string;
@@ -44,567 +33,812 @@ export type CasesViewCase = {
   statusUpdatedAt: string;
   updatedAt: string;
   createdAt: string;
+  wealthboxAmount?: number | null;
   assignedAdvisor: { id: string; firstName: string; lastName: string } | null;
   assignedOps: { id: string; firstName: string; lastName: string } | null;
 };
 
 type Role = "ADMIN" | "ADVISOR" | "OPS";
-type ViewMode = "board" | "grid";
+type ViewMode = "board" | "grid" | "list";
 
-const VIEW_STORAGE_KEY = "rift-cases-view";
-
-/* ─── Root ───────────────────────────────────────────────────────────────── */
-
-export default function CasesView({
+export default function CasesViewV2({
   cases: initialCases,
   users,
   userRole,
   initialStatus = "",
   stageConfig = null,
+  firmName,
+  crmProvider,
 }: {
-  cases: CasesViewCase[];
-  users: CasesViewUser[];
+  cases: V2CasesCase[];
+  users: V2CasesUser[];
   userRole: Role;
   initialStatus?: string;
   stageConfig?: StageConfigRow[] | null;
+  firmName: string;
+  crmProvider?: string | null;
 }) {
-  const isAdmin = userRole === "ADMIN";
-
-  // Local mirror so we can do optimistic status updates without a refetch.
+  const router = useRouter();
   const [cases, setCases] = useState(initialCases);
   useEffect(() => setCases(initialCases), [initialCases]);
 
   const [view, setView] = useState<ViewMode>("board");
   const [search, setSearch] = useState("");
-  const [status, setStatus] = useState(initialStatus);
-  const [ownerId, setOwnerId] = useState("");
+  const [status, setStatus] = useState(initialStatus || "ALL");
+  const [advisor, setAdvisor] = useState("ALL");
   const [priorityOnly, setPriorityOnly] = useState(false);
+  const [syncing, setSyncing] = useState(false);
 
-  // Restore view preference (only after mount to avoid SSR mismatch).
-  useEffect(() => {
-    const saved = typeof window !== "undefined" ? localStorage.getItem(VIEW_STORAGE_KEY) : null;
-    if (saved === "board" || saved === "grid") setView(saved);
-  }, []);
-
-  function changeView(next: ViewMode) {
-    setView(next);
-    try {
-      localStorage.setItem(VIEW_STORAGE_KEY, next);
-    } catch {
-      /* noop — storage may be unavailable */
-    }
-  }
-
-  async function handleStatusChange(caseId: string, nextStatus: string) {
-    const previous = cases.find((c) => c.id === caseId);
-    if (!previous || previous.status === nextStatus) return;
-    // Optimistic update
-    setCases((prev) =>
-      prev.map((c) => (c.id === caseId ? { ...c, status: nextStatus, statusUpdatedAt: new Date().toISOString(), updatedAt: new Date().toISOString() } : c))
-    );
-    try {
-      const res = await fetch(`/api/cases/${caseId}`, {
-        method: "PATCH",
-        headers: { "Content-Type": "application/json" },
-        body: JSON.stringify({ status: nextStatus }),
-      });
-      if (!res.ok) throw new Error(`HTTP ${res.status}`);
-    } catch {
-      // Roll back on failure
-      setCases((prev) => prev.map((c) => (c.id === caseId ? previous : c)));
-    }
-  }
+  const advisors = useMemo(() => users.filter((u) => u.role === "ADVISOR" || u.role === "ADMIN"), [users]);
 
   const filtered = useMemo(() => {
-    let result = cases;
+    let out = cases;
     if (search) {
-      const q = search.toLowerCase().trim();
-      result = result.filter(
-        (c) =>
-          c.clientFirstName.toLowerCase().includes(q) ||
-          c.clientLastName.toLowerCase().includes(q) ||
-          `${c.clientFirstName} ${c.clientLastName}`.toLowerCase().includes(q) ||
-          c.clientEmail.toLowerCase().includes(q) ||
-          c.sourceProvider.toLowerCase().includes(q) ||
-          c.destinationCustodian.toLowerCase().includes(q)
+      const q = search.toLowerCase();
+      out = out.filter((c) =>
+        `${c.clientFirstName} ${c.clientLastName} ${c.sourceProvider} ${c.destinationCustodian} ${c.clientEmail}`
+          .toLowerCase()
+          .includes(q)
       );
     }
-    if (status) result = result.filter((c) => c.status === status);
-    if (ownerId && isAdmin) {
-      if (ownerId === "unassigned") {
-        result = result.filter((c) => !c.assignedAdvisor && !c.assignedOps);
-      } else {
-        result = result.filter(
-          (c) => c.assignedAdvisor?.id === ownerId || c.assignedOps?.id === ownerId
-        );
-      }
+    if (advisor !== "ALL") out = out.filter((c) => c.assignedAdvisor?.id === advisor);
+    if (status !== "ALL") out = out.filter((c) => c.status === status);
+    if (priorityOnly) out = out.filter((c) => c.highPriority);
+    return out;
+  }, [cases, search, advisor, status, priorityOnly]);
+
+  const totalValue = filtered.reduce((s, c) => s + (c.wealthboxAmount ?? 0), 0);
+
+  async function syncCrm() {
+    if (syncing) return;
+    setSyncing(true);
+    try {
+      await fetch("/api/integrations/crm/poll", { method: "POST" });
+      router.refresh();
+    } finally {
+      setSyncing(false);
     }
-    if (priorityOnly) result = result.filter((c) => c.highPriority);
-    return result;
-  }, [cases, search, status, ownerId, priorityOnly, isAdmin]);
+  }
 
-  const statusCounts = useMemo(() => {
-    const counts: Record<string, number> = { "": cases.length };
-    for (const c of cases) counts[c.status] = (counts[c.status] ?? 0) + 1;
-    return counts;
-  }, [cases]);
-
-  const ownerCounts = useMemo(() => {
-    if (!isAdmin) return { byId: new Map<string, number>(), unassigned: 0 };
-    const byId = new Map<string, number>();
-    let unassigned = 0;
-    for (const c of cases) {
-      if (c.assignedAdvisor) byId.set(c.assignedAdvisor.id, (byId.get(c.assignedAdvisor.id) ?? 0) + 1);
-      if (c.assignedOps) byId.set(c.assignedOps.id, (byId.get(c.assignedOps.id) ?? 0) + 1);
-      if (!c.assignedAdvisor && !c.assignedOps) unassigned++;
-    }
-    return { byId, unassigned };
-  }, [cases, isAdmin]);
-
-  const hasFilters = !!(search || status || ownerId || priorityOnly);
-
-  return (
-    <div className="space-y-3">
-      {/* Filter bar */}
-      <div
-        className="rounded-lg p-3"
-        style={{ background: BOARD_SURFACE_2, border: `1px solid ${BOARD_BORDER}` }}
-      >
-        <div className="flex items-center gap-2 flex-wrap">
-          <SearchInput value={search} onChange={setSearch} />
-          {isAdmin && (
-            <OwnerFilter
-              users={users}
-              selected={ownerId}
-              onChange={setOwnerId}
-              counts={ownerCounts.byId}
-              unassignedCount={ownerCounts.unassigned}
-            />
-          )}
-          <PriorityToggle active={priorityOnly} onChange={setPriorityOnly} />
-
-          <div className="ml-auto flex items-center gap-2">
-            {hasFilters && (
-              <button
-                onClick={() => {
-                  setSearch("");
-                  setStatus("");
-                  setOwnerId("");
-                  setPriorityOnly(false);
-                }}
-                className="text-xs px-2.5 py-1.5 rounded-md transition-colors"
-                style={{ background: "transparent", color: BOARD_ACCENT }}
-              >
-                Clear filters
-              </button>
-            )}
-            <ViewToggle view={view} onChange={changeView} />
-          </div>
-        </div>
-
-        {/* Status tabs — only for grid view (Board uses columns instead) */}
-        {view === "grid" && (
-          <div className="flex items-center gap-1 flex-wrap mt-3">
-            <StatusTab
-              label="All"
-              count={statusCounts[""] ?? 0}
-              active={status === ""}
-              onClick={() => setStatus("")}
-            />
-            {resolveEnabledStages(stageConfig).map((s) => (
-              <StatusTab
-                key={s.value}
-                label={s.label === STATUS_DEFS.find((d) => d.value === s.value)?.label ? s.short : s.label}
-                count={statusCounts[s.value] ?? 0}
-                active={status === s.value}
-                hue={HUE[s.hue]}
-                onClick={() => setStatus(status === s.value ? "" : s.value)}
-              />
-            ))}
-          </div>
-        )}
-      </div>
-
-      {/* Count + create */}
-      <div className="flex items-center justify-between">
-        <p className="text-xs" style={{ color: BOARD_MUTED }}>
-          {filtered.length === cases.length
-            ? `${cases.length.toLocaleString()} ${cases.length === 1 ? "case" : "cases"}`
-            : `Showing ${filtered.length.toLocaleString()} of ${cases.length.toLocaleString()}`}
-        </p>
-        {userRole !== "OPS" && (
-          <Link
-            href="/dashboard/cases/new"
-            className="inline-flex items-center gap-1.5 text-xs font-semibold px-3 py-1.5 rounded-md transition-colors"
-            style={{ background: BOARD_ACCENT, color: "#fff" }}
-          >
-            <svg width="10" height="10" viewBox="0 0 10 10" fill="none">
-              <path d="M5 1v8M1 5h8" stroke="currentColor" strokeWidth="1.5" strokeLinecap="round" />
-            </svg>
-            New case
-          </Link>
-        )}
-      </div>
-
-      {/* Active view */}
-      {filtered.length === 0 ? (
-        <div className="rounded-lg" style={{ background: BOARD_SURFACE_2, border: `1px solid ${BOARD_BORDER}` }}>
-          <EmptyState hasFilters={hasFilters} canCreate={userRole !== "OPS"} />
-        </div>
-      ) : view === "board" ? (
-        <CasesViewBoard cases={filtered} onStatusChange={handleStatusChange} stageConfig={stageConfig} />
-      ) : (
-        <CasesViewWorkbench cases={filtered} onStatusChange={handleStatusChange} stageConfig={stageConfig} />
-      )}
-    </div>
-  );
-}
-
-/* ─── View toggle ────────────────────────────────────────────────────────── */
-
-function ViewToggle({ view, onChange }: { view: ViewMode; onChange: (v: ViewMode) => void }) {
   return (
     <div
-      className="inline-flex rounded-md"
-      role="tablist"
-      style={{ background: BOARD_INPUT, border: `1px solid ${BOARD_BORDER}` }}
-    >
-      <ToggleButton active={view === "board"} onClick={() => onChange("board")} label="Board">
-        <svg width="12" height="12" viewBox="0 0 12 12" fill="none" aria-hidden>
-          <rect x="1" y="1" width="3" height="10" rx="0.5" stroke="currentColor" strokeWidth="1.2" />
-          <rect x="5" y="1" width="3" height="6"  rx="0.5" stroke="currentColor" strokeWidth="1.2" />
-          <rect x="9" y="1" width="2" height="8"  rx="0.5" stroke="currentColor" strokeWidth="1.2" />
-        </svg>
-      </ToggleButton>
-      <ToggleButton active={view === "grid"} onClick={() => onChange("grid")} label="Grid">
-        <svg width="12" height="12" viewBox="0 0 12 12" fill="none" aria-hidden>
-          <rect x="1" y="1" width="10" height="10" rx="1" stroke="currentColor" strokeWidth="1.2" />
-          <path d="M1 4.5h10M1 8h10M4.5 1v10" stroke="currentColor" strokeWidth="1.2" />
-        </svg>
-      </ToggleButton>
-    </div>
-  );
-}
-
-function ToggleButton({
-  active,
-  onClick,
-  label,
-  children,
-}: {
-  active: boolean;
-  onClick: () => void;
-  label: string;
-  children: React.ReactNode;
-}) {
-  return (
-    <button
-      onClick={onClick}
-      role="tab"
-      aria-selected={active}
-      title={label}
-      className="inline-flex items-center gap-1.5 px-2.5 py-1.5 text-xs font-medium transition-colors"
       style={{
-        background: active ? BOARD_SURFACE_3 : "transparent",
-        color: active ? BOARD_TEXT : BOARD_MUTED,
+        flex: 1,
+        display: "flex",
+        flexDirection: "column",
+        minHeight: 0,
+        background: T.page,
       }}
     >
-      {children}
-      <span>{label}</span>
-    </button>
-  );
-}
-
-/* ─── Filter controls ────────────────────────────────────────────────────── */
-
-function SearchInput({ value, onChange }: { value: string; onChange: (v: string) => void }) {
-  return (
-    <div className="relative flex-1 min-w-[240px] max-w-md">
-      <svg
-        width="13"
-        height="13"
-        viewBox="0 0 14 14"
-        fill="none"
-        className="absolute left-3 top-1/2 -translate-y-1/2 pointer-events-none"
-        style={{ color: BOARD_TERTIARY }}
-      >
-        <circle cx="6" cy="6" r="4.5" stroke="currentColor" strokeWidth="1.3" />
-        <path d="M9.5 9.5l3 3" stroke="currentColor" strokeWidth="1.3" strokeLinecap="round" />
-      </svg>
-      <input
-        type="text"
-        value={value}
-        onChange={(e) => onChange(e.target.value)}
-        placeholder="Search clients, providers, custodians…"
-        className="w-full rounded-md pl-9 pr-3 py-2 text-sm focus:outline-none transition-colors"
-        style={{ background: BOARD_INPUT, border: `1px solid ${BOARD_BORDER}`, color: BOARD_TEXT }}
-        onFocus={(e) => (e.currentTarget.style.borderColor = "#3b82f680")}
-        onBlur={(e) => (e.currentTarget.style.borderColor = BOARD_BORDER)}
-      />
-    </div>
-  );
-}
-
-function PriorityToggle({
-  active,
-  onChange,
-}: {
-  active: boolean;
-  onChange: (v: boolean) => void;
-}) {
-  return (
-    <button
-      onClick={() => onChange(!active)}
-      className="inline-flex items-center gap-1.5 text-xs font-medium px-3 py-2 rounded-md transition-colors"
-      style={{
-        background: active ? "#2a1313" : "transparent",
-        border: `1px solid ${active ? "#5c2626" : BOARD_BORDER}`,
-        color: active ? "#f87171" : BOARD_MUTED,
-      }}
-    >
-      <span className="w-1 h-1 rounded-full" style={{ background: active ? "#f87171" : BOARD_TERTIARY }} />
-      Priority
-    </button>
-  );
-}
-
-function OwnerFilter({
-  users,
-  selected,
-  onChange,
-  counts,
-  unassignedCount,
-}: {
-  users: CasesViewUser[];
-  selected: string;
-  onChange: (v: string) => void;
-  counts: Map<string, number>;
-  unassignedCount: number;
-}) {
-  const [open, setOpen] = useState(false);
-  const [query, setQuery] = useState("");
-  const ref = useRef<HTMLDivElement>(null);
-  const inputRef = useRef<HTMLInputElement>(null);
-
-  useEffect(() => {
-    if (!open) return;
-    const onClick = (e: MouseEvent) => {
-      if (ref.current && !ref.current.contains(e.target as Node)) setOpen(false);
-    };
-    document.addEventListener("mousedown", onClick);
-    return () => document.removeEventListener("mousedown", onClick);
-  }, [open]);
-
-  useEffect(() => {
-    if (open) {
-      setQuery("");
-      setTimeout(() => inputRef.current?.focus(), 0);
-    }
-  }, [open]);
-
-  const current =
-    selected === ""
-      ? "Anyone"
-      : selected === "unassigned"
-      ? "Unassigned"
-      : (() => {
-          const u = users.find((u) => u.id === selected);
-          return u ? `${u.firstName} ${u.lastName}` : "Anyone";
-        })();
-
-  const filteredUsers = users.filter((u) =>
-    `${u.firstName} ${u.lastName}`.toLowerCase().includes(query.toLowerCase())
-  );
-
-  return (
-    <div ref={ref} className="relative">
-      <button
-        onClick={() => setOpen((v) => !v)}
-        className="inline-flex items-center gap-1.5 text-xs font-medium px-3 py-2 rounded-md transition-colors"
-        style={{
-          background: selected ? "#0f1a2e" : "transparent",
-          border: `1px solid ${selected ? "#1f2e4d" : BOARD_BORDER}`,
-          color: selected ? "#5b8def" : BOARD_TEXT,
-        }}
-      >
-        <span style={{ color: selected ? "#5b8def" : BOARD_MUTED }}>Owner:</span>
-        <span>{current}</span>
-        <svg width="9" height="9" viewBox="0 0 10 10" fill="none" aria-hidden>
-          <path d="M2 4l3 3 3-3" stroke="currentColor" strokeWidth="1.4" strokeLinecap="round" strokeLinejoin="round" />
-        </svg>
-      </button>
-
-      {open && (
-        <div
-          className="absolute top-full mt-1 left-0 z-30 rounded-lg overflow-hidden w-72"
-          style={{ background: BOARD_SURFACE_2, border: `1px solid ${BOARD_BORDER_STRONG}`, boxShadow: "0 20px 50px -15px rgba(0,0,0,0.6)" }}
-        >
-          <div className="p-2" style={{ borderBottom: `1px solid ${BOARD_BORDER}` }}>
-            <input
-              ref={inputRef}
-              type="text"
-              value={query}
-              onChange={(e) => setQuery(e.target.value)}
-              placeholder="Search team members…"
-              className="w-full rounded-md px-2.5 py-1.5 text-xs focus:outline-none"
-              style={{ background: BOARD_INPUT, border: `1px solid ${BOARD_BORDER}`, color: BOARD_TEXT }}
-            />
-          </div>
-          <ul className="max-h-72 overflow-y-auto py-1">
-            <OwnerOption
-              label="Anyone"
-              detail=""
-              selected={selected === ""}
-              onClick={() => {
-                onChange("");
-                setOpen(false);
-              }}
-              hideDetail
-            />
-            <OwnerOption
-              label="Unassigned"
-              detail={`${unassignedCount}`}
-              selected={selected === "unassigned"}
-              onClick={() => {
-                onChange("unassigned");
-                setOpen(false);
-              }}
-            />
-            {filteredUsers.length > 0 && (
-              <li className="px-3 pt-2 pb-1 text-[10px] uppercase tracking-widest" style={{ color: BOARD_TERTIARY }}>
-                Team
-              </li>
-            )}
-            {filteredUsers.map((u) => (
-              <OwnerOption
-                key={u.id}
-                label={`${u.firstName} ${u.lastName}`}
-                detail={`${counts.get(u.id) ?? 0}`}
-                selected={selected === u.id}
-                role={u.role}
-                onClick={() => {
-                  onChange(u.id);
-                  setOpen(false);
-                }}
-              />
-            ))}
-            {filteredUsers.length === 0 && query && (
-              <li className="px-3 py-3 text-xs" style={{ color: BOARD_MUTED }}>
-                No matches
-              </li>
-            )}
-          </ul>
-        </div>
-      )}
-    </div>
-  );
-}
-
-function OwnerOption({
-  label,
-  detail,
-  selected,
-  role,
-  onClick,
-  hideDetail,
-}: {
-  label: string;
-  detail: string;
-  selected: boolean;
-  role?: string;
-  onClick: () => void;
-  hideDetail?: boolean;
-}) {
-  return (
-    <li>
-      <button
-        onClick={onClick}
-        className="w-full flex items-center justify-between gap-3 px-3 py-2 text-left transition-colors hover:bg-[#1a1f2b]"
-        style={{ background: selected ? BOARD_SURFACE_3 : "transparent" }}
-      >
-        <span className="flex items-center gap-2 min-w-0">
-          <span className="text-sm truncate" style={{ color: BOARD_TEXT }}>{label}</span>
-          {role && (
-            <span
-              className="text-[9px] uppercase tracking-widest px-1 py-0.5 rounded flex-shrink-0"
+      {/* Header */}
+      <div style={{ padding: "26px 36px 18px" }}>
+        <div style={{ display: "flex", alignItems: "flex-end", gap: 20, marginBottom: 18 }}>
+          <div style={{ flex: 1, minWidth: 0 }}>
+            <div
               style={{
-                background: role === "ADMIN" ? "#1a1530" : role === "ADVISOR" ? "#0f1a2e" : "#1a1530",
-                color: role === "ADMIN" ? "#a78bfa" : role === "ADVISOR" ? "#5b8def" : "#a78bfa",
+                fontSize: 11,
+                fontWeight: 500,
+                color: T.textTertiary,
+                textTransform: "uppercase",
+                letterSpacing: 0.6,
+                marginBottom: 6,
               }}
             >
-              {role === "ADVISOR" ? "ADV" : role === "OPS" ? "OPS" : "ADM"}
-            </span>
-          )}
-        </span>
-        {!hideDetail && (
-          <span className="text-xs tabular-nums" style={{ color: BOARD_TERTIARY }}>{detail}</span>
-        )}
-      </button>
-    </li>
-  );
-}
+              {firmName}
+            </div>
+            <h1
+              style={{
+                margin: 0,
+                fontSize: 26,
+                fontWeight: 600,
+                color: T.text,
+                letterSpacing: -0.5,
+                fontFamily: HEADLINE_STACK,
+              }}
+            >
+              {userRole === "ADMIN" ? "Cases" : "Your cases"}
+            </h1>
+            <div
+              style={{
+                marginTop: 5,
+                fontSize: 13.5,
+                color: T.textSecondary,
+                display: "flex",
+                gap: 14,
+                alignItems: "center",
+                flexWrap: "wrap",
+              }}
+            >
+              <span>{filtered.length} shown</span>
+              {totalValue > 0 && (
+                <>
+                  <span style={{ color: T.textDisabled }}>·</span>
+                  <span>
+                    <span style={{ color: T.text, fontWeight: 500 }}>{fmtMoney(totalValue)}</span> in motion
+                  </span>
+                </>
+              )}
+              {crmProvider && (
+                <>
+                  <span style={{ color: T.textDisabled }}>·</span>
+                  <span style={{ display: "inline-flex", alignItems: "center", gap: 5 }}>
+                    <span style={{ width: 6, height: 6, borderRadius: 999, background: T.success }} />
+                    {crmProvider === "WEALTHBOX" ? "Wealthbox" : "Salesforce"} synced
+                  </span>
+                </>
+              )}
+            </div>
+          </div>
+          <div style={{ display: "flex", gap: 8 }}>
+            {crmProvider && userRole === "ADMIN" && (
+              <Btn onClick={syncCrm} disabled={syncing}>
+                <Icon name="refresh" size={14} /> {syncing ? "Syncing…" : "Sync CRM"}
+              </Btn>
+            )}
+            <Link href="/dashboard/cases/new" style={{ textDecoration: "none" }}>
+              <Btn primary>
+                <Icon name="plus" size={14} /> New case
+              </Btn>
+            </Link>
+          </div>
+        </div>
 
-function StatusTab({
-  label,
-  count,
-  active,
-  hue,
-  onClick,
-}: {
-  label: string;
-  count: number;
-  active: boolean;
-  hue?: { fg: string; bg: string; line: string; dot: string };
-  onClick: () => void;
-}) {
-  return (
-    <button
-      onClick={onClick}
-      className="inline-flex items-center gap-1.5 text-[11px] font-medium px-2.5 py-1.5 rounded-md transition-colors"
-      style={{
-        background: active ? (hue ? hue.bg : BOARD_SURFACE_3) : "transparent",
-        border: `1px solid ${active ? (hue ? hue.line : BOARD_BORDER_STRONG) : BOARD_BORDER}`,
-        color: active ? (hue ? hue.fg : BOARD_TEXT) : BOARD_MUTED,
-      }}
-    >
-      {hue && <span className="w-1.5 h-1.5 rounded-full" style={{ background: hue.dot }} />}
-      <span>{label}</span>
-      <span className="tabular-nums text-[10px]" style={{ color: active ? (hue ? hue.fg : BOARD_TEXT) : BOARD_TERTIARY }}>
-        {count}
-      </span>
-    </button>
-  );
-}
-
-/* ─── Empty state ────────────────────────────────────────────────────────── */
-
-function EmptyState({ hasFilters, canCreate }: { hasFilters: boolean; canCreate: boolean }) {
-  return (
-    <div className="text-center py-14 px-6">
-      <div
-        className="inline-flex w-11 h-11 rounded-full items-center justify-center mb-4"
-        style={{ background: BOARD_SURFACE_3, border: `1px solid ${BOARD_BORDER}`, color: BOARD_MUTED }}
-      >
-        <svg width="18" height="18" viewBox="0 0 18 18" fill="none" aria-hidden>
-          <rect x="3" y="3" width="12" height="12" rx="2" stroke="currentColor" strokeWidth="1.3" />
-          <path d="M6 7h6M6 10h4" stroke="currentColor" strokeWidth="1.3" strokeLinecap="round" />
-        </svg>
-      </div>
-      <p className="text-sm font-medium" style={{ color: BOARD_TEXT }}>
-        {hasFilters ? "No cases match these filters" : "No cases yet"}
-      </p>
-      <p className="text-xs mt-1" style={{ color: BOARD_MUTED }}>
-        {hasFilters ? "Try adjusting or clearing the filters above." : "Create your first case to get started."}
-      </p>
-      {!hasFilters && canCreate && (
-        <Link
-          href="/dashboard/cases/new"
-          className="inline-block mt-4 text-xs font-semibold px-3 py-1.5 rounded-md"
-          style={{ background: BOARD_ACCENT, color: "#fff" }}
+        {/* Filter bar */}
+        <div
+          style={{
+            display: "flex",
+            alignItems: "center",
+            gap: 8,
+            padding: "8px",
+            background: T.surface1,
+            border: `1px solid ${T.border}`,
+            borderRadius: 9,
+            flexWrap: "wrap",
+          }}
         >
-          + New case
-        </Link>
-      )}
+          <div style={{ width: 280, minWidth: 220, flexShrink: 0 }}>
+            <TextInput
+              value={search}
+              onChange={setSearch}
+              placeholder="Search by client or custodian…"
+              prefix={<Icon name="search" size={14} />}
+            />
+          </div>
+          <div style={{ width: 1, height: 22, background: T.border, flexShrink: 0 }} />
+          <ChipSelect
+            label="Stage"
+            value={status}
+            options={[
+              { value: "ALL", label: "All stages" },
+              ...STATUSES.map((s) => ({
+                value: s.value,
+                label: resolveStageLabel(s.value, stageConfig),
+              })),
+            ]}
+            onChange={setStatus}
+          />
+          {userRole === "ADMIN" && (
+            <ChipSelect
+              label="Advisor"
+              value={advisor}
+              options={[
+                { value: "ALL", label: "Any advisor" },
+                ...advisors.map((u) => ({
+                  value: u.id,
+                  label: `${u.firstName} ${u.lastName}`,
+                })),
+              ]}
+              onChange={setAdvisor}
+            />
+          )}
+          <button
+            onClick={() => setPriorityOnly((p) => !p)}
+            style={{
+              height: 28,
+              padding: "0 10px",
+              borderRadius: 7,
+              border: `1px solid ${priorityOnly ? T.accentBorder : T.border}`,
+              background: priorityOnly ? T.accentSoft : T.surface1,
+              color: priorityOnly ? T.accent : T.textSecondary,
+              fontSize: 12,
+              fontWeight: 500,
+              cursor: "pointer",
+              display: "inline-flex",
+              alignItems: "center",
+              gap: 5,
+              fontFamily: "inherit",
+            }}
+          >
+            <Icon name="flag" size={12} /> Priority only
+          </button>
+          <div style={{ flex: 1 }} />
+          <div
+            style={{
+              display: "flex",
+              padding: 2,
+              background: T.surface2,
+              border: `1px solid ${T.border}`,
+              borderRadius: 7,
+            }}
+          >
+            {([
+              ["board", "board", "Board"],
+              ["grid", "grid", "Grid"],
+              ["list", "list", "Table"],
+            ] as Array<[ViewMode, string, string]>).map(([k, icon, lbl]) => (
+              <button
+                key={k}
+                onClick={() => setView(k)}
+                style={{
+                  height: 24,
+                  padding: "0 9px",
+                  background: view === k ? T.surface1 : "transparent",
+                  border: "none",
+                  borderRadius: 5,
+                  color: view === k ? T.text : T.textTertiary,
+                  fontSize: 11.5,
+                  fontWeight: 500,
+                  cursor: "pointer",
+                  display: "inline-flex",
+                  alignItems: "center",
+                  gap: 5,
+                  boxShadow: view === k ? "0 1px 2px rgba(0,0,0,0.06)" : "none",
+                  fontFamily: "inherit",
+                }}
+              >
+                <Icon name={icon} size={12} /> {lbl}
+              </button>
+            ))}
+          </div>
+        </div>
+      </div>
+
+      {/* Body */}
+      <div
+        style={{
+          flex: 1,
+          overflow: "hidden",
+          padding: "0 36px 28px",
+          minHeight: 0,
+        }}
+      >
+        {view === "board" && (
+          <BoardView cases={filtered} stageConfig={stageConfig} setCases={setCases} />
+        )}
+        {view === "grid" && <GridView cases={filtered} stageConfig={stageConfig} />}
+        {view === "list" && <TableView cases={filtered} stageConfig={stageConfig} />}
+      </div>
     </div>
   );
 }
+
+function fullName(u: { firstName: string; lastName: string } | null): string {
+  if (!u) return "Unassigned";
+  return `${u.firstName} ${u.lastName}`.trim();
+}
+
+/* ─── Board view ─── */
+
+function BoardView({
+  cases,
+  stageConfig,
+  setCases,
+}: {
+  cases: V2CasesCase[];
+  stageConfig: StageConfigRow[] | null;
+  setCases: React.Dispatch<React.SetStateAction<V2CasesCase[]>>;
+}) {
+  const [dragId, setDragId] = useState<string | null>(null);
+
+  async function moveCase(id: string, status: string) {
+    setCases((prev) => prev.map((c) => (c.id === id ? { ...c, status } : c)));
+    try {
+      await fetch(`/api/cases/${id}`, {
+        method: "PATCH",
+        headers: { "content-type": "application/json" },
+        body: JSON.stringify({ status }),
+      });
+    } catch {
+      // optimistic — silent failure
+    }
+  }
+
+  return (
+    <div
+      style={{
+        display: "grid",
+        gridTemplateColumns: `repeat(${STATUSES.length}, minmax(248px, 1fr))`,
+        gap: 12,
+        height: "100%",
+        overflowX: "auto",
+        paddingBottom: 12,
+      }}
+    >
+      {STATUSES.map((stage) => {
+        const stageCases = cases.filter((c) => c.status === stage.value);
+        const stageValue = stageCases.reduce((s, c) => s + (c.wealthboxAmount ?? 0), 0);
+        const hue = STAGE_HUE[stage.value] ?? "slate";
+        return (
+          <div
+            key={stage.value}
+            onDragOver={(e) => {
+              e.preventDefault();
+            }}
+            onDrop={() => {
+              if (dragId) {
+                moveCase(dragId, stage.value);
+                setDragId(null);
+              }
+            }}
+            style={{
+              display: "flex",
+              flexDirection: "column",
+              minHeight: 0,
+              background: T.surface2,
+              border: `1px solid ${T.border}`,
+              borderRadius: 10,
+              padding: 10,
+            }}
+          >
+            <div
+              style={{
+                display: "flex",
+                alignItems: "center",
+                gap: 8,
+                marginBottom: 10,
+                padding: "2px 4px",
+              }}
+            >
+              <Pill hue={hue} dot small>
+                {resolveStageLabel(stage.value, stageConfig)}
+              </Pill>
+              <span style={{ fontSize: 11.5, color: T.textTertiary, fontWeight: 500 }}>
+                {stageCases.length}
+              </span>
+              <div style={{ flex: 1 }} />
+              {stageValue > 0 && (
+                <span
+                  style={{
+                    fontSize: 11,
+                    color: T.textTertiary,
+                    fontFamily: "ui-monospace, monospace",
+                  }}
+                >
+                  {fmtMoney(stageValue)}
+                </span>
+              )}
+            </div>
+            <div
+              style={{
+                display: "flex",
+                flexDirection: "column",
+                gap: 8,
+                overflowY: "auto",
+                flex: 1,
+                paddingRight: 2,
+              }}
+            >
+              {stageCases.map((c) => (
+                <CaseCard key={c.id} c={c} onDragStart={() => setDragId(c.id)} />
+              ))}
+              {stageCases.length === 0 && (
+                <div
+                  style={{
+                    border: `1px dashed ${T.border}`,
+                    borderRadius: 8,
+                    padding: "16px 10px",
+                    textAlign: "center",
+                    color: T.textTertiary,
+                    fontSize: 11.5,
+                  }}
+                >
+                  No cases
+                </div>
+              )}
+            </div>
+          </div>
+        );
+      })}
+    </div>
+  );
+}
+
+function CaseCard({ c, onDragStart }: { c: V2CasesCase; onDragStart?: () => void }) {
+  const [hover, setHover] = useState(false);
+  return (
+    <Link href={`/dashboard/cases/${c.id}`} style={{ textDecoration: "none" }}>
+      <div
+        draggable
+        onDragStart={onDragStart}
+        onMouseEnter={() => setHover(true)}
+        onMouseLeave={() => setHover(false)}
+        style={{
+          background: T.surface1,
+          border: `1px solid ${hover ? T.borderStrong : T.border}`,
+          borderRadius: 8,
+          padding: 11,
+          cursor: "grab",
+          boxShadow: hover
+            ? "0 2px 6px rgba(60,55,40,0.06)"
+            : "0 1px 0 rgba(60,55,40,0.02)",
+          transition: "border-color 100ms, box-shadow 100ms",
+        }}
+      >
+        <div style={{ display: "flex", alignItems: "center", gap: 6, marginBottom: 7 }}>
+          <span
+            style={{
+              fontSize: 13,
+              fontWeight: 600,
+              color: T.text,
+              letterSpacing: -0.1,
+              flex: 1,
+              minWidth: 0,
+              overflow: "hidden",
+              textOverflow: "ellipsis",
+              whiteSpace: "nowrap",
+            }}
+          >
+            {c.clientFirstName} {c.clientLastName}
+          </span>
+          {c.highPriority && <Icon name="flag" size={12} color={T.accent} />}
+          {c.needsReview && (
+            <Pill hue="amber" small>
+              Review
+            </Pill>
+          )}
+        </div>
+        <div
+          style={{
+            fontSize: 11.5,
+            color: T.textSecondary,
+            marginBottom: 9,
+            display: "flex",
+            alignItems: "center",
+            gap: 5,
+          }}
+        >
+          <span>{c.sourceProvider}</span>
+          <Icon name="arrowRight" size={10} color={T.textTertiary} />
+          <span style={{ color: T.text, fontWeight: 500 }}>{c.destinationCustodian}</span>
+        </div>
+        <div
+          style={{
+            display: "flex",
+            alignItems: "center",
+            justifyContent: "space-between",
+            padding: "7px 0 0",
+            borderTop: `1px solid ${T.borderSoft}`,
+          }}
+        >
+          <div
+            style={{
+              fontSize: 11.5,
+              color: T.text,
+              fontFamily: "ui-monospace, monospace",
+              fontWeight: 500,
+            }}
+          >
+            {c.wealthboxAmount ? fmtMoney(c.wealthboxAmount) : "—"}
+          </div>
+          <div style={{ display: "flex", alignItems: "center", gap: 4 }}>
+            <span style={{ fontSize: 10.5, color: T.textTertiary }}>
+              {timeAgo(c.statusUpdatedAt)}
+            </span>
+            <div style={{ display: "flex", marginLeft: 4 }}>
+              {c.assignedAdvisor && (
+                <Avatar name={fullName(c.assignedAdvisor)} size={18} />
+              )}
+              {c.assignedOps && (
+                <div style={{ marginLeft: -5 }}>
+                  <Avatar name={fullName(c.assignedOps)} size={18} />
+                </div>
+              )}
+            </div>
+          </div>
+        </div>
+      </div>
+    </Link>
+  );
+}
+
+/* ─── Grid view ─── */
+
+function GridView({
+  cases,
+  stageConfig,
+}: {
+  cases: V2CasesCase[];
+  stageConfig: StageConfigRow[] | null;
+}) {
+  return (
+    <div
+      style={{
+        display: "grid",
+        gridTemplateColumns: "repeat(auto-fill, minmax(280px, 1fr))",
+        gap: 12,
+        height: "100%",
+        overflowY: "auto",
+        paddingBottom: 8,
+        alignContent: "start",
+      }}
+    >
+      {cases.map((c) => {
+        const hue = STAGE_HUE[c.status] ?? "slate";
+        return (
+          <Link key={c.id} href={`/dashboard/cases/${c.id}`} style={{ textDecoration: "none" }}>
+            <div
+              style={{
+                background: T.surface1,
+                border: `1px solid ${T.border}`,
+                borderRadius: 10,
+                padding: 14,
+                cursor: "pointer",
+                transition: "border-color 100ms",
+              }}
+              onMouseEnter={(e) => {
+                e.currentTarget.style.borderColor = T.borderStrong;
+              }}
+              onMouseLeave={(e) => {
+                e.currentTarget.style.borderColor = T.border;
+              }}
+            >
+              <div
+                style={{
+                  display: "flex",
+                  alignItems: "center",
+                  gap: 8,
+                  marginBottom: 10,
+                }}
+              >
+                <Avatar name={`${c.clientFirstName} ${c.clientLastName}`} size={32} />
+                <div style={{ flex: 1, minWidth: 0 }}>
+                  <div
+                    style={{
+                      fontSize: 13.5,
+                      fontWeight: 600,
+                      color: T.text,
+                      letterSpacing: -0.1,
+                    }}
+                  >
+                    {c.clientFirstName} {c.clientLastName}
+                  </div>
+                  <div
+                    style={{
+                      fontSize: 11,
+                      color: T.textTertiary,
+                      whiteSpace: "nowrap",
+                      overflow: "hidden",
+                      textOverflow: "ellipsis",
+                    }}
+                  >
+                    {c.clientEmail}
+                  </div>
+                </div>
+                {c.highPriority && <Icon name="flag" size={13} color={T.accent} />}
+              </div>
+              <div
+                style={{
+                  display: "flex",
+                  alignItems: "center",
+                  gap: 7,
+                  fontSize: 12,
+                  color: T.textSecondary,
+                  marginBottom: 12,
+                }}
+              >
+                <span>{c.sourceProvider}</span>
+                <Icon name="arrowRight" size={10} color={T.textTertiary} />
+                <span style={{ color: T.text, fontWeight: 500 }}>{c.destinationCustodian}</span>
+              </div>
+              <div style={{ display: "flex", alignItems: "center", gap: 8, marginBottom: 10 }}>
+                <Pill hue={hue} dot small>
+                  {resolveStageLabel(c.status, stageConfig)}
+                </Pill>
+                <span style={{ fontSize: 11, color: T.textTertiary }}>{timeAgo(c.statusUpdatedAt)}</span>
+              </div>
+              <div
+                style={{
+                  display: "flex",
+                  alignItems: "center",
+                  justifyContent: "space-between",
+                  paddingTop: 10,
+                  borderTop: `1px solid ${T.borderSoft}`,
+                }}
+              >
+                <div>
+                  <div
+                    style={{
+                      fontSize: 10,
+                      color: T.textTertiary,
+                      textTransform: "uppercase",
+                      letterSpacing: 0.5,
+                    }}
+                  >
+                    Value
+                  </div>
+                  <div
+                    style={{
+                      fontSize: 14,
+                      fontWeight: 600,
+                      color: T.text,
+                      fontFamily: "ui-monospace, monospace",
+                      marginTop: 1,
+                    }}
+                  >
+                    {c.wealthboxAmount ? fmtMoney(c.wealthboxAmount) : "—"}
+                  </div>
+                </div>
+                <div style={{ textAlign: "right" }}>
+                  <div
+                    style={{
+                      fontSize: 10,
+                      color: T.textTertiary,
+                      textTransform: "uppercase",
+                      letterSpacing: 0.5,
+                    }}
+                  >
+                    Team
+                  </div>
+                  <div style={{ display: "flex", justifyContent: "flex-end", marginTop: 2 }}>
+                    {c.assignedAdvisor && <Avatar name={fullName(c.assignedAdvisor)} size={22} />}
+                    {c.assignedOps && (
+                      <div style={{ marginLeft: -6 }}>
+                        <Avatar name={fullName(c.assignedOps)} size={22} />
+                      </div>
+                    )}
+                  </div>
+                </div>
+              </div>
+            </div>
+          </Link>
+        );
+      })}
+    </div>
+  );
+}
+
+/* ─── Table view ─── */
+
+function TableView({
+  cases,
+  stageConfig,
+}: {
+  cases: V2CasesCase[];
+  stageConfig: StageConfigRow[] | null;
+}) {
+  const router = useRouter();
+  return (
+    <Card style={{ height: "100%", display: "flex", flexDirection: "column", overflow: "hidden" }}>
+      <div style={{ flex: 1, overflowY: "auto" }}>
+        <table style={{ width: "100%", borderCollapse: "collapse", fontSize: 13 }}>
+          <thead>
+            <tr style={{ position: "sticky", top: 0, background: T.surface2, zIndex: 1 }}>
+              {["Client", "Rollover", "Stage", "Value", "Team", "Updated", ""].map((h, i) => (
+                <th
+                  key={i}
+                  style={{
+                    textAlign: i === 3 ? "right" : "left",
+                    padding: "10px 16px",
+                    fontSize: 11,
+                    fontWeight: 500,
+                    color: T.textTertiary,
+                    textTransform: "uppercase",
+                    letterSpacing: 0.5,
+                    borderBottom: `1px solid ${T.border}`,
+                  }}
+                >
+                  {h}
+                </th>
+              ))}
+            </tr>
+          </thead>
+          <tbody>
+            {cases.map((c, idx) => {
+              const hue = STAGE_HUE[c.status] ?? "slate";
+              const baseBg = idx % 2 === 0 ? T.surface1 : T.striped;
+              return (
+                <tr
+                  key={c.id}
+                  onClick={() => router.push(`/dashboard/cases/${c.id}`)}
+                  style={{
+                    background: baseBg,
+                    cursor: "pointer",
+                  }}
+                  onMouseEnter={(e) => {
+                    e.currentTarget.style.background = T.surface3;
+                  }}
+                  onMouseLeave={(e) => {
+                    e.currentTarget.style.background = baseBg;
+                  }}
+                >
+                  <td style={{ padding: "12px 16px", borderBottom: `1px solid ${T.borderSoft}` }}>
+                    <div style={{ display: "flex", alignItems: "center", gap: 10 }}>
+                      <Avatar name={`${c.clientFirstName} ${c.clientLastName}`} size={26} />
+                      <div>
+                        <div
+                          style={{
+                            color: T.text,
+                            fontWeight: 500,
+                            display: "flex",
+                            alignItems: "center",
+                            gap: 5,
+                          }}
+                        >
+                          {c.clientFirstName} {c.clientLastName}
+                          {c.highPriority && <Icon name="flag" size={11} color={T.accent} />}
+                        </div>
+                        <div style={{ fontSize: 11, color: T.textTertiary }}>{c.clientEmail}</div>
+                      </div>
+                    </div>
+                  </td>
+                  <td
+                    style={{
+                      padding: "12px 16px",
+                      borderBottom: `1px solid ${T.borderSoft}`,
+                      color: T.textSecondary,
+                    }}
+                  >
+                    <div style={{ display: "flex", alignItems: "center", gap: 6 }}>
+                      {c.sourceProvider}
+                      <Icon name="arrowRight" size={10} color={T.textTertiary} />
+                      <span style={{ color: T.text, fontWeight: 500 }}>{c.destinationCustodian}</span>
+                    </div>
+                    <div style={{ fontSize: 11, color: T.textTertiary, marginTop: 2 }}>{c.accountType}</div>
+                  </td>
+                  <td style={{ padding: "12px 16px", borderBottom: `1px solid ${T.borderSoft}` }}>
+                    <Pill hue={hue} dot small>
+                      {resolveStageLabel(c.status, stageConfig)}
+                    </Pill>
+                  </td>
+                  <td
+                    style={{
+                      padding: "12px 16px",
+                      borderBottom: `1px solid ${T.borderSoft}`,
+                      textAlign: "right",
+                      fontFamily: "ui-monospace, monospace",
+                      color: T.text,
+                      fontWeight: 500,
+                      ...TAB_NUM_STYLE,
+                    }}
+                  >
+                    {c.wealthboxAmount ? fmtMoney(c.wealthboxAmount) : "—"}
+                  </td>
+                  <td style={{ padding: "12px 16px", borderBottom: `1px solid ${T.borderSoft}` }}>
+                    <div style={{ display: "flex" }}>
+                      {c.assignedAdvisor && <Avatar name={fullName(c.assignedAdvisor)} size={22} />}
+                      {c.assignedOps && (
+                        <div style={{ marginLeft: -6 }}>
+                          <Avatar name={fullName(c.assignedOps)} size={22} />
+                        </div>
+                      )}
+                    </div>
+                  </td>
+                  <td
+                    style={{
+                      padding: "12px 16px",
+                      borderBottom: `1px solid ${T.borderSoft}`,
+                      color: T.textSecondary,
+                      fontSize: 12,
+                    }}
+                  >
+                    {timeAgo(c.updatedAt)}
+                  </td>
+                  <td
+                    style={{
+                      padding: "12px 16px",
+                      borderBottom: `1px solid ${T.borderSoft}`,
+                      textAlign: "right",
+                    }}
+                  >
+                    <Icon name="chev" size={14} color={T.textTertiary} />
+                  </td>
+                </tr>
+              );
+            })}
+          </tbody>
+        </table>
+      </div>
+    </Card>
+  );
+}
+

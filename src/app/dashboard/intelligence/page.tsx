@@ -2,10 +2,10 @@ import { auth } from "@/lib/auth";
 import { redirect } from "next/navigation";
 import { prisma } from "@/lib/prisma";
 import { getOrCreateFirmSettings } from "@/lib/reminders";
-import IntelligenceWorkspace from "@/components/IntelligenceWorkspace";
-import IntelligenceV2, { type V2Custodian } from "@/components/v2/IntelligenceV2";
+import LegacyIntelligenceWorkspace from "@/components/legacy/IntelligenceWorkspace";
+import Intelligence, { type V2Custodian } from "@/components/Intelligence";
 import { getFirmUsageSummary } from "@/lib/aiUsage";
-import type { CustodianActivity } from "@/components/CustodianActivityTab";
+import type { CustodianActivity } from "@/components/legacy/CustodianActivityTab";
 
 export default async function IntelligencePage() {
   const session = await auth();
@@ -196,7 +196,7 @@ export default async function IntelligencePage() {
       })),
     }));
     return (
-      <IntelligenceV2
+      <Intelligence
         custodians={v2Custodians}
         aiUsage={{
           used: Math.round(aiUsage.tokensUsed / 1000),
@@ -220,7 +220,7 @@ export default async function IntelligencePage() {
         </p>
       </div>
       <div className="flex-1 min-h-0">
-        <IntelligenceWorkspace
+        <LegacyIntelligenceWorkspace
           custodians={serialized}
           firmOperatingStates={firmSettings.operatingStates}
           activityByCustodian={activityByCustodian}

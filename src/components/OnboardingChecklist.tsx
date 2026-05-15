@@ -4,13 +4,10 @@ import { useState, useTransition } from "react";
 import Link from "next/link";
 import { useRouter } from "next/navigation";
 import type { OnboardingChecklistData } from "@/lib/onboarding";
+import { T } from "./tokens";
+import { Icon } from "./primitives";
 
-const CARD_BG = "#141a24";
-const CARD_BORDER = "#252b38";
-const TEXT = "#e4e6ea";
-const MUTED = "#7d8590";
-
-export default function OnboardingChecklist({
+export default function OnboardingChecklistV2({
   items,
   completedCount,
   totalCount,
@@ -26,7 +23,7 @@ export default function OnboardingChecklist({
     startTransition(async () => {
       await fetch("/api/settings", {
         method: "PATCH",
-        headers: { "Content-Type": "application/json" },
+        headers: { "content-type": "application/json" },
         body: JSON.stringify({ preferences: { onboardingHidden: true } }),
       });
       router.refresh();
@@ -35,41 +32,75 @@ export default function OnboardingChecklist({
 
   return (
     <div
-      className="rounded-xl mb-6 overflow-hidden"
-      style={{ background: CARD_BG, border: `1px solid ${CARD_BORDER}` }}
+      style={{
+        background: T.surface1,
+        border: `1px solid ${T.border}`,
+        borderRadius: 10,
+        overflow: "hidden",
+        marginBottom: 18,
+      }}
     >
       <div
-        className="flex items-center justify-between px-5 pt-4 pb-3 gap-3"
-        style={{ borderBottom: `1px solid ${CARD_BORDER}` }}
+        style={{
+          display: "flex",
+          alignItems: "center",
+          justifyContent: "space-between",
+          padding: "14px 18px 12px",
+          gap: 12,
+          borderBottom: `1px solid ${T.border}`,
+        }}
       >
-        <div className="flex items-center gap-3 min-w-0">
+        <div style={{ display: "flex", alignItems: "center", gap: 12, minWidth: 0 }}>
           <div
-            className="w-9 h-9 rounded-md flex items-center justify-center flex-shrink-0"
             style={{
-              background: allDone ? "#062e1e" : "#0d1f38",
-              border: `1px solid ${allDone ? "#065f46" : "#1e3a8a"}`,
-              color: allDone ? "#6ee7b7" : "#60a5fa",
+              width: 34,
+              height: 34,
+              borderRadius: 8,
+              display: "grid",
+              placeItems: "center",
+              background: allDone ? T.successSoft : T.accentSoft,
+              border: `1px solid ${allDone ? T.successBorder : T.accentBorder}`,
+              color: allDone ? T.success : T.accent,
+              flexShrink: 0,
             }}
           >
-            {allDone ? <CheckIcon /> : <RocketIcon />}
+            <Icon name={allDone ? "check" : "spark"} size={16} />
           </div>
-          <div className="min-w-0">
-            <h3 className="text-sm font-semibold" style={{ color: TEXT }}>
+          <div style={{ minWidth: 0 }}>
+            <h3
+              style={{
+                margin: 0,
+                fontSize: 13.5,
+                fontWeight: 600,
+                color: T.text,
+                letterSpacing: -0.1,
+              }}
+            >
               {allDone ? "You're all set up" : "Get started with Rift"}
             </h3>
-            <p className="text-xs mt-0.5" style={{ color: MUTED }}>
+            <p style={{ margin: "2px 0 0", fontSize: 12, color: T.textSecondary }}>
               {allDone
                 ? "Nice work — every item is checked off."
                 : `${completedCount} of ${totalCount} steps complete · ${pct}%`}
             </p>
           </div>
         </div>
-        <div className="flex items-center gap-2 flex-shrink-0">
+        <div style={{ display: "flex", alignItems: "center", gap: 8, flexShrink: 0 }}>
           <button
             type="button"
             onClick={() => setCollapsed((c) => !c)}
-            className="px-2.5 py-1 rounded-md text-xs font-medium"
-            style={{ background: "#161b22", border: "1px solid #30363d", color: "#c9d1d9" }}
+            style={{
+              height: 26,
+              padding: "0 10px",
+              borderRadius: 7,
+              background: T.surface1,
+              border: `1px solid ${T.border}`,
+              color: T.textSecondary,
+              fontSize: 12,
+              fontWeight: 500,
+              cursor: "pointer",
+              fontFamily: "inherit",
+            }}
           >
             {collapsed ? "Show" : "Hide"}
           </button>
@@ -77,26 +108,44 @@ export default function OnboardingChecklist({
             type="button"
             onClick={dismiss}
             disabled={pending}
-            className="w-7 h-7 rounded-md text-sm flex items-center justify-center disabled:opacity-50"
-            style={{ background: "#161b22", border: "1px solid #30363d", color: MUTED }}
             aria-label="Dismiss onboarding checklist"
             title="Dismiss permanently"
+            style={{
+              width: 26,
+              height: 26,
+              borderRadius: 7,
+              display: "grid",
+              placeItems: "center",
+              background: T.surface1,
+              border: `1px solid ${T.border}`,
+              color: T.textTertiary,
+              fontSize: 14,
+              cursor: "pointer",
+              opacity: pending ? 0.5 : 1,
+              fontFamily: "inherit",
+            }}
           >
             ×
           </button>
         </div>
       </div>
 
-      <div className="px-5 pt-3">
+      <div style={{ padding: "12px 18px 0" }}>
         <div
-          className="h-1.5 rounded-full overflow-hidden"
-          style={{ background: "#0a0d12", border: `1px solid ${CARD_BORDER}` }}
+          style={{
+            height: 5,
+            borderRadius: 999,
+            overflow: "hidden",
+            background: T.surface3,
+          }}
         >
           <div
             style={{
               width: `${pct}%`,
               height: "100%",
-              background: allDone ? "#3fb950" : "#60a5fa",
+              background: allDone
+                ? T.success
+                : `linear-gradient(90deg, ${T.accent}, ${T.accentHover})`,
               transition: "width 400ms",
             }}
           />
@@ -104,35 +153,87 @@ export default function OnboardingChecklist({
       </div>
 
       {!collapsed && (
-        <ul className="p-3 grid grid-cols-1 sm:grid-cols-2 lg:grid-cols-3 gap-2">
+        <ul
+          style={{
+            listStyle: "none",
+            margin: 0,
+            padding: 12,
+            display: "grid",
+            gridTemplateColumns: "repeat(auto-fill, minmax(260px, 1fr))",
+            gap: 8,
+          }}
+        >
           {items.map((item) => (
             <li key={item.id}>
               <Link
                 href={item.href}
-                className="flex items-start gap-3 rounded-lg px-3 py-2.5 transition-colors hover:bg-[#1a212c] h-full"
-                style={{ background: "#0a0d12", border: `1px solid ${CARD_BORDER}` }}
+                style={{
+                  display: "flex",
+                  alignItems: "flex-start",
+                  gap: 12,
+                  padding: "10px 12px",
+                  borderRadius: 8,
+                  background: item.done ? T.surface2 : T.surface1,
+                  border: `1px solid ${T.borderSoft}`,
+                  textDecoration: "none",
+                  transition: "background 100ms, border-color 100ms",
+                  height: "100%",
+                }}
+                onMouseEnter={(e) => {
+                  e.currentTarget.style.background = T.surface3;
+                  e.currentTarget.style.borderColor = T.borderStrong;
+                }}
+                onMouseLeave={(e) => {
+                  e.currentTarget.style.background = item.done ? T.surface2 : T.surface1;
+                  e.currentTarget.style.borderColor = T.borderSoft;
+                }}
               >
                 <span
-                  className="flex-shrink-0 w-5 h-5 rounded-full flex items-center justify-center mt-0.5"
                   style={{
-                    background: item.done ? "#062e1e" : "transparent",
-                    border: `1.5px solid ${item.done ? "#065f46" : "#30363d"}`,
-                    color: "#6ee7b7",
+                    flexShrink: 0,
+                    width: 18,
+                    height: 18,
+                    borderRadius: "50%",
+                    display: "grid",
+                    placeItems: "center",
+                    marginTop: 1,
+                    background: item.done ? T.success : "transparent",
+                    border: `1.5px solid ${item.done ? T.success : T.borderStrong}`,
+                    color: T.surface1,
                   }}
                 >
-                  {item.done && <SmallCheck />}
+                  {item.done && (
+                    <svg width="11" height="11" viewBox="0 0 14 14" fill="none" aria-hidden>
+                      <path
+                        d="M3 7l2.5 2.5L11 4"
+                        stroke="currentColor"
+                        strokeWidth="1.8"
+                        strokeLinecap="round"
+                        strokeLinejoin="round"
+                      />
+                    </svg>
+                  )}
                 </span>
-                <div className="min-w-0">
+                <div style={{ minWidth: 0 }}>
                   <p
-                    className="text-sm font-medium"
                     style={{
-                      color: item.done ? MUTED : TEXT,
+                      margin: 0,
+                      fontSize: 13,
+                      fontWeight: 500,
+                      color: item.done ? T.textTertiary : T.text,
                       textDecoration: item.done ? "line-through" : "none",
                     }}
                   >
                     {item.title}
                   </p>
-                  <p className="text-xs mt-0.5 leading-relaxed" style={{ color: MUTED }}>
+                  <p
+                    style={{
+                      margin: "3px 0 0",
+                      fontSize: 11.5,
+                      lineHeight: 1.5,
+                      color: T.textTertiary,
+                    }}
+                  >
                     {item.description}
                   </p>
                 </div>
@@ -142,54 +243,5 @@ export default function OnboardingChecklist({
         </ul>
       )}
     </div>
-  );
-}
-
-function CheckIcon() {
-  return (
-    <svg width="16" height="16" viewBox="0 0 16 16" fill="none" aria-hidden>
-      <path
-        d="M3.5 8.5l3 3L12.5 5"
-        stroke="currentColor"
-        strokeWidth="1.8"
-        strokeLinecap="round"
-        strokeLinejoin="round"
-      />
-    </svg>
-  );
-}
-
-function SmallCheck() {
-  return (
-    <svg width="11" height="11" viewBox="0 0 14 14" fill="none" aria-hidden>
-      <path
-        d="M3 7l2.5 2.5L11 4"
-        stroke="currentColor"
-        strokeWidth="1.8"
-        strokeLinecap="round"
-        strokeLinejoin="round"
-      />
-    </svg>
-  );
-}
-
-function RocketIcon() {
-  return (
-    <svg width="16" height="16" viewBox="0 0 16 16" fill="none" aria-hidden>
-      <path
-        d="M9.5 2.5c2 0 4 2 4 4 0 1.2-.6 2.4-1.5 3.3l-1.5 1.5-3.3-3.3 1.5-1.5C9.6 5.6 10.8 5 12 5"
-        stroke="currentColor"
-        strokeWidth="1.4"
-        strokeLinecap="round"
-        strokeLinejoin="round"
-      />
-      <path
-        d="M6.5 9.5L2.5 13.5M2.5 13.5l2-.5M2.5 13.5l.5-2"
-        stroke="currentColor"
-        strokeWidth="1.4"
-        strokeLinecap="round"
-        strokeLinejoin="round"
-      />
-    </svg>
   );
 }

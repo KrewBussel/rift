@@ -12,6 +12,11 @@ const eslintConfig = defineConfig([
     "out/**",
     "build/**",
     "next-env.d.ts",
+    // Standalone design mockups — not part of the app build.
+    ".design/**",
+    // Legacy v1 dashboard components — still wired in for the non-admin path
+    // until V2 has feature parity. New rules don't need to retro-apply here.
+    "src/components/legacy/**",
   ]),
 ]);
 
