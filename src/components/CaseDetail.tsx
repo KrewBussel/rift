@@ -110,8 +110,10 @@ const EVENT_VERB: Record<string, string> = {
 export default function CaseDetailV2({
   rolloverCase: initial,
   users,
+  userRole,
   initialChecklist,
   stageConfig,
+  clientLinkActive: clientLinkActiveInitial = false,
 }: {
   rolloverCase: CaseShape;
   users: User[];
@@ -119,6 +121,7 @@ export default function CaseDetailV2({
   userRole: RoleStr;
   initialChecklist: ChecklistItem[];
   stageConfig: StageConfigRow[] | null;
+  clientLinkActive?: boolean;
 }) {
   const router = useRouter();
   const [c, setC] = useState(initial);
@@ -126,6 +129,12 @@ export default function CaseDetailV2({
   const [stageOpen, setStageOpen] = useState(false);
   const [taskInput, setTaskInput] = useState("");
   const [noteInput, setNoteInput] = useState("");
+
+  const canManageClientLink = userRole === "ADMIN" || userRole === "OPS";
+  const [clientLinkActive, setClientLinkActive] = useState(clientLinkActiveInitial);
+  const [clientLinkBusy, setClientLinkBusy] = useState<"idle" | "issuing" | "revoking">("idle");
+  const [clientLinkMsg, setClientLinkMsg] = useState<string | null>(null);
+  const [clientLinkFallback, setClientLinkFallback] = useState<{ url: string; reason: string } | null>(null);
 
   const [edit, setEdit] = useState({
     sourceProvider: c.sourceProvider,
@@ -227,6 +236,57 @@ export default function CaseDetailV2({
       body: JSON.stringify({ status }),
     });
     router.refresh();
+  }
+
+  async function handleIssueClientLink() {
+    if (!canManageClientLink) return;
+    setClientLinkBusy("issuing");
+    setClientLinkMsg(null);
+    setClientLinkFallback(null);
+    const res = await fetch(`/api/cases/${c.id}/client-link`, {
+      method: "POST",
+      headers: { "Content-Type": "application/json" },
+      body: JSON.stringify({}),
+    });
+    setClientLinkBusy("idle");
+    if (!res.ok) {
+      setClientLinkMsg("Failed to send portal invite.");
+      return;
+    }
+    const body = (await res.json()) as { emailSent: boolean; emailError: string | null; portalUrl: string };
+    setClientLinkActive(true);
+    if (body.emailSent) {
+      setClientLinkMsg(`Portal invite sent to ${c.clientEmail}.`);
+    } else {
+      setClientLinkMsg(`Link issued — couldn't send email: ${body.emailError ?? "unknown error"}.`);
+      setClientLinkFallback({ url: body.portalUrl, reason: body.emailError ?? "" });
+    }
+  }
+
+  async function handleCopyClientLink() {
+    if (!clientLinkFallback) return;
+    try {
+      await navigator.clipboard.writeText(clientLinkFallback.url);
+      setClientLinkMsg("Portal link copied to clipboard.");
+    } catch {
+      setClientLinkMsg("Couldn't copy — select and copy manually.");
+    }
+  }
+
+  async function handleRevokeClientAccess() {
+    if (!canManageClientLink) return;
+    if (!confirm("Revoke all active client portal access for this case?")) return;
+    setClientLinkBusy("revoking");
+    setClientLinkMsg(null);
+    setClientLinkFallback(null);
+    const res = await fetch(`/api/cases/${c.id}/client-link`, { method: "DELETE" });
+    setClientLinkBusy("idle");
+    if (res.ok) {
+      setClientLinkActive(false);
+      setClientLinkMsg("Client access revoked.");
+    } else {
+      setClientLinkMsg("Failed to revoke.");
+    }
   }
 
   const openTasks = c.tasks.filter((t) => t.status !== "COMPLETED");
@@ -907,18 +967,103 @@ export default function CaseDetailV2({
                   <Icon name="mail" size={12} /> Email client
                 </Btn>
               </a>
-              <Btn small>
-                <Icon name="bell" size={12} /> Send reminder
-              </Btn>
+              {canManageClientLink ? (
+                <Btn
+                  small
+                  onClick={handleIssueClientLink}
+                  disabled={clientLinkBusy !== "idle"}
+                  title={clientLinkActive ? "Resend the client portal magic link" : "Send a magic link giving the client access to the portal"}
+                >
+                  <Icon name="link" size={12} />{" "}
+                  {clientLinkBusy === "issuing"
+                    ? "Sending…"
+                    : clientLinkActive
+                    ? "Resend portal link"
+                    : "Send portal link"}
+                </Btn>
+              ) : (
+                <Btn small disabled>
+                  <Icon name="link" size={12} /> Send portal link
+                </Btn>
+              )}
               <Link href={`/dashboard/intelligence`} style={{ textDecoration: "none" }}>
                 <Btn small>
                   <Icon name="spark" size={12} /> Ask Claude
                 </Btn>
               </Link>
-              <Btn small>
-                <Icon name="ext" size={12} /> Open in CRM
-              </Btn>
+              {canManageClientLink && clientLinkActive ? (
+                <Btn
+                  small
+                  danger
+                  onClick={handleRevokeClientAccess}
+                  disabled={clientLinkBusy !== "idle"}
+                  title="Revoke all active client portal access"
+                >
+                  <Icon name="x" size={12} />{" "}
+                  {clientLinkBusy === "revoking" ? "Revoking…" : "Revoke access"}
+                </Btn>
+              ) : (
+                <Btn small disabled>
+                  <Icon name="ext" size={12} /> Open in CRM
+                </Btn>
+              )}
             </div>
+
+            {clientLinkMsg && !clientLinkFallback && (
+              <div
+                style={{
+                  marginTop: 10,
+                  fontSize: 11.5,
+                  color: T.textSecondary,
+                  lineHeight: 1.5,
+                }}
+              >
+                {clientLinkMsg}
+              </div>
+            )}
+
+            {clientLinkFallback && (
+              <div
+                style={{
+                  marginTop: 10,
+                  padding: 10,
+                  borderRadius: 8,
+                  background: T.warningSoft,
+                  border: `1px solid ${T.warningBorder}`,
+                }}
+              >
+                <div style={{ fontSize: 12, fontWeight: 600, color: T.warning }}>
+                  {clientLinkMsg}
+                </div>
+                <div style={{ fontSize: 11.5, color: T.textSecondary, marginTop: 3, lineHeight: 1.5 }}>
+                  The link below works — copy it and send it to the client manually.
+                </div>
+                <div style={{ display: "flex", gap: 6, marginTop: 8, alignItems: "center" }}>
+                  <input
+                    type="text"
+                    readOnly
+                    value={clientLinkFallback.url}
+                    onFocus={(e) => e.currentTarget.select()}
+                    style={{
+                      flex: 1,
+                      minWidth: 0,
+                      height: 28,
+                      padding: "0 8px",
+                      background: T.surface1,
+                      border: `1px solid ${T.warningBorder}`,
+                      borderRadius: 6,
+                      color: T.text,
+                      fontSize: 11.5,
+                      fontFamily: "ui-monospace, monospace",
+                      outline: "none",
+                    }}
+                  />
+                  <Btn small onClick={handleCopyClientLink}>
+                    <Icon name="copy" size={12} /> Copy
+                  </Btn>
+                </div>
+              </div>
+            )}
           </Card>
 
           {/* Notes */}

@@ -143,6 +143,7 @@ export default async function CaseDetailPage({ params }: { params: Promise<{ id:
           userRole={userRole}
           initialChecklist={serializedChecklist}
           stageConfig={stageConfig}
+          clientLinkActive={!!activeClientLink}
         />
       </>
     );
