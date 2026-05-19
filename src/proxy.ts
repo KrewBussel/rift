@@ -2,7 +2,12 @@ import { auth } from "@/lib/auth";
 import { NextResponse } from "next/server";
 import type { NextRequest } from "next/server";
 import { prisma } from "@/lib/prisma";
-import { buildApexUrl, buildFirmUrl, parseSlugFromHost } from "@/lib/firmDomain";
+import {
+  buildApexUrl,
+  buildFirmUrl,
+  isHostUnderConfiguredRoot,
+  parseSlugFromHost,
+} from "@/lib/firmDomain";
 
 /**
  * Per-tenant subdomain router.
@@ -181,14 +186,21 @@ export async function proxy(request: NextRequest) {
   // how NEXT_PUBLIC_ROOT_DOMAIN is configured at startup.
   const hostHeader = (request.headers.get("host") || "").toLowerCase();
   const isLocalhostApex = /^localhost(:\d+)?$/.test(hostHeader);
+  // A request can also be hitting a host that isn't under the configured root
+  // at all — e.g. a Vercel preview at `rift-sepia.vercel.app` while the root
+  // is `riftira.com`. Redirecting to `<slug>.riftira.com` from there would
+  // send the user to a host that may not point at this deployment, so render
+  // the tenant-scoped path in place instead.
+  const stayOnApex =
+    isLocalhostApex || !isHostUnderConfiguredRoot(hostHeader);
 
   if (isApexOnlyPath(pathname)) {
     if (isAuth && pathname === "/login") {
       const slug = session!.user.firmSlug;
-      if (slug && !isLocalhostApex) {
+      if (slug && !stayOnApex) {
         return NextResponse.redirect(buildFirmUrl(slug, "/dashboard"));
       }
-      if (isLocalhostApex) {
+      if (stayOnApex) {
         return NextResponse.redirect(new URL("/dashboard", request.url));
       }
     }
@@ -200,10 +212,10 @@ export async function proxy(request: NextRequest) {
   if (!isAuth) {
     return NextResponse.redirect(new URL("/login", request.url));
   }
-  // Dev escape hatch: nested *.localhost subdomains don't resolve in most
-  // browsers, so when the request is hitting plain localhost we skip the
-  // subdomain redirect and render the tenant-scoped path here.
-  if (isLocalhostApex) {
+  // Dev escape hatch + Vercel-deployment escape hatch: when the request host
+  // isn't actually under the configured root, render the tenant-scoped path
+  // here instead of redirecting to a subdomain that doesn't resolve.
+  if (stayOnApex) {
     return applyCsp(NextResponse.next());
   }
   const slug = session!.user.firmSlug;

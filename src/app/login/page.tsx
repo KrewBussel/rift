@@ -4,7 +4,7 @@ import { useState } from "react";
 import { signIn, getSession } from "next-auth/react";
 import Link from "next/link";
 import LogoMark from "@/components/LogoMark";
-import { buildFirmUrl } from "@/lib/firmDomain";
+import { buildFirmUrl, isHostUnderConfiguredRoot } from "@/lib/firmDomain";
 
 export default function LoginPage() {
   const [error, setError] = useState<string | null>(null);
@@ -35,11 +35,16 @@ export default function LoginPage() {
     const session = await getSession();
     const slug = session?.user?.firmSlug;
 
-    if (!slug) {
-      // Shouldn't happen — every user has a firm with a slug. Fail loud rather
-      // than silently leaving them on the apex login.
-      setLoading(false);
-      setError("Sign-in succeeded but your firm workspace could not be loaded. Please try again.");
+    // If we're on a host that isn't under the configured root (localhost dev,
+    // a Vercel preview URL, etc.), `<slug>.<root>` may not resolve to this
+    // deployment — navigate to /dashboard on the current origin and let the
+    // proxy render the tenant-scoped page in place.
+    const onConfiguredRoot =
+      typeof window !== "undefined" &&
+      isHostUnderConfiguredRoot(window.location.host);
+
+    if (!slug || !onConfiguredRoot) {
+      window.location.assign("/dashboard");
       return;
     }
 

@@ -124,8 +124,22 @@ export const { handlers, auth, signIn, signOut } = NextAuth({
   cookies: (() => {
     const root = process.env.NEXT_PUBLIC_ROOT_DOMAIN;
     if (!root) return undefined;
-    const hostOnly = root.replace(/:\d+$/, "");
+    const hostOnly = root.replace(/:\d+$/, "").toLowerCase();
     if (!hostOnly.includes(".")) return undefined;
+    // On Vercel deployments whose URL doesn't fall under the configured root
+    // (e.g. `rift-sepia.vercel.app` with NEXT_PUBLIC_ROOT_DOMAIN=`riftira.com`),
+    // setting `domain=.<root>` would make the browser drop the session cookie
+    // — Set-Cookie's domain attribute must match the request origin or a parent
+    // of it. Fall back to a host-only cookie so login works on whichever URL
+    // is actually serving the app.
+    const vercelHost = (
+      process.env.VERCEL_URL ||
+      process.env.VERCEL_PROJECT_PRODUCTION_URL ||
+      ""
+    ).toLowerCase();
+    if (vercelHost && !vercelHost.endsWith(hostOnly) && vercelHost !== hostOnly) {
+      return undefined;
+    }
     const isProd = process.env.NODE_ENV === "production";
     return {
       sessionToken: {

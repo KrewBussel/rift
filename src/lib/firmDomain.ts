@@ -177,6 +177,26 @@ export function parseSlugFromHost(host: string | null | undefined, rootDomain = 
 }
 
 /**
+ * True when `host` is the configured root or one of its subdomains. Used to
+ * decide whether subdomain redirects and cross-subdomain cookies make sense.
+ *
+ * Returns false on hosts that don't fall under the root — e.g. a Vercel
+ * deployment at `rift-sepia.vercel.app` when the root is `riftira.com`. In
+ * that case we render in place rather than redirecting to a subdomain that
+ * isn't pointed at this deployment.
+ */
+export function isHostUnderConfiguredRoot(
+  host: string | null | undefined,
+  rootDomain = getRootDomain(),
+): boolean {
+  if (!host) return false;
+  const hostNoPort = host.toLowerCase().trim().replace(/:\d+$/, "");
+  const rootNoPort = rootDomain.toLowerCase().trim().replace(/:\d+$/, "");
+  if (!hostNoPort || !rootNoPort) return false;
+  return hostNoPort === rootNoPort || hostNoPort.endsWith(`.${rootNoPort}`);
+}
+
+/**
  * Build an absolute URL on a firm's subdomain. Used after login to redirect a
  * user to `<their-slug>.riftira.com<path>`.
  *
