@@ -76,7 +76,7 @@ export default async function CaseDetailPage({ params }: { params: Promise<{ id:
   const [crmConnection, stageConfig, activeClientLink] = await Promise.all([
     prisma.crmConnection.findUnique({
       where: { firmId },
-      select: { id: true, provider: true, connectedUserName: true },
+      select: { id: true },
     }),
     getFirmStageConfig(firmId),
     // Surfaces whether this case currently has a usable client portal link —
@@ -96,10 +96,6 @@ export default async function CaseDetailPage({ params }: { params: Promise<{ id:
       select: { id: true },
     }),
   ]);
-  const crmProviderLabel = crmConnection
-    ? crmConnection.provider === "SALESFORCE" ? "Salesforce" : "Wealthbox"
-    : null;
-
   // Serialize dates
   const serializedCase = {
     ...rolloverCase,
@@ -160,7 +156,6 @@ export default async function CaseDetailPage({ params }: { params: Promise<{ id:
         initialChecklist={serializedChecklist}
         initialDocuments={serializedDocuments}
         crmConnected={!!crmConnection}
-        crmProviderLabel={crmProviderLabel}
         stageConfig={stageConfig}
         clientLinkActive={!!activeClientLink}
       />

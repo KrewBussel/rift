@@ -8,10 +8,9 @@ import { getMe, WealthboxError } from "@/lib/wealthbox";
 import { recordAudit, extractRequestMeta } from "@/lib/audit";
 
 /**
- * Wealthbox-specific connect endpoint: validates the pasted personal access
- * token against Wealthbox's /me and persists the encrypted connection.
- * Salesforce uses the OAuth flow under /api/integrations/salesforce/*.
- * Generic GET/DELETE (view/disconnect any provider) live under /api/integrations/crm.
+ * Wealthbox connect endpoint: validates the pasted personal access token
+ * against Wealthbox's /me and persists the encrypted connection.
+ * GET/DELETE (view/disconnect) live under /api/integrations/crm.
  */
 
 const ConnectSchema = z.object({
@@ -46,11 +45,6 @@ export async function POST(req: NextRequest) {
       encryptedToken: sealed.ciphertext,
       tokenIv: sealed.iv,
       tokenTag: sealed.tag,
-      refreshTokenCiphertext: null,
-      refreshTokenIv: null,
-      refreshTokenTag: null,
-      tokenExpiresAt: null,
-      instanceUrl: null,
       connectedUserId: String(me.id),
       connectedUserName: me.name,
       connectedUserEmail: me.email,

@@ -45,7 +45,7 @@ export async function PUT(req: NextRequest) {
   await recordAudit({
     firmId,
     actorUserId: session.user.id,
-    action: `crm.${connection.provider.toLowerCase()}.mapping_updated`,
+    action: "crm.wealthbox.mapping_updated",
     resource: "CrmStageMapping",
     metadata: { count: mappings.length },
     ...meta,

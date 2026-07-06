@@ -1057,7 +1057,6 @@ function PricingSection() {
         "Everything in Starter",
         "Custodian Intelligence (AI)",
         "Firm-authored custodian notes",
-        "Salesforce sync",
         "Workload analytics",
         "Priority support",
       ],

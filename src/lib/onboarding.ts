@@ -103,7 +103,7 @@ export function computeOnboardingChecklist({
       {
         id: "connect-crm",
         title: "Connect your CRM",
-        description: "Sync rollover stages with Wealthbox or Salesforce.",
+        description: "Sync rollover stages with Wealthbox.",
         href: "/dashboard/settings?tab=integrations",
         done: !!crmConnected,
       },

@@ -1,7 +1,7 @@
 import { NextResponse } from "next/server";
 import { auth } from "@/lib/auth";
 import { prisma } from "@/lib/prisma";
-import { getProviderClient } from "@/lib/crmClient";
+import { getCrmClient } from "@/lib/crmClient";
 
 export async function GET() {
   const session = await auth();
@@ -13,7 +13,7 @@ export async function GET() {
   if (!connection) return NextResponse.json({ error: "Not connected" }, { status: 404 });
 
   try {
-    const client = await getProviderClient(connection);
+    const client = getCrmClient(connection);
     const stages = await client.getStages();
     return NextResponse.json({ stages, provider: connection.provider });
   } catch (err) {

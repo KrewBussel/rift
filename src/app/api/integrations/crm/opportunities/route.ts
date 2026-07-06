@@ -1,7 +1,7 @@
 import { NextRequest, NextResponse } from "next/server";
 import { auth } from "@/lib/auth";
 import { prisma } from "@/lib/prisma";
-import { getProviderClient } from "@/lib/crmClient";
+import { getCrmClient } from "@/lib/crmClient";
 
 export async function GET(req: NextRequest) {
   const session = await auth();
@@ -16,7 +16,7 @@ export async function GET(req: NextRequest) {
   const query = url.searchParams.get("q")?.trim() || undefined;
 
   try {
-    const client = await getProviderClient(connection);
+    const client = getCrmClient(connection);
     const opportunities = await client.searchOpportunities(query);
     return NextResponse.json({ opportunities, provider: connection.provider });
   } catch {

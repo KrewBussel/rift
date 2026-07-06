@@ -48,7 +48,7 @@ export default function CasesViewV2({
   initialStatus = "",
   stageConfig = null,
   firmName,
-  crmProvider,
+  crmConnected = false,
 }: {
   cases: V2CasesCase[];
   users: V2CasesUser[];
@@ -56,7 +56,7 @@ export default function CasesViewV2({
   initialStatus?: string;
   stageConfig?: StageConfigRow[] | null;
   firmName: string;
-  crmProvider?: string | null;
+  crmConnected?: boolean;
 }) {
   const router = useRouter();
   const [cases, setCases] = useState(initialCases);
@@ -158,21 +158,21 @@ export default function CasesViewV2({
                   </span>
                 </>
               )}
-              {crmProvider && (
+              {crmConnected && (
                 <>
                   <span style={{ color: T.textDisabled }}>·</span>
                   <span style={{ display: "inline-flex", alignItems: "center", gap: 5 }}>
                     <span style={{ width: 6, height: 6, borderRadius: 999, background: T.success }} />
-                    {crmProvider === "WEALTHBOX" ? "Wealthbox" : "Salesforce"} synced
+                    Wealthbox synced
                   </span>
                 </>
               )}
             </div>
           </div>
           <div style={{ display: "flex", gap: 8 }}>
-            {crmProvider && userRole === "ADMIN" && (
+            {crmConnected && userRole === "ADMIN" && (
               <Btn onClick={syncCrm} disabled={syncing}>
-                <Icon name="refresh" size={14} /> {syncing ? "Syncing…" : "Sync CRM"}
+                <Icon name="refresh" size={14} /> {syncing ? "Syncing…" : "Sync Wealthbox"}
               </Btn>
             )}
             <Link href="/dashboard/cases/new" style={{ textDecoration: "none" }}>

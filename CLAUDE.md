@@ -14,7 +14,7 @@ PROPOSAL_ACCEPTED → AWAITING_CLIENT_ACTION → READY_TO_SUBMIT → SUBMITTED �
 
 The two **bookend** stages (`PROPOSAL_ACCEPTED`, `WON`) sync bidirectionally with the firm's CRM. The five **intermediate** stages are Rift-only — the CRM never sees them. Each firm can rename and selectively disable the intermediate stages via a `CaseStageConfig` overlay (the bookends are always enabled because Wealthbox sync depends on them).
 
-Around the case, the app layers a custodian-knowledge hub, a magic-link client portal, CRM sync (Wealthbox now, Salesforce stubbed), an admin dashboard with customizable widgets, and a guided first-time onboarding wizard.
+Around the case, the app layers a custodian-knowledge hub, a magic-link client portal, Wealthbox CRM sync, an admin dashboard with customizable widgets, and a guided first-time onboarding wizard. Wealthbox is the only supported CRM.
 
 ## Commands
 
@@ -95,7 +95,7 @@ There is **no public signup route**. A firm's first record is created by us (the
 
 | # | Step | What it does |
 |---|---|---|
-| 1 | **Choose CRM** | Wealthbox today, Salesforce shown but disabled |
+| 1 | **Choose CRM** | Confirms Wealthbox (the only CRM Rift connects to) and explains the sync model |
 | 2 | **Connect** | Token paste with inline how-to + an illustrated mock of the Wealthbox API Access screen. Hits `POST /api/integrations/wealthbox` |
 | 3 | **Trigger stage** | Live-loads the firm's Wealthbox stages, admin picks which one creates Rift cases (typically "Proposal Accepted") |
 | 4 | **Won stage** | Picks the Wealthbox stage to push to when a case is moved to `WON` in Rift |
@@ -120,9 +120,9 @@ CRM-assisted invite is **never an auto-import**:
 ### CRM integration model
 
 ```
-Firm  ──1:1──  CrmConnection  (provider: WEALTHBOX | SALESFORCE)
+Firm  ──1:1──  CrmConnection  (provider: WEALTHBOX)
                   ↓
-                  encryptedToken / refreshTokenCiphertext (AES-256-GCM via AUTH_SECRET)
+                  encryptedToken (AES-256-GCM via AUTH_SECRET; Wealthbox PATs don't expire)
                   ↓
                   CrmStageMapping[]  (firmId, riftStatus → crmStageId/Name)
                   └─ capped at the two bookends: PROPOSAL_ACCEPTED + WON
@@ -142,16 +142,16 @@ RolloverCase  ──  Wealthbox-shadowed metadata (snapshot from the linked opp)
                     clientPhone                 (pulled from contact, click-to-call in UI)
 ```
 
-#### Polymorphic client
+#### Client adapter
 
-`src/lib/crmClient.ts` is the **provider-polymorphic dispatcher** — every route calls `getProviderClient(connection)` and gets a unified `CrmProviderClient` interface:
+`src/lib/crmClient.ts` is the **normalizing adapter** over the raw Wealthbox API module — routes call `getCrmClient(connection)` (decrypts the stored token) and get a `CrmClient` interface:
 
 ```
 getStages, searchOpportunities, getOpportunity, getOpportunityHydrated,
 listOpportunitiesByStage, updateOpportunityStage, createOpportunity, getOrgUsers
 ```
 
-Salesforce branch handles OAuth refresh + 401 retry transparently. Don't add provider-specific logic outside `crmClient.ts` / `salesforce.ts` / `wealthbox.ts`. Salesforce returns empty for `getOrgUsers` — bulk team-import for SF isn't built yet (the user adds team manually). Inbound polling and the reverse Won bookend work for both providers via the same `pollFirmForNewOpportunities` function.
+Raw HTTP shapes live in `src/lib/wealthbox.ts` (every function takes the decrypted token as its first arg); `crmClient.ts` adapts them to the neutral shapes `crmSync.ts` and the routes consume. Keep Wealthbox-specific response quirks inside those two files.
 
 #### Sync engine — `src/lib/crmSync.ts`
 
@@ -170,47 +170,39 @@ The reverse Won path inside `pollFirmForNewOpportunities` is what auto-closes a 
 
 The cron is the baseline; the other two cover gaps:
 
-1. **External cron** (cron-job.org → `POST /api/integrations/crm/poll` or the legacy alias `/api/integrations/wealthbox/poll` with `Authorization: Bearer ${CRON_SECRET}`). Polls every connected firm regardless of provider. Cadence is set in cron-job.org; the codebase doesn't care.
+1. **External cron** (cron-job.org → `POST /api/integrations/crm/poll` or the legacy alias `/api/integrations/wealthbox/poll` with `Authorization: Bearer ${CRON_SECRET}`). Polls every connected firm. Cadence is set in cron-job.org; the codebase doesn't care.
 2. **Page-load auto-sync** — `maybePollOnPageLoad` in cases list and dashboard server components. Makes refreshes feel real-time during active use without spamming the API.
-3. **Manual buttons** — "Sync Wealthbox" / "Sync Salesforce" on the cases page (`WealthboxSyncButton.tsx` — the file is named after the original Wealthbox-only version but the component is provider-aware) and "Sync now" in Settings → Integrations both call the same poll endpoint with the active session, scoping to the admin's own firm.
+3. **Manual button** — the "Sync Wealthbox" button in the cases page header (inline in `CasesView.tsx`) calls the same poll endpoint with the active session, scoping to the admin's own firm.
 
 All three call into the same `pollFirmForNewOpportunities` function. The endpoint is fully idempotent — duplicate triggers are safe.
 
 #### Routes
 
-- `/api/integrations/crm/*` — shared: `route.ts` (connection state + DELETE), `stages` (GET CRM stages), `mapping` (PUT bookend mappings), `opportunities` (search), `users` (GET CRM org members for bulk invite)
-- `/api/integrations/wealthbox` — POST token paste (Wealthbox-specific because it's not OAuth)
-- `/api/integrations/crm/poll` — POST inbound trigger (provider-neutral); accepts `Authorization: Bearer ${CRON_SECRET}` for all-firms cron mode, or an active ADMIN session for own-firm-only manual mode. The legacy alias `/api/integrations/wealthbox/poll` forwards here for back-compat with existing cron configurations.
-- `/api/integrations/salesforce/{authorize,callback}` — OAuth dance with PKCE
+- `/api/integrations/crm/*` — `route.ts` (connection state + DELETE), `stages` (GET CRM stages), `mapping` (PUT bookend mappings), `opportunities` (search), `users` (GET CRM org members for bulk invite)
+- `/api/integrations/wealthbox` — POST token paste (connect)
+- `/api/integrations/crm/poll` — POST inbound trigger; accepts `Authorization: Bearer ${CRON_SECRET}` for all-firms cron mode, or an active ADMIN session for own-firm-only manual mode. The legacy alias `/api/integrations/wealthbox/poll` forwards here for back-compat with existing cron configurations.
 - `/api/cases/[id]/crm` — per-case link/unlink
 - `/api/cases/[id]/crm/refresh` — per-case `refreshCaseFromCrm`
 - `/api/firm/stages` — GET/PUT the per-firm `CaseStageConfig` overlay
 - `/api/firm/onboarding` — GET state for the wizard, POST to mark complete
 
-Wealthbox auth header is `ACCESS_TOKEN: <token>` — **not** Bearer. Salesforce uses Bearer.
+Wealthbox auth header is `ACCESS_TOKEN: <token>` — **not** Bearer.
 
 #### Required CRM-side configuration
 
-Inbound case creation depends on three custom fields on the firm's CRM **Opportunities**. Field names + values are normalized to lowercase Wealthbox-style labels by the provider client, so `crmSync.ts`'s `createCaseFromOpportunity` is provider-agnostic.
-
-**Wealthbox** (Settings → Custom Fields → Opportunities). Defined in `WEALTHBOX_CUSTOM_FIELDS`:
+Inbound case creation depends on three custom fields on the firm's Wealthbox **Opportunities** (Settings → Custom Fields → Opportunities). Field names are matched case-insensitively; defined in `WEALTHBOX_CUSTOM_FIELDS` in `crmSync.ts`:
 - `Source Provider` (Text)
 - `Destination Custodian` (Text)
 - `Account Type` (Single-select dropdown)
 
-**Salesforce** (Setup → Object Manager → Opportunity → Fields & Relationships). Defined in `SALESFORCE_OPPORTUNITY_CUSTOM_FIELDS`:
-- `Source_Provider__c` (Text) — label: "Source Provider"
-- `Destination_Custodian__c` (Text) — label: "Destination Custodian"
-- `Account_Type__c` (Picklist) — label: "Account Type"
-
-Both providers funnel through `mapAccountType()`:
+Account Type values funnel through `mapAccountType()`:
 - any value containing "traditional" → `TRADITIONAL_IRA_401K`
 - any value containing "roth" → `ROTH_IRA_401K`
 - any value containing "403" → `IRA_403B`
 - exact "other" → `OTHER`
 - anything else → null → case still created but flagged `needsReview = true`
 
-Plus: for the Won outbound push to actually close the opportunity natively, the firm's Won-mapped stage needs the right "closed" semantics on the CRM side — Wealthbox: stage's win type = "won"; Salesforce: stage IsClosed=true and IsWon=true (Salesforce's "Closed Won" stage has these by default).
+Plus: for the Won outbound push to actually close the opportunity natively, the firm's Won-mapped Wealthbox stage needs its win type set to "won".
 
 #### Stage configuration overlay (`CaseStageConfig`)
 

@@ -158,20 +158,6 @@ export async function getOpportunity(token: string, id: number | string): Promis
   return request<WealthboxOpportunity>(token, `/opportunities/${id}`);
 }
 
-/**
- * Read a single custom field from an opportunity by its display name.
- * Wealthbox custom-field names are case-sensitive in the dashboard but
- * users sometimes type them inconsistently — match case-insensitively.
- */
-export function readCustomField(opp: WealthboxOpportunity, name: string): string | null {
-  const target = name.trim().toLowerCase();
-  const cf = opp.custom_fields?.find((f) => (f.name ?? "").trim().toLowerCase() === target);
-  if (!cf) return null;
-  if (cf.value === null || cf.value === undefined) return null;
-  const s = String(cf.value).trim();
-  return s.length > 0 ? s : null;
-}
-
 export interface WealthboxEmailAddress {
   id?: number;
   address: string;

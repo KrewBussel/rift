@@ -1,5 +1,5 @@
 import { prisma } from "./prisma";
-import { getProviderClient, type OpportunityHydrated } from "./crmClient";
+import { getCrmClient, type OpportunityHydrated } from "./crmClient";
 import type { CaseStatus, AccountType } from "@prisma/client";
 
 /**
@@ -80,8 +80,8 @@ export async function syncOpportunityStage(caseId: string): Promise<
   }
 
   try {
-    const client = await getProviderClient(connection);
-    await client.updateOpportunityStage(rolloverCase.wealthboxOpportunityId, mapping.crmStageId, mapping.crmStageName);
+    const client = getCrmClient(connection);
+    await client.updateOpportunityStage(rolloverCase.wealthboxOpportunityId, mapping.crmStageId);
     await prisma.rolloverCase.update({
       where: { id: caseId },
       data: { wealthboxLastSyncedAt: new Date(), wealthboxLastSyncError: null },
@@ -141,7 +141,7 @@ export async function refreshCaseFromCrm(caseId: string, actorUserId: string): P
   // amount, target close, client phone, etc. when they change in Wealthbox.
   let hydrated;
   try {
-    const client = await getProviderClient(connection);
+    const client = getCrmClient(connection);
     hydrated = await client.getOpportunityHydrated(rolloverCase.wealthboxOpportunityId);
   } catch (err) {
     const message = err instanceof Error ? err.message : "Unknown error";
@@ -177,9 +177,9 @@ export async function refreshCaseFromCrm(caseId: string, actorUserId: string): P
   const wasPlaceholderSource = rolloverCase.sourceProvider === "";
   const wasPlaceholderDest = rolloverCase.destinationCustodian === "";
 
-  const sourceProviderRaw = hydrated.customFields["source provider"] ?? null;
-  const destinationRaw = hydrated.customFields["destination custodian"] ?? null;
-  const accountTypeRaw = hydrated.customFields["account type"] ?? null;
+  const sourceProviderRaw = hydrated.customFields[WEALTHBOX_CUSTOM_FIELDS.sourceProvider.toLowerCase()] ?? null;
+  const destinationRaw = hydrated.customFields[WEALTHBOX_CUSTOM_FIELDS.destinationCustodian.toLowerCase()] ?? null;
+  const accountTypeRaw = hydrated.customFields[WEALTHBOX_CUSTOM_FIELDS.accountType.toLowerCase()] ?? null;
   const accountType = mapAccountType(accountTypeRaw);
 
   const refreshedFields = {
@@ -264,7 +264,7 @@ export async function refreshCaseFromCrm(caseId: string, actorUserId: string): P
       caseId,
       actorUserId,
       eventType: "STATUS_CHANGED",
-      eventDetails: `Status changed from ${oldStatus} to ${newStatus} (pulled from CRM)`,
+      eventDetails: `Status changed from ${oldStatus} to ${newStatus} (pulled from Wealthbox)`,
     },
   });
 
@@ -296,11 +296,8 @@ export async function maybePollOnPageLoad(firmId: string): Promise<void> {
   try {
     const connection = await prisma.crmConnection.findUnique({
       where: { firmId },
-      select: { provider: true, lastHealthCheckAt: true },
+      select: { lastHealthCheckAt: true },
     });
-    // Provider-agnostic: any connected CRM (Wealthbox or Salesforce) goes
-    // through pollFirmForNewOpportunities, which uses the polymorphic
-    // getProviderClient.
     if (!connection) return;
 
     if (
@@ -357,7 +354,7 @@ export async function pollFirmForNewOpportunities(firmId: string): Promise<PollR
   ]);
   if (!proposalMapping) return result;
 
-  const client = await getProviderClient(connection);
+  const client = getCrmClient(connection);
 
   /* Inbound trigger: scan the Proposal Accepted stage. */
   let summaries: Array<{ id: string; name: string; stage: string | null }>;
@@ -390,7 +387,7 @@ export async function pollFirmForNewOpportunities(firmId: string): Promise<PollR
       }
       try {
         const hydrated = await client.getOpportunityHydrated(summary.id);
-        const created = await createCaseFromOpportunity(firmId, hydrated, connection.provider);
+        const created = await createCaseFromOpportunity(firmId, hydrated);
         if (created) result.created += 1;
         else result.skipped += 1;
       } catch (err) {
@@ -415,7 +412,6 @@ export async function pollFirmForNewOpportunities(firmId: string): Promise<PollR
           },
           select: { id: true, wealthboxOpportunityId: true, status: true },
         });
-        const providerLabel = connection.provider === "SALESFORCE" ? "Salesforce" : "Wealthbox";
         for (const c of linkedToWon) {
           try {
             await prisma.rolloverCase.update({
@@ -431,7 +427,7 @@ export async function pollFirmForNewOpportunities(firmId: string): Promise<PollR
               data: {
                 caseId: c.id,
                 eventType: "STATUS_CHANGED",
-                eventDetails: `Status changed from ${c.status} to WON (pulled from ${providerLabel})`,
+                eventDetails: `Status changed from ${c.status} to WON (pulled from Wealthbox)`,
               },
             });
             result.closed += 1;
@@ -461,11 +457,10 @@ export async function pollFirmForNewOpportunities(firmId: string): Promise<PollR
   return result;
 }
 
-/** Insert a Rift case from a hydrated CRM opportunity (either provider). */
+/** Insert a Rift case from a hydrated Wealthbox opportunity. */
 async function createCaseFromOpportunity(
   firmId: string,
   opp: OpportunityHydrated,
-  provider: "WEALTHBOX" | "SALESFORCE",
 ): Promise<boolean> {
   const reasons: string[] = [];
 
@@ -521,12 +516,11 @@ async function createCaseFromOpportunity(
     },
   });
 
-  const providerLabel = provider === "SALESFORCE" ? "Salesforce" : "Wealthbox";
   await prisma.activityEvent.create({
     data: {
       caseId: newCase.id,
       eventType: "CASE_CREATED",
-      eventDetails: `Auto-created from ${providerLabel} opportunity "${opp.name}"`,
+      eventDetails: `Auto-created from Wealthbox opportunity "${opp.name}"`,
     },
   });
 

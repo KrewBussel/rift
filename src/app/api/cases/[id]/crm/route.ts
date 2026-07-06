@@ -3,7 +3,7 @@ import { z } from "zod";
 import { auth } from "@/lib/auth";
 import { prisma } from "@/lib/prisma";
 import { parseBody } from "@/lib/validation";
-import { getProviderClient } from "@/lib/crmClient";
+import { getCrmClient } from "@/lib/crmClient";
 import { syncOpportunityStage } from "@/lib/crmSync";
 import { recordAudit, extractRequestMeta } from "@/lib/audit";
 
@@ -35,7 +35,7 @@ export async function POST(req: NextRequest, { params }: { params: Promise<{ id:
   let opportunityName: string;
 
   try {
-    const client = await getProviderClient(connection);
+    const client = getCrmClient(connection);
     if (parsed.data.mode === "create") {
       const mapping = await prisma.crmStageMapping.findUnique({
         where: { firmId_riftStatus: { firmId, riftStatus: rolloverCase.status } },
@@ -43,7 +43,6 @@ export async function POST(req: NextRequest, { params }: { params: Promise<{ id:
       const created = await client.createOpportunity({
         name: `${rolloverCase.clientFirstName} ${rolloverCase.clientLastName} — Rollover`,
         stageId: mapping?.crmStageId,
-        stageName: mapping?.crmStageName,
       });
       opportunityId = created.id;
       opportunityName = created.name;
@@ -73,8 +72,8 @@ export async function POST(req: NextRequest, { params }: { params: Promise<{ id:
     firmId,
     actorUserId: session.user.id,
     action: parsed.data.mode === "create"
-      ? `crm.${connection.provider.toLowerCase()}.opportunity_created`
-      : `crm.${connection.provider.toLowerCase()}.opportunity_linked`,
+      ? "crm.wealthbox.opportunity_created"
+      : "crm.wealthbox.opportunity_linked",
     resource: "RolloverCase",
     resourceId: caseId,
     metadata: { opportunityId, opportunityName, provider: connection.provider },
@@ -103,7 +102,6 @@ export async function DELETE(req: NextRequest, { params }: { params: Promise<{ i
   if (!rolloverCase) return NextResponse.json({ error: "Not found" }, { status: 404 });
 
   const prevOpportunityId = rolloverCase.wealthboxOpportunityId;
-  const connection = await prisma.crmConnection.findUnique({ where: { firmId }, select: { provider: true } });
 
   await prisma.rolloverCase.update({
     where: { id: caseId },
@@ -119,7 +117,7 @@ export async function DELETE(req: NextRequest, { params }: { params: Promise<{ i
   await recordAudit({
     firmId,
     actorUserId: session.user.id,
-    action: `crm.${connection?.provider.toLowerCase() ?? "unknown"}.opportunity_unlinked`,
+    action: "crm.wealthbox.opportunity_unlinked",
     resource: "RolloverCase",
     resourceId: caseId,
     metadata: { opportunityId: prevOpportunityId },

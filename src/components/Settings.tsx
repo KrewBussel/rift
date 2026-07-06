@@ -1026,14 +1026,6 @@ function IntegrationsSec() {
               glyph="W"
               configurePath="/dashboard/settings"
             />
-            <IntegrationTile
-              name="Salesforce"
-              desc="CRM — opportunity stages via OAuth"
-              tag="CRM"
-              color="#0d9dda"
-              glyph="S"
-              configurePath="/dashboard/settings"
-            />
           </div>
         </PageBody>
       </div>

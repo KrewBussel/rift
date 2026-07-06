@@ -408,11 +408,6 @@ model CrmConnection {
   encryptedToken        String
   tokenIv               String
   tokenTag              String
-  refreshTokenCiphertext String?
-  refreshTokenIv        String?
-  refreshTokenTag       String?
-  tokenExpiresAt        DateTime?
-  instanceUrl           String?
   connectedUserId       String?
   connectedUserName     String?
   connectedUserEmail    String?
@@ -456,7 +451,6 @@ model CaseStageConfig {
 
 enum CrmProvider {
   WEALTHBOX
-  SALESFORCE
 }
 
 enum PlanTier {

@@ -1,11 +1,50 @@
-import { POST as legacyPoll } from "../../wealthbox/poll/route";
+import { NextRequest, NextResponse } from "next/server";
+import { auth } from "@/lib/auth";
+import { prisma } from "@/lib/prisma";
+import { pollFirmForNewOpportunities, type PollResult } from "@/lib/crmSync";
 
 /**
- * Provider-agnostic alias for the inbound CRM poller. Forwards to the same
- * handler as /api/integrations/wealthbox/poll (which is itself provider-
- * neutral; the URL is kept for back-compat with existing cron configurations).
+ * Inbound Wealthbox poller. Scans each connected firm's opportunities at the
+ * "Proposal Accepted" mapped stage and creates Rift cases for any new ones.
+ * Also scans the Won-mapped stage and auto-closes linked cases. Idempotent —
+ * opportunities already linked are skipped.
  *
- * Both routes accept either a CRON_SECRET bearer token (all-firms mode) or
- * an ADMIN session (own-firm mode).
+ * Two auth modes:
+ *  1. External cron — `Authorization: Bearer <CRON_SECRET>` polls all firms.
+ *  2. Manual sync from the UI — an ADMIN session polls only their own firm.
+ *
+ * Wealthbox has no webhooks, so a Hobby-tier deployment uses an external
+ * pinger (cron-job.org, GitHub Actions) hitting this endpoint every 1–5
+ * minutes with the cron secret. /api/integrations/wealthbox/poll is a legacy
+ * alias for existing cron configurations.
  */
-export const POST = legacyPoll;
+export async function POST(req: NextRequest) {
+  const cronSecret = process.env.CRON_SECRET;
+  const authHeader = req.headers.get("authorization");
+  const isCron = !!cronSecret && authHeader === `Bearer ${cronSecret}`;
+
+  if (isCron) {
+    const firms = await prisma.crmConnection.findMany({
+      select: { firmId: true },
+    });
+    const results: PollResult[] = [];
+    for (const f of firms) {
+      results.push(await pollFirmForNewOpportunities(f.firmId));
+    }
+    return NextResponse.json({
+      mode: "cron",
+      firms: results.length,
+      totalCreated: results.reduce((s, r) => s + r.created, 0),
+      results,
+    });
+  }
+
+  const session = await auth();
+  if (!session?.user) return NextResponse.json({ error: "Unauthorized" }, { status: 401 });
+  if (session.user.role !== "ADMIN") {
+    return NextResponse.json({ error: "Forbidden" }, { status: 403 });
+  }
+
+  const result = await pollFirmForNewOpportunities(session.user.firmId);
+  return NextResponse.json({ mode: "manual", result });
+}

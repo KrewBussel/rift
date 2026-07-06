@@ -4,9 +4,9 @@ import { prisma } from "@/lib/prisma";
 import { recordAudit, extractRequestMeta } from "@/lib/audit";
 
 /**
- * Provider-agnostic CRM connection endpoints.
+ * CRM connection endpoints.
  * GET returns the firm's connection and stage mappings (if any).
- * DELETE disconnects (any provider) and clears all linked cases.
+ * DELETE disconnects and clears all linked cases.
  */
 export async function GET() {
   const session = await auth();
@@ -17,7 +17,6 @@ export async function GET() {
     select: {
       id: true,
       provider: true,
-      instanceUrl: true,
       connectedUserId: true,
       connectedUserName: true,
       connectedUserEmail: true,
@@ -63,7 +62,7 @@ export async function DELETE(req: NextRequest) {
   await recordAudit({
     firmId,
     actorUserId: session.user.id,
-    action: `crm.${connection.provider.toLowerCase()}.disconnected`,
+    action: "crm.wealthbox.disconnected",
     resource: "CrmConnection",
     resourceId: connection.id,
     ...meta,

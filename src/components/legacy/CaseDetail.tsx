@@ -88,8 +88,8 @@ const CARD = { background: "#161b22", border: "1px solid #21262d" };
 const CARD_HEADER_BORDER = { borderBottom: "1px solid #21262d" };
 const ICON_BOX = { background: "#21262d", width: 28, height: 28, borderRadius: 8, display: "flex", alignItems: "center", justifyContent: "center", flexShrink: 0 as const };
 
-export default function CaseDetail({ rolloverCase: initial, users, currentUserId, userRole, initialChecklist, initialDocuments, crmConnected = false, crmProviderLabel = null, stageConfig = null, clientLinkActive = false }: {
-  rolloverCase: RolloverCase; users: User[]; currentUserId: string; userRole: string; initialChecklist: ChecklistItem[]; initialDocuments: ChecklistDocument[]; crmConnected?: boolean; crmProviderLabel?: string | null; stageConfig?: StageConfigRow[] | null;
+export default function CaseDetail({ rolloverCase: initial, users, currentUserId, userRole, initialChecklist, initialDocuments, crmConnected = false, stageConfig = null, clientLinkActive = false }: {
+  rolloverCase: RolloverCase; users: User[]; currentUserId: string; userRole: string; initialChecklist: ChecklistItem[]; initialDocuments: ChecklistDocument[]; crmConnected?: boolean; stageConfig?: StageConfigRow[] | null;
   clientLinkActive?: boolean;
 }) {
   // Visible options in the status dropdown: enabled stages from the firm's
@@ -327,7 +327,7 @@ export default function CaseDetail({ rolloverCase: initial, users, currentUserId
 
       {rolloverCase.needsReview && (
         <div className="mb-5 rounded-lg p-3" style={{ background: "#2d2208", border: "1px solid #5c4419" }}>
-          <p className="text-sm font-semibold" style={{ color: "#e09937" }}>Auto-created from {crmProviderLabel ?? "CRM"} — needs review</p>
+          <p className="text-sm font-semibold" style={{ color: "#e09937" }}>Auto-created from Wealthbox — needs review</p>
           {rolloverCase.reviewReason && (
             <p className="text-xs mt-1" style={{ color: "#d4a05c" }}>{rolloverCase.reviewReason}</p>
           )}
@@ -647,7 +647,7 @@ export default function CaseDetail({ rolloverCase: initial, users, currentUserId
         <div className="space-y-5">
           <DocumentsPanel caseId={rolloverCase.id} initialDocuments={initialDocuments} userRole={userRole} refreshKey={docRefreshKey} />
 
-          {/* CRM (Wealthbox / Salesforce) */}
+          {/* Wealthbox CRM panel */}
           {crmConnected && (
             <section className="rounded-xl overflow-hidden" style={CARD}>
               <div className="flex items-center justify-between gap-2.5 px-5 pt-4 pb-3" style={CARD_HEADER_BORDER}>
@@ -658,7 +658,7 @@ export default function CaseDetail({ rolloverCase: initial, users, currentUserId
                       <path d="M5 7l1.5 1.5L9 5.5" stroke="currentColor" strokeWidth="1.3" strokeLinecap="round" strokeLinejoin="round"/>
                     </svg>
                   </div>
-                  <h2 className="text-sm font-semibold" style={{ color: "#e4e6ea" }}>{crmProviderLabel ?? "CRM"}</h2>
+                  <h2 className="text-sm font-semibold" style={{ color: "#e4e6ea" }}>Wealthbox</h2>
                 </div>
                 {rolloverCase.wealthboxLastSyncedAt && (
                   <span className="text-xs" style={{ color: rolloverCase.wealthboxLastSyncError ? "#f87171" : "#6ee7b7" }}>

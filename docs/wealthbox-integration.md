@@ -208,7 +208,7 @@ non-admins see a "setup in progress" screen until completion.
 
 The wizard has 6 steps (see `src/components/OnboardingWizard.tsx`):
 
-1. **Choose CRM** — Wealthbox today, Salesforce shown disabled
+1. **Choose CRM** — confirms Wealthbox (the only supported CRM)
 2. **Connect** — token paste with inline how-to + an illustrated mock of
    the Wealthbox API Access screen pointing at the Create Access Token
    button. Hits `POST /api/integrations/wealthbox`
@@ -288,9 +288,9 @@ from git history and add `CRON_SECRET` + `RIFT_BASE_URL` as repo secrets.
 | Page-load auto-sync | `src/lib/crmSync.ts` (`maybePollOnPageLoad`) — called from `src/app/dashboard/page.tsx` and `src/app/dashboard/cases/page.tsx` |
 | Outbound sync | `src/lib/crmSync.ts` (`syncOpportunityStage`) — fired from `PATCH /api/cases/[id]` |
 | Per-case refresh | `src/lib/crmSync.ts` (`refreshCaseFromCrm`) — called from `/api/cases/[id]/crm/refresh` |
-| Polling endpoint | `src/app/api/integrations/wealthbox/poll/route.ts` |
+| Polling endpoint | `src/app/api/integrations/crm/poll/route.ts` (legacy alias: `wealthbox/poll`) |
 | Wealthbox API client | `src/lib/wealthbox.ts` |
-| Polymorphic CRM client | `src/lib/crmClient.ts` |
+| Normalizing CRM client adapter | `src/lib/crmClient.ts` (`getCrmClient`) |
 | CRM org users (team import) | `src/lib/wealthbox.ts` (`getOrgUsers`) → `crmClient.ts` → `/api/integrations/crm/users` |
 | Custom field name constants | `src/lib/crmSync.ts` (`WEALTHBOX_CUSTOM_FIELDS`) |
 | Account type mapper | `src/lib/crmSync.ts` (`mapAccountType`) |
@@ -300,7 +300,7 @@ from git history and add `CRON_SECRET` + `RIFT_BASE_URL` as repo secrets.
 | Stage config API | `src/app/api/firm/stages/route.ts` |
 | Settings UI (mapping + sync + stages) | `src/components/SettingsForm.tsx`, `src/components/settings/IntegrationsSection*` |
 | CRM team import in Settings | `src/components/settings/TeamSection.tsx` (`CrmTeamImportPanel`) |
-| Sync button on cases page | `src/components/WealthboxSyncButton.tsx` |
+| Sync button on cases page | inline in `src/components/CasesView.tsx` (header "Sync Wealthbox" button) |
 | Review badge / banner | `src/components/CasesView.tsx`, `src/components/CasesViewWorkbench.tsx`, `src/components/CaseDetail.tsx` |
 
 ---

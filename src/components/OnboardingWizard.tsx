@@ -117,10 +117,10 @@ export default function OnboardingWizard({
       const res = await fetch("/api/firm/onboarding");
       if (!res.ok) return;
       const body = (await res.json()) as {
-        crm: { provider: "WEALTHBOX" | "SALESFORCE"; connectedUserEmail: string | null; connectedUserName?: string | null } | null;
+        crm: { provider: "WEALTHBOX"; connectedUserEmail: string | null; connectedUserName?: string | null } | null;
         mappings: Array<{ riftStatus: string; crmStageId: string; crmStageName: string }>;
       };
-      if (body.crm?.provider === "WEALTHBOX") {
+      if (body.crm) {
         setProvider("WEALTHBOX");
         setConnection({
           connectedUserEmail: body.crm.connectedUserEmail,
@@ -679,23 +679,6 @@ function StepCrm({
             Personal access token. Set up in 30 seconds.
           </p>
         </button>
-
-        <div
-          className="rounded-xl p-4 border opacity-60 cursor-not-allowed"
-          style={{ background: "#0f131b", borderColor: "#1d2330" }}
-          aria-disabled
-        >
-          <div className="flex items-center gap-2">
-            <SalesforceGlyph />
-            <span className="font-medium" style={{ color: "#9ca3af" }}>Salesforce</span>
-            <span className="ml-auto text-[10px] px-2 py-0.5 rounded-full" style={{ background: "#1d2330", color: "#7d8590" }}>
-              Coming soon
-            </span>
-          </div>
-          <p className="text-xs mt-2" style={{ color: "#7d8590" }}>
-            OAuth app. Available once we finish the inbound poll path.
-          </p>
-        </div>
       </div>
     </Card>
   );
@@ -1333,18 +1316,6 @@ function WealthboxGlyph() {
       aria-hidden
     >
       WB
-    </span>
-  );
-}
-
-function SalesforceGlyph() {
-  return (
-    <span
-      className="w-7 h-7 rounded-md flex items-center justify-center text-[11px] font-bold"
-      style={{ background: "#1d2330", color: "#7d8590" }}
-      aria-hidden
-    >
-      SF
     </span>
   );
 }

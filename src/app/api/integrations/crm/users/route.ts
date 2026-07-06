@@ -1,7 +1,7 @@
 import { NextResponse } from "next/server";
 import { auth } from "@/lib/auth";
 import { prisma } from "@/lib/prisma";
-import { getProviderClient } from "@/lib/crmClient";
+import { getCrmClient } from "@/lib/crmClient";
 
 /**
  * List the users on the firm's connected CRM account, annotated with whether
@@ -28,7 +28,7 @@ export async function GET() {
 
   let crmUsers;
   try {
-    const client = await getProviderClient(connection);
+    const client = getCrmClient(connection);
     crmUsers = await client.getOrgUsers();
   } catch (err) {
     const message = err instanceof Error ? err.message : "Unknown error";
