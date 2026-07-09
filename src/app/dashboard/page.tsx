@@ -1,7 +1,6 @@
 import { auth } from "@/lib/auth";
 import { redirect } from "next/navigation";
 import { prisma } from "@/lib/prisma";
-import { CaseStatus } from "@prisma/client";
 
 import AdminDashboard, {
   type V2PipelineBucket,
@@ -15,7 +14,7 @@ import { computeOnboardingChecklist } from "@/lib/onboarding";
 import { getOrCreateFirmSettings } from "@/lib/reminders";
 import { getFirmStageConfig } from "@/lib/stageConfig";
 import { maybePollOnPageLoad } from "@/lib/crmSync";
-import { STATUSES, resolveStageLabel } from "@/components/casesDesignTokens";
+import { STATUSES, resolveStageLabel, resolveEnabledStages } from "@/components/casesDesignTokens";
 
 const DEFAULT_STATUS_LABELS: Record<string, string> = {
   PROPOSAL_ACCEPTED: "Proposal Accepted",
@@ -90,9 +89,7 @@ export default async function DashboardPage() {
     activityRows,
     crmConnection,
     teamUsers,
-    openedThisMonth,
     completedThisMonth,
-    openedLastMonth,
     completedLastMonth,
     recentlyCompleted,
   ] = await Promise.all([
@@ -172,13 +169,7 @@ export default async function DashboardPage() {
       orderBy: [{ role: "asc" }, { firstName: "asc" }],
     }),
     prisma.rolloverCase.count({
-      where: { firmId, createdAt: { gte: thisMonthStart } },
-    }),
-    prisma.rolloverCase.count({
       where: { firmId, status: "WON", statusUpdatedAt: { gte: thisMonthStart } },
-    }),
-    prisma.rolloverCase.count({
-      where: { firmId, createdAt: { gte: lastMonthStart, lt: thisMonthStart } },
     }),
     prisma.rolloverCase.count({
       where: { firmId, status: "WON", statusUpdatedAt: { gte: lastMonthStart, lt: thisMonthStart } },
@@ -227,10 +218,12 @@ export default async function DashboardPage() {
     });
   }
 
-  const pipeline: V2PipelineBucket[] = (Object.keys(STATUS_LABELS) as CaseStatus[]).map((status) => ({
-    status,
-    label: STATUS_LABELS[status],
-    count: allCases.filter((c) => c.status === status).length,
+  // Only the firm's enabled stages appear in the pipeline summary — mirrors the
+  // cases board, which hides disabled intermediate stages.
+  const pipeline: V2PipelineBucket[] = resolveEnabledStages(stageConfig).map((s) => ({
+    status: s.value,
+    label: s.label,
+    count: allCases.filter((c) => c.status === s.value).length,
   }));
 
   const daysAgo = (d: Date) => Math.max(1, Math.floor((now.getTime() - d.getTime()) / (1000 * 60 * 60 * 24)));
@@ -341,7 +334,6 @@ export default async function DashboardPage() {
         pipeline={pipeline}
         needsAttention={needsAttention}
         activity={activity}
-        team={[]}
         workloadAdvisors={workloadAdvisors}
         workloadOps={workloadOps}
         throughput={{
@@ -350,8 +342,6 @@ export default async function DashboardPage() {
           avgCycleDays: avgDaysToComplete,
           completedThisMonth,
           completedLastMonth,
-          openedThisMonth,
-          openedLastMonth,
         }}
         inflow={inflowBuckets}
       />

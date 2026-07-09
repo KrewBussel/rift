@@ -2,6 +2,7 @@ import { NextRequest, NextResponse } from "next/server";
 import { auth } from "@/lib/auth";
 import { prisma } from "@/lib/prisma";
 import { parseBody } from "@/lib/validation";
+import { caseVisibilityFilter } from "@/lib/caseVisibility";
 import { z } from "zod";
 
 const ConfirmUploadSchema = z.object({
@@ -19,7 +20,9 @@ export async function GET(_req: NextRequest, { params }: { params: Promise<{ id:
   const { id } = await params;
   const firmId = session.user.firmId;
 
-  const rolloverCase = await prisma.rolloverCase.findFirst({ where: { id, firmId } });
+  const rolloverCase = await prisma.rolloverCase.findFirst({
+    where: { id, firmId, ...caseVisibilityFilter(session.user.role, session.user.id) },
+  });
   if (!rolloverCase) return NextResponse.json({ error: "Not found" }, { status: 404 });
 
   const documents = await prisma.document.findMany({
@@ -48,13 +51,25 @@ export async function POST(request: NextRequest, { params }: { params: Promise<{
   const firmId = session.user.firmId;
   const userId = session.user.id;
 
-  const rolloverCase = await prisma.rolloverCase.findFirst({ where: { id, firmId } });
+  const rolloverCase = await prisma.rolloverCase.findFirst({
+    where: { id, firmId, ...caseVisibilityFilter(session.user.role, userId) },
+  });
   if (!rolloverCase) return NextResponse.json({ error: "Not found" }, { status: 404 });
 
   // Verify the S3 key was issued for this exact firm + case — prevents a user
   // from confirming a key that belongs to a different firm or case.
   if (!key.startsWith(`${firmId}/${id}/`)) {
     return NextResponse.json({ error: "Invalid storage key" }, { status: 400 });
+  }
+
+  // If linking to a checklist item, it must belong to this case — don't let a
+  // document cross-link to another case's/firm's checklist item.
+  if (checklistItemId) {
+    const item = await prisma.checklistItem.findFirst({
+      where: { id: checklistItemId, caseId: id },
+      select: { id: true },
+    });
+    if (!item) return NextResponse.json({ error: "Checklist item not found" }, { status: 404 });
   }
 
   const document = await prisma.document.create({

@@ -2,6 +2,7 @@ import { NextRequest, NextResponse } from "next/server";
 import { auth } from "@/lib/auth";
 import { prisma } from "@/lib/prisma";
 import { parseBody } from "@/lib/validation";
+import { caseVisibilityFilter } from "@/lib/caseVisibility";
 import { z } from "zod";
 
 const CreateNoteSchema = z.object({
@@ -20,7 +21,9 @@ export async function POST(request: NextRequest, { params }: { params: Promise<{
   const firmId = session.user.firmId;
   const userId = session.user.id as string;
 
-  const existing = await prisma.rolloverCase.findFirst({ where: { id, firmId } });
+  const existing = await prisma.rolloverCase.findFirst({
+    where: { id, firmId, ...caseVisibilityFilter(session.user.role, userId) },
+  });
   if (!existing) return NextResponse.json({ error: "Not found" }, { status: 404 });
 
   const note = await prisma.note.create({

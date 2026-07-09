@@ -3,6 +3,7 @@ import { auth } from "@/lib/auth";
 import { prisma } from "@/lib/prisma";
 import { CaseStatus } from "@prisma/client";
 import { parseBody, parseQuery } from "@/lib/validation";
+import { caseVisibilityFilter, isSameFirmUser } from "@/lib/caseVisibility";
 import { z } from "zod";
 
 const CaseStatusSchema = z.enum([
@@ -53,6 +54,7 @@ export async function GET(request: NextRequest) {
   const cases = await prisma.rolloverCase.findMany({
     where: {
       firmId,
+      ...caseVisibilityFilter(session.user.role, session.user.id),
       ...(search
         ? {
             OR: [
@@ -85,6 +87,15 @@ export async function POST(request: NextRequest) {
 
   const firmId = session.user.firmId;
   const userId = session.user.id;
+
+  // Assignment targets must be users in this firm (or null) — never a
+  // cross-firm / nonexistent id.
+  if (
+    !(await isSameFirmUser(body.assignedAdvisorId, firmId)) ||
+    !(await isSameFirmUser(body.assignedOpsId, firmId))
+  ) {
+    return NextResponse.json({ error: "Assigned user must belong to your firm" }, { status: 400 });
+  }
 
   const newCase = await prisma.rolloverCase.create({
     data: {

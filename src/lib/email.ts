@@ -327,11 +327,3 @@ export async function sendEmail(to: string, subject: string, html: string): Prom
   }
   return { ok: true, reason: null };
 }
-
-/**
- * Back-compat wrapper for callers that just want a boolean.
- */
-export async function sendEmailBool(to: string, subject: string, html: string): Promise<boolean> {
-  const r = await sendEmail(to, subject, html);
-  return r.ok;
-}

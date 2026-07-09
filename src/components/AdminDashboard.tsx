@@ -28,13 +28,6 @@ export type V2ActivityItem = {
   createdAt: string;
 };
 
-export type V2TeamMember = {
-  id: string;
-  name: string;
-  role: "ADVISOR" | "OPS";
-  activeCases: number;
-};
-
 export type V2WorkloadRow = {
   id: string;
   name: string;
@@ -51,7 +44,6 @@ export type AdminDashboardV2Props = {
   pipeline: V2PipelineBucket[];
   needsAttention: V2NeedsAttentionItem[];
   activity: V2ActivityItem[];
-  team: V2TeamMember[];
   workloadAdvisors: V2WorkloadRow[];
   workloadOps: V2WorkloadRow[];
   throughput: {
@@ -60,8 +52,6 @@ export type AdminDashboardV2Props = {
     avgCycleDays: number | null;
     completedThisMonth: number;
     completedLastMonth: number;
-    openedThisMonth?: number;
-    openedLastMonth?: number;
   };
   inflow: V2InflowWeek[];
 };
@@ -102,9 +92,9 @@ export default function AdminDashboardV2(props: AdminDashboardV2Props) {
     {
       label: "Cycle time",
       value: throughput.avgCycleDays != null ? `${Math.round(throughput.avgCycleDays)}d` : "—",
-      delta: "30d",
+      delta: null as string | null,
       deltaHue: "slate" as const,
-      sub: "avg to close",
+      sub: "30-day avg to close",
     },
     {
       label: "Completed (mo)",
@@ -146,7 +136,7 @@ export default function AdminDashboardV2(props: AdminDashboardV2Props) {
                 marginBottom: 6,
               }}
             >
-              {userFirstName ? `Good morning, ${userFirstName}` : "Workspace"}
+              {userFirstName ? `Welcome back, ${userFirstName}` : "Workspace"}
             </div>
             <h1
               style={{
@@ -232,9 +222,11 @@ export default function AdminDashboardV2(props: AdminDashboardV2Props) {
               >
                 {s.label}
               </div>
-              <Pill hue={s.deltaHue} small>
-                {s.delta}
-              </Pill>
+              {s.delta && (
+                <Pill hue={s.deltaHue} small>
+                  {s.delta}
+                </Pill>
+              )}
             </div>
             <div
               style={{
@@ -617,9 +609,14 @@ export default function AdminDashboardV2(props: AdminDashboardV2Props) {
                   }}
                 >
                   <b style={{ color: T.text, fontWeight: 600 }}>{a.actor ?? "System"}</b> {a.verb}{" "}
-                  {a.target && (
-                    <b style={{ color: T.text, fontWeight: 500 }}>{a.target}</b>
-                  )}
+                  {a.target &&
+                    (a.href ? (
+                      <Link href={a.href} style={{ color: T.text, fontWeight: 500, textDecoration: "none" }}>
+                        {a.target}
+                      </Link>
+                    ) : (
+                      <b style={{ color: T.text, fontWeight: 500 }}>{a.target}</b>
+                    ))}
                 </div>
                 <span
                   style={{

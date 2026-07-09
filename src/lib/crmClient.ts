@@ -79,7 +79,13 @@ export function getCrmClient(connection: CrmConnection): CrmClient {
   return {
     async getStages() {
       const raw = await wb.getOpportunityStages(token);
-      return raw.map((s) => ({ id: String(s.id), name: s.name }));
+      return raw
+        // Defense-in-depth: this endpoint is opportunity-stage-specific, but if
+        // Wealthbox ever returns mixed category rows we only surface Opportunity
+        // stages so a bookend can never be mapped to a stage opportunities can't
+        // occupy (which would silently break inbound scanning and outbound push).
+        .filter((s) => !s.document_type || s.document_type.trim().toLowerCase() === "opportunity")
+        .map((s) => ({ id: String(s.id), name: s.name }));
     },
     async searchOpportunities(query?: string) {
       const list = await wb.searchOpportunities(token, { query, limit: 25 });

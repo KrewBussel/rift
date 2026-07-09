@@ -35,6 +35,8 @@ export async function POST(req: NextRequest) {
       mode: "cron",
       firms: results.length,
       totalCreated: results.reduce((s, r) => s + r.created, 0),
+      totalClosed: results.reduce((s, r) => s + r.closed, 0),
+      totalErrors: results.reduce((s, r) => s + r.errors.length, 0),
       results,
     });
   }

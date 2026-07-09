@@ -10,13 +10,8 @@ import { z } from "zod";
 
 const PreferencesSchema = z
   .object({
-    defaultStatusFilter: z.string().optional(),
-    defaultViewFilter: z.string().optional(),
     timezone: z.string().optional(),
-    showDashboardWidgets: z.boolean().optional(),
-    compactCaseList: z.boolean().optional(),
     onboardingHidden: z.boolean().optional(),
-    dashboardWidgets: z.array(z.string().trim().min(1).max(50)).max(20).optional(),
     intelligenceSearches: z
       .array(
         z.object({

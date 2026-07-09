@@ -3,6 +3,7 @@ import { GetObjectCommand, DeleteObjectCommand } from "@aws-sdk/client-s3";
 import { getSignedUrl } from "@aws-sdk/s3-request-presigner";
 import { auth } from "@/lib/auth";
 import { prisma } from "@/lib/prisma";
+import { caseVisibilityFilter } from "@/lib/caseVisibility";
 import { s3, S3_BUCKET } from "@/lib/s3";
 
 // GET — generate a short-lived presigned download URL for the document
@@ -14,10 +15,9 @@ export async function GET(_req: NextRequest, { params }: { params: Promise<{ id:
   const firmId = session.user.firmId;
 
   const doc = await prisma.document.findFirst({
-    where: { id },
-    include: { case: { select: { firmId: true } } },
+    where: { id, case: { firmId, ...caseVisibilityFilter(session.user.role, session.user.id) } },
   });
-  if (!doc || doc.case.firmId !== firmId) {
+  if (!doc) {
     return NextResponse.json({ error: "Not found" }, { status: 404 });
   }
 
@@ -49,10 +49,9 @@ export async function DELETE(_req: NextRequest, { params }: { params: Promise<{ 
   }
 
   const doc = await prisma.document.findFirst({
-    where: { id },
-    include: { case: { select: { firmId: true } } },
+    where: { id, case: { firmId, ...caseVisibilityFilter(role, userId) } },
   });
-  if (!doc || doc.case.firmId !== firmId) {
+  if (!doc) {
     return NextResponse.json({ error: "Not found" }, { status: 404 });
   }
 

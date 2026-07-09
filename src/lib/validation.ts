@@ -66,7 +66,4 @@ export function parseQuery<T extends ZodType>(
 }
 
 // Common reusable schemas
-export const emailSchema = z.string().trim().toLowerCase().email();
-export const nonEmptyString = z.string().trim().min(1);
-export const cuidSchema = z.string().regex(/^c[a-z0-9]{24,}$/i, "Invalid id");
 export const roleSchema = z.enum(["ADMIN", "ADVISOR", "OPS"]);

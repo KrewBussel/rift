@@ -5,7 +5,10 @@ import { runReminders } from "@/lib/reminders";
 // Protected by CRON_SECRET header.
 export async function POST(req: NextRequest) {
   const secret = req.headers.get("x-cron-secret") ?? req.nextUrl.searchParams.get("secret");
-  if (secret !== process.env.CRON_SECRET) {
+  const expected = process.env.CRON_SECRET;
+  // Presence guard: a missing or empty CRON_SECRET must never authorize the
+  // endpoint (an empty env value would otherwise match an empty ?secret=).
+  if (!expected || secret !== expected) {
     return NextResponse.json({ error: "Unauthorized" }, { status: 401 });
   }
 

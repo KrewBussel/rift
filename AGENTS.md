@@ -48,7 +48,7 @@ Forgetting the test DB step produces phantom typecheck errors that vanish after 
 
 ## Patterns that lint as errors but are intentional
 
-- `useEffect(() => { void asyncFn(); }, [...])` for fetch-on-mount triggers a `react-hooks/set-state-in-effect` error. The pattern is fine; suppress with `// eslint-disable-next-line react-hooks/set-state-in-effect` (see existing usage in `OnboardingWizard.tsx`, `SettingsForm.tsx`).
+- Synchronous `setState` in a `useEffect` body (e.g. deriving validation state before a debounced fetch) triggers a `react-hooks/set-state-in-effect` error. When the pattern is intentional, suppress the specific line with `// eslint-disable-next-line react-hooks/set-state-in-effect` (see existing usage in `OnboardingWizard.tsx`). Note: `void asyncFn()` fetch-on-mount effects where state is only set inside the async IIFE do NOT trip the rule and need no directive.
 - The CSP in `proxy.ts` uses `'self' 'unsafe-inline'` for scripts. Don't tighten without understanding why — see CLAUDE.md gotchas.
 
 ## Don't break existing isolation, sync, or onboarding tests

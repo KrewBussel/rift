@@ -47,7 +47,10 @@ export default async function CasesPage({
       : Promise.resolve([]),
     getFirmStageConfig(firmId),
     role === "ADMIN"
-      ? prisma.crmConnection.findUnique({ where: { firmId }, select: { id: true } })
+      ? prisma.crmConnection.findUnique({
+          where: { firmId },
+          select: { id: true, lastHealthOk: true, lastHealthError: true },
+        })
       : Promise.resolve(null),
     prisma.firm.findUnique({ where: { id: firmId }, select: { name: true } }),
   ]);
@@ -81,6 +84,7 @@ export default async function CasesPage({
       stageConfig={stageConfig}
       firmName={firm?.name ?? "Workspace"}
       crmConnected={!!crmConn}
+      crmHealthy={crmConn ? crmConn.lastHealthOk : true}
     />
   );
 }
