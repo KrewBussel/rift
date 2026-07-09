@@ -3,6 +3,7 @@ import { z } from "zod";
 import { auth } from "@/lib/auth";
 import { prisma } from "@/lib/prisma";
 import { parseBody } from "@/lib/validation";
+import { caseVisibilityFilter } from "@/lib/caseVisibility";
 import { issueClientAccessToken, LINK_TOKEN_TTL_DAYS } from "@/lib/client-auth";
 import { buildClientPortalInviteEmail, sendEmail } from "@/lib/email";
 import { recordAudit, extractRequestMeta } from "@/lib/audit";
@@ -42,7 +43,7 @@ export async function POST(
   if (parsed instanceof NextResponse) return parsed;
 
   const rolloverCase = await prisma.rolloverCase.findFirst({
-    where: { id: caseId, firmId },
+    where: { id: caseId, firmId, ...caseVisibilityFilter(session.user.role, userId) },
     include: {
       assignedAdvisor: { select: { firstName: true, lastName: true } },
       // slug needed to build the firm-branded portal URL (<slug>.riftira.com).
@@ -121,7 +122,7 @@ export async function DELETE(
 
   // Verify case ownership first — don't 404/200-leak across firms.
   const rolloverCase = await prisma.rolloverCase.findFirst({
-    where: { id: caseId, firmId },
+    where: { id: caseId, firmId, ...caseVisibilityFilter(session.user.role, userId) },
     select: { id: true },
   });
   if (!rolloverCase) return NextResponse.json({ error: "Not found" }, { status: 404 });

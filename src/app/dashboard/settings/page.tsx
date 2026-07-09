@@ -9,9 +9,16 @@ import Settings, {
   type SettingsV2FirmSettings,
 } from "@/components/Settings";
 
-export default async function SettingsPage() {
+export default async function SettingsPage({
+  searchParams,
+}: {
+  searchParams: Promise<{ tab?: string | string[] }>;
+}) {
   const session = await auth();
   if (!session) redirect("/login");
+
+  const tabParam = (await searchParams).tab;
+  const initialTab = Array.isArray(tabParam) ? tabParam[0] : tabParam;
 
   const userId = session.user.id;
   const role = session.user.role;
@@ -121,6 +128,7 @@ export default async function SettingsPage() {
       firm={v2Firm}
       firmSettings={v2FirmSettings}
       seatsUsed={seatsUsed}
+      initialTab={initialTab}
       aiUsage={{
         planName: aiUsage.planName,
         percentUsed: aiUsage.percentUsed,

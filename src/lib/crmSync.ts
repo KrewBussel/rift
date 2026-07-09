@@ -1,5 +1,6 @@
 import { prisma } from "./prisma";
 import { getCrmClient, type OpportunityHydrated } from "./crmClient";
+import { Prisma } from "@prisma/client";
 import type { CaseStatus, AccountType } from "@prisma/client";
 
 /**
@@ -25,22 +26,102 @@ export const WEALTHBOX_CUSTOM_FIELDS = {
 export function mapAccountType(value: string | null): AccountType | null {
   if (!value) return null;
   const v = value.trim().toLowerCase();
+  // Check "403" before roth/traditional: values like "Roth 403(b)" or
+  // "Traditional 403(b)" contain "roth"/"traditional" too, and would otherwise
+  // be misclassified as ROTH_IRA_401K / TRADITIONAL_IRA_401K. Most-specific wins.
+  if (v.includes("403")) return "IRA_403B";
   if (v.includes("traditional")) return "TRADITIONAL_IRA_401K";
   if (v.includes("roth")) return "ROTH_IRA_401K";
-  if (v.includes("403")) return "IRA_403B";
   if (v === "other") return "OTHER";
   return null;
 }
 
 /**
+ * Heuristic: given a firm's Wealthbox opportunity stages, guess which one is the
+ * inbound trigger (Proposal Accepted) and which is the Won close stage, matching
+ * on stage name. Used to pre-fill the onboarding "confirm your stages" screen so
+ * the admin usually just clicks Continue instead of hunting through a list.
+ * Returns null for either bookend when no confident match exists.
+ */
+export function suggestBookendStages(
+  stages: Array<{ id: string; name: string }>,
+): { trigger: { id: string; name: string } | null; won: { id: string; name: string } | null } {
+  const norm = (s: string) => s.trim().toLowerCase();
+  const findFirst = (preds: Array<(n: string) => boolean>): { id: string; name: string } | null => {
+    for (const pred of preds) {
+      const hit = stages.find((s) => pred(norm(s.name)));
+      if (hit) return { id: hit.id, name: hit.name };
+    }
+    return null;
+  };
+
+  const trigger = findFirst([
+    (n) => n.includes("proposal") && n.includes("accept"),
+    (n) => n === "proposal accepted",
+    (n) => n.includes("proposal"),
+    (n) => n.includes("accepted"),
+    (n) => n.includes("signed"),
+  ]);
+
+  const won = findFirst([
+    (n) => n === "won" || n === "closed won" || n === "closed - won" || n === "closed-won",
+    (n) => n.includes("closed") && n.includes("won"),
+    (n) => n.includes("won"),
+  ]);
+
+  // Never suggest the same stage for both bookends — if the heuristics collide,
+  // drop the Won suggestion so the admin picks it explicitly.
+  if (trigger && won && trigger.id === won.id) {
+    return { trigger, won: null };
+  }
+  return { trigger, won };
+}
+
+/**
+ * Write the two bookend stage mappings for a firm, replacing any existing
+ * bookend rows in one transaction. Intermediate Rift-only stages are never
+ * mapped, so this only ever touches PROPOSAL_ACCEPTED and WON. Shared by the
+ * connect auto-detect path and the Settings mapping editor.
+ */
+export async function upsertBookendMappings(
+  firmId: string,
+  trigger: { id: string; name: string },
+  won: { id: string; name: string },
+): Promise<void> {
+  await prisma.$transaction([
+    prisma.crmStageMapping.deleteMany({
+      where: { firmId, riftStatus: { in: ["PROPOSAL_ACCEPTED", "WON"] } },
+    }),
+    prisma.crmStageMapping.create({
+      data: { firmId, riftStatus: "PROPOSAL_ACCEPTED", crmStageId: trigger.id, crmStageName: trigger.name },
+    }),
+    prisma.crmStageMapping.create({
+      data: { firmId, riftStatus: "WON", crmStageId: won.id, crmStageName: won.name },
+    }),
+  ]);
+}
+
+export type SyncStageResult =
+  | { ok: true; stageId: string; stageName: string }
+  | { ok: false; reason: "no_connection" | "not_linked" | "no_mapping" | "api_error" | "rift_only_stage"; error?: string };
+
+/**
  * Sync a case's current status to its linked CRM opportunity.
  * Non-throwing: any failure is captured on the case row and the connection;
- * never blocks the upstream status change.
+ * never blocks the upstream status change. This wrapper guarantees the
+ * contract even for the pre-flight DB reads (a transient pool error must not
+ * 500 an already-committed PATCH /api/cases/[id]).
  */
-export async function syncOpportunityStage(caseId: string): Promise<
-  | { ok: true; stageId: string; stageName: string }
-  | { ok: false; reason: "no_connection" | "not_linked" | "no_mapping" | "api_error" | "rift_only_stage"; error?: string }
-> {
+export async function syncOpportunityStage(caseId: string): Promise<SyncStageResult> {
+  try {
+    return await syncOpportunityStageImpl(caseId);
+  } catch (err) {
+    const message = err instanceof Error ? err.message : "Unknown error";
+    return { ok: false, reason: "api_error", error: message };
+  }
+}
+
+async function syncOpportunityStageImpl(caseId: string): Promise<SyncStageResult> {
   const rolloverCase = await prisma.rolloverCase.findUnique({
     where: { id: caseId },
     select: {
@@ -296,13 +377,16 @@ export async function maybePollOnPageLoad(firmId: string): Promise<void> {
   try {
     const connection = await prisma.crmConnection.findUnique({
       where: { firmId },
-      select: { lastHealthCheckAt: true },
+      select: { lastPolledAt: true },
     });
     if (!connection) return;
 
+    // Throttle on lastPolledAt (written only by an inbound scan), NOT on
+    // lastHealthCheckAt — the latter is bumped by outbound stage pushes too, so
+    // keying off it would let a recent outbound sync suppress inbound polling.
     if (
-      connection.lastHealthCheckAt &&
-      Date.now() - connection.lastHealthCheckAt.getTime() < PAGE_LOAD_THROTTLE_MS
+      connection.lastPolledAt &&
+      Date.now() - connection.lastPolledAt.getTime() < PAGE_LOAD_THROTTLE_MS
     ) {
       return;
     }
@@ -448,6 +532,7 @@ export async function pollFirmForNewOpportunities(firmId: string): Promise<PollR
   await prisma.crmConnection.update({
     where: { firmId },
     data: {
+      lastPolledAt: new Date(),
       lastHealthCheckAt: new Date(),
       lastHealthOk: result.errors.length === 0,
       lastHealthError: result.errors.length === 0 ? null : result.errors[0].message,
@@ -484,37 +569,51 @@ async function createCaseFromOpportunity(
     else reasons.push(`Account type "${accountTypeRaw}" is not recognized`);
   }
 
-  // Atomic guard against a parallel poll inserting the same opp.
+  // Fast-path dedup: skip if a case already links this opportunity. This alone
+  // is not atomic (check-then-insert), so the unique constraint on
+  // (firmId, wealthboxOpportunityId) is the real guard against a concurrent
+  // poll racing between this read and the create below — the P2002 catch turns
+  // that race into a clean skip.
   const dup = await prisma.rolloverCase.findFirst({
     where: { firmId, wealthboxOpportunityId: opp.id },
     select: { id: true },
   });
   if (dup) return false;
 
-  const newCase = await prisma.rolloverCase.create({
-    data: {
-      clientFirstName: firstName ?? "Unknown",
-      clientLastName: lastName ?? "Unknown",
-      clientEmail: email ?? "",
-      clientPhone: opp.contact?.phone ?? null,
-      sourceProvider: sourceProviderRaw ?? "",
-      destinationCustodian: destinationRaw ?? "",
-      accountType: accountType ?? "OTHER",
-      status: "PROPOSAL_ACCEPTED",
-      firmId,
-      wealthboxOpportunityId: opp.id,
-      wealthboxOpportunityName: opp.name ?? null,
-      wealthboxAmount: opp.amount,
-      wealthboxAmountCurrency: opp.amountCurrency,
-      wealthboxTargetClose: opp.targetClose,
-      wealthboxProbability: opp.probability,
-      wealthboxOppCreatedAt: opp.oppCreatedAt,
-      wealthboxLinkedAt: new Date(),
-      wealthboxLastSyncedAt: new Date(),
-      needsReview: reasons.length > 0,
-      reviewReason: reasons.length > 0 ? reasons.join("; ") : null,
-    },
-  });
+  let newCase;
+  try {
+    newCase = await prisma.rolloverCase.create({
+      data: {
+        clientFirstName: firstName ?? "Unknown",
+        clientLastName: lastName ?? "Unknown",
+        clientEmail: email ?? "",
+        clientPhone: opp.contact?.phone ?? null,
+        sourceProvider: sourceProviderRaw ?? "",
+        destinationCustodian: destinationRaw ?? "",
+        accountType: accountType ?? "OTHER",
+        status: "PROPOSAL_ACCEPTED",
+        firmId,
+        wealthboxOpportunityId: opp.id,
+        wealthboxOpportunityName: opp.name ?? null,
+        wealthboxAmount: opp.amount,
+        wealthboxAmountCurrency: opp.amountCurrency,
+        wealthboxTargetClose: opp.targetClose,
+        wealthboxProbability: opp.probability,
+        wealthboxOppCreatedAt: opp.oppCreatedAt,
+        wealthboxLinkedAt: new Date(),
+        wealthboxLastSyncedAt: new Date(),
+        needsReview: reasons.length > 0,
+        reviewReason: reasons.length > 0 ? reasons.join("; ") : null,
+      },
+    });
+  } catch (err) {
+    // A concurrent poll inserted the same opportunity first — unique violation
+    // on (firmId, wealthboxOpportunityId). Treat as skipped, not an error.
+    if (err instanceof Prisma.PrismaClientKnownRequestError && err.code === "P2002") {
+      return false;
+    }
+    throw err;
+  }
 
   await prisma.activityEvent.create({
     data: {

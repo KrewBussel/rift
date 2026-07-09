@@ -159,6 +159,14 @@ model RolloverCase {
   assignedOps          User?           @relation("AssignedOps", fields: [assignedOpsId], references: [id])
   firm                 Firm            @relation(fields: [firmId], references: [id])
   tasks                Task[]
+
+  // One Rift case per Wealthbox opportunity per firm. NULLs are distinct in
+  // Postgres, so unlinked/manual cases (wealthboxOpportunityId = null) are
+  // unaffected. This constraint is what makes the inbound poller genuinely
+  // idempotent under concurrent triggers. Its index also serves the poll dedup
+  // and every firmId-prefixed scan.
+  @@unique([firmId, wealthboxOpportunityId])
+  @@index([firmId, status])
 }
 
 model ActivityEvent {
@@ -415,6 +423,10 @@ model CrmConnection {
   lastHealthCheckAt     DateTime?
   lastHealthOk          Boolean     @default(true)
   lastHealthError       String?
+  // Written only at the end of an inbound poll. The page-load auto-sync throttle
+  // keys off this (not lastHealthCheckAt, which outbound pushes also bump) so an
+  // outbound stage push can't suppress inbound polling.
+  lastPolledAt          DateTime?
   updatedAt             DateTime    @updatedAt
   firm                  Firm        @relation(fields: [firmId], references: [id], onDelete: Cascade)
 }
@@ -429,6 +441,8 @@ model CrmStageMapping {
   firm         Firm       @relation(fields: [firmId], references: [id], onDelete: Cascade)
 
   @@unique([firmId, riftStatus])
+  // Reverse lookup used by refreshCaseFromCrm: firmId + crmStageId → riftStatus.
+  @@index([firmId, crmStageId])
 }
 
 // Per-firm overlay on the canonical CaseStatus enum: lets a firm rename a

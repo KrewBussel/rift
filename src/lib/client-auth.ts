@@ -217,19 +217,6 @@ export async function revokeClientSession(sessionId: string): Promise<void> {
   });
 }
 
-export async function revokeClientAccessToken(tokenId: string): Promise<void> {
-  await prisma.$transaction([
-    prisma.clientAccessToken.update({
-      where: { id: tokenId },
-      data: { revokedAt: new Date() },
-    }),
-    prisma.clientSession.updateMany({
-      where: { tokenId, revokedAt: null },
-      data: { revokedAt: new Date() },
-    }),
-  ]);
-}
-
 // ─── Cookie shape ──────────────────────────────────────────────────────────
 
 export interface SessionCookieOptions {

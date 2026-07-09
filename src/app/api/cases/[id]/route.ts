@@ -2,6 +2,7 @@ import { NextRequest, NextResponse } from "next/server";
 import { auth } from "@/lib/auth";
 import { prisma } from "@/lib/prisma";
 import { parseBody } from "@/lib/validation";
+import { caseVisibilityFilter, isSameFirmUser } from "@/lib/caseVisibility";
 import { syncOpportunityStage } from "@/lib/crmSync";
 import { z } from "zod";
 
@@ -54,7 +55,7 @@ export async function GET(request: NextRequest, { params }: { params: Promise<{ 
   const firmId = session.user.firmId;
 
   const rolloverCase = await prisma.rolloverCase.findFirst({
-    where: { id, firmId },
+    where: { id, firmId, ...caseVisibilityFilter(session.user.role, session.user.id) },
     include: {
       assignedAdvisor: { select: { id: true, firstName: true, lastName: true } },
       assignedOps: { select: { id: true, firstName: true, lastName: true } },
@@ -86,8 +87,19 @@ export async function PATCH(request: NextRequest, { params }: { params: Promise<
   const firmId = session.user.firmId;
   const userId = session.user.id;
 
-  const existing = await prisma.rolloverCase.findFirst({ where: { id, firmId } });
+  const existing = await prisma.rolloverCase.findFirst({
+    where: { id, firmId, ...caseVisibilityFilter(session.user.role, userId) },
+  });
   if (!existing) return NextResponse.json({ error: "Not found" }, { status: 404 });
+
+  // Assignment targets must be users in this firm (or null to unassign) — never
+  // a cross-firm / nonexistent id.
+  if (
+    !(await isSameFirmUser(body.assignedAdvisorId, firmId)) ||
+    !(await isSameFirmUser(body.assignedOpsId, firmId))
+  ) {
+    return NextResponse.json({ error: "Assigned user must belong to your firm" }, { status: 400 });
+  }
 
   const updated = await prisma.rolloverCase.update({
     where: { id },

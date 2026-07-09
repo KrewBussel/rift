@@ -2,6 +2,7 @@ import { NextRequest, NextResponse } from "next/server";
 import { auth } from "@/lib/auth";
 import { prisma } from "@/lib/prisma";
 import { parseBody } from "@/lib/validation";
+import { caseVisibilityFilter, isSameFirmUser } from "@/lib/caseVisibility";
 import { z } from "zod";
 
 const TaskStatusSchema = z.enum(["OPEN", "COMPLETED", "BLOCKED"]);
@@ -27,11 +28,14 @@ export async function PATCH(request: NextRequest, { params }: { params: Promise<
   const firmId = session.user.firmId;
 
   const task = await prisma.task.findFirst({
-    where: { id },
-    include: { case: { select: { firmId: true } } },
+    where: { id, case: { firmId, ...caseVisibilityFilter(session.user.role, userId) } },
   });
-  if (!task || task.case.firmId !== firmId) {
+  if (!task) {
     return NextResponse.json({ error: "Not found" }, { status: 404 });
+  }
+
+  if (!(await isSameFirmUser(body.assigneeId, firmId))) {
+    return NextResponse.json({ error: "Assignee must belong to your firm" }, { status: 400 });
   }
 
   const updated = await prisma.task.update({
@@ -78,10 +82,9 @@ export async function DELETE(_req: NextRequest, { params }: { params: Promise<{ 
   const firmId = session.user.firmId;
 
   const task = await prisma.task.findFirst({
-    where: { id },
-    include: { case: { select: { firmId: true } } },
+    where: { id, case: { firmId, ...caseVisibilityFilter(session.user.role, session.user.id) } },
   });
-  if (!task || task.case.firmId !== firmId) {
+  if (!task) {
     return NextResponse.json({ error: "Not found" }, { status: 404 });
   }
 

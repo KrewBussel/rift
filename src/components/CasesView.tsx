@@ -8,6 +8,7 @@ import { Card, Pill, Btn, Icon, Avatar, TextInput, ChipSelect } from "./primitiv
 import {
   STATUSES,
   resolveStageLabel,
+  resolveEnabledStages,
   type StageConfigRow,
 } from "@/components/casesDesignTokens";
 
@@ -49,6 +50,7 @@ export default function CasesViewV2({
   stageConfig = null,
   firmName,
   crmConnected = false,
+  crmHealthy = true,
 }: {
   cases: V2CasesCase[];
   users: V2CasesUser[];
@@ -57,6 +59,7 @@ export default function CasesViewV2({
   stageConfig?: StageConfigRow[] | null;
   firmName: string;
   crmConnected?: boolean;
+  crmHealthy?: boolean;
 }) {
   const router = useRouter();
   const [cases, setCases] = useState(initialCases);
@@ -68,6 +71,9 @@ export default function CasesViewV2({
   const [advisor, setAdvisor] = useState("ALL");
   const [priorityOnly, setPriorityOnly] = useState(false);
   const [syncing, setSyncing] = useState(false);
+  const [syncError, setSyncError] = useState(false);
+
+  const enabledStages = useMemo(() => resolveEnabledStages(stageConfig), [stageConfig]);
 
   const advisors = useMemo(() => users.filter((u) => u.role === "ADVISOR" || u.role === "ADMIN"), [users]);
 
@@ -92,9 +98,13 @@ export default function CasesViewV2({
   async function syncCrm() {
     if (syncing) return;
     setSyncing(true);
+    setSyncError(false);
     try {
-      await fetch("/api/integrations/crm/poll", { method: "POST" });
+      const res = await fetch("/api/integrations/crm/poll", { method: "POST" });
+      if (!res.ok) setSyncError(true);
       router.refresh();
+    } catch {
+      setSyncError(true);
     } finally {
       setSyncing(false);
     }
@@ -161,10 +171,19 @@ export default function CasesViewV2({
               {crmConnected && (
                 <>
                   <span style={{ color: T.textDisabled }}>·</span>
-                  <span style={{ display: "inline-flex", alignItems: "center", gap: 5 }}>
-                    <span style={{ width: 6, height: 6, borderRadius: 999, background: T.success }} />
-                    Wealthbox synced
-                  </span>
+                  {crmHealthy && !syncError ? (
+                    <span style={{ display: "inline-flex", alignItems: "center", gap: 5 }}>
+                      <span style={{ width: 6, height: 6, borderRadius: 999, background: T.success }} />
+                      Wealthbox synced
+                    </span>
+                  ) : (
+                    <Link href="/dashboard/settings?tab=integrations" style={{ textDecoration: "none" }}>
+                      <span style={{ display: "inline-flex", alignItems: "center", gap: 5, color: T.warning }}>
+                        <span style={{ width: 6, height: 6, borderRadius: 999, background: T.warning }} />
+                        Sync error — review
+                      </span>
+                    </Link>
+                  )}
                 </>
               )}
             </div>
@@ -210,9 +229,9 @@ export default function CasesViewV2({
             value={status}
             options={[
               { value: "ALL", label: "All stages" },
-              ...STATUSES.map((s) => ({
+              ...enabledStages.map((s) => ({
                 value: s.value,
-                label: resolveStageLabel(s.value, stageConfig),
+                label: s.label,
               })),
             ]}
             onChange={setStatus}
@@ -330,6 +349,17 @@ function BoardView({
 }) {
   const [dragId, setDragId] = useState<string | null>(null);
 
+  // Show the firm's enabled stages, plus any disabled stage that still has
+  // cases on it (orphan column) so those cases never vanish from the board.
+  const boardStages = useMemo(() => {
+    const enabled = resolveEnabledStages(stageConfig);
+    const enabledValues = new Set(enabled.map((s) => s.value));
+    const orphans = STATUSES.filter(
+      (s) => !enabledValues.has(s.value) && cases.some((c) => c.status === s.value),
+    ).map((s) => ({ ...s, label: resolveStageLabel(s.value, stageConfig) }));
+    return [...enabled, ...orphans];
+  }, [stageConfig, cases]);
+
   async function moveCase(id: string, status: string) {
     setCases((prev) => prev.map((c) => (c.id === id ? { ...c, status } : c)));
     try {
@@ -347,14 +377,14 @@ function BoardView({
     <div
       style={{
         display: "grid",
-        gridTemplateColumns: `repeat(${STATUSES.length}, minmax(248px, 1fr))`,
+        gridTemplateColumns: `repeat(${boardStages.length}, minmax(248px, 1fr))`,
         gap: 12,
         height: "100%",
         overflowX: "auto",
         paddingBottom: 12,
       }}
     >
-      {STATUSES.map((stage) => {
+      {boardStages.map((stage) => {
         const stageCases = cases.filter((c) => c.status === stage.value);
         const stageValue = stageCases.reduce((s, c) => s + (c.wealthboxAmount ?? 0), 0);
         const hue = STAGE_HUE[stage.value] ?? "slate";

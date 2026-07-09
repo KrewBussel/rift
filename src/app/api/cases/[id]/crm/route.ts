@@ -3,6 +3,7 @@ import { z } from "zod";
 import { auth } from "@/lib/auth";
 import { prisma } from "@/lib/prisma";
 import { parseBody } from "@/lib/validation";
+import { caseVisibilityFilter } from "@/lib/caseVisibility";
 import { getCrmClient } from "@/lib/crmClient";
 import { syncOpportunityStage } from "@/lib/crmSync";
 import { recordAudit, extractRequestMeta } from "@/lib/audit";
@@ -25,7 +26,9 @@ export async function POST(req: NextRequest, { params }: { params: Promise<{ id:
   const parsed = await parseBody(req, LinkSchema);
   if (parsed instanceof NextResponse) return parsed;
 
-  const rolloverCase = await prisma.rolloverCase.findFirst({ where: { id: caseId, firmId } });
+  const rolloverCase = await prisma.rolloverCase.findFirst({
+    where: { id: caseId, firmId, ...caseVisibilityFilter(session.user.role, session.user.id) },
+  });
   if (!rolloverCase) return NextResponse.json({ error: "Not found" }, { status: 404 });
 
   const connection = await prisma.crmConnection.findUnique({ where: { firmId } });
@@ -98,7 +101,9 @@ export async function DELETE(req: NextRequest, { params }: { params: Promise<{ i
   const { id: caseId } = await params;
   const firmId = session.user.firmId;
 
-  const rolloverCase = await prisma.rolloverCase.findFirst({ where: { id: caseId, firmId } });
+  const rolloverCase = await prisma.rolloverCase.findFirst({
+    where: { id: caseId, firmId, ...caseVisibilityFilter(session.user.role, session.user.id) },
+  });
   if (!rolloverCase) return NextResponse.json({ error: "Not found" }, { status: 404 });
 
   const prevOpportunityId = rolloverCase.wealthboxOpportunityId;

@@ -4,6 +4,7 @@ import { auth } from "@/lib/auth";
 import { prisma } from "@/lib/prisma";
 import { s3, S3_BUCKET } from "@/lib/s3";
 import { parseQuery } from "@/lib/validation";
+import { caseVisibilityFilter } from "@/lib/caseVisibility";
 import { z } from "zod";
 
 const PresignQuerySchema = z.object({
@@ -39,7 +40,9 @@ export async function GET(
   const { id: caseId } = await params;
   const firmId = session.user.firmId;
 
-  const rolloverCase = await prisma.rolloverCase.findFirst({ where: { id: caseId, firmId } });
+  const rolloverCase = await prisma.rolloverCase.findFirst({
+    where: { id: caseId, firmId, ...caseVisibilityFilter(session.user.role, session.user.id) },
+  });
   if (!rolloverCase) return NextResponse.json({ error: "Not found" }, { status: 404 });
 
   if (!ALLOWED_TYPES[fileType]) {

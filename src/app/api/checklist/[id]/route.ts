@@ -2,6 +2,7 @@ import { NextRequest, NextResponse } from "next/server";
 import { auth } from "@/lib/auth";
 import { prisma } from "@/lib/prisma";
 import { parseBody } from "@/lib/validation";
+import { caseVisibilityFilter } from "@/lib/caseVisibility";
 import { z } from "zod";
 
 const ChecklistStatusSchema = z.enum(["NOT_STARTED", "REQUESTED", "RECEIVED", "REVIEWED", "COMPLETE"]);
@@ -26,10 +27,9 @@ export async function PATCH(request: NextRequest, { params }: { params: Promise<
   const userId = session.user.id;
 
   const item = await prisma.checklistItem.findFirst({
-    where: { id },
-    include: { case: { select: { firmId: true } } },
+    where: { id, case: { firmId, ...caseVisibilityFilter(session.user.role, userId) } },
   });
-  if (!item || item.case.firmId !== firmId) {
+  if (!item) {
     return NextResponse.json({ error: "Not found" }, { status: 404 });
   }
 
@@ -70,10 +70,9 @@ export async function DELETE(_req: NextRequest, { params }: { params: Promise<{ 
   const firmId = session.user.firmId;
 
   const item = await prisma.checklistItem.findFirst({
-    where: { id },
-    include: { case: { select: { firmId: true } } },
+    where: { id, case: { firmId, ...caseVisibilityFilter(session.user.role, session.user.id) } },
   });
-  if (!item || item.case.firmId !== firmId) {
+  if (!item) {
     return NextResponse.json({ error: "Not found" }, { status: 404 });
   }
 

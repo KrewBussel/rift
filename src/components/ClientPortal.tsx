@@ -198,15 +198,6 @@ export default function ClientPortal({
     messagesEndRef.current?.scrollTo({ top: messagesEndRef.current.scrollHeight, behavior: "smooth" });
   }, [notes.length]);
 
-  async function reload() {
-    const [cl, nt] = await Promise.all([
-      fetch("/api/client/checklist").then((r) => r.json()),
-      fetch("/api/client/messages").then((r) => r.json()),
-    ]);
-    setChecklist(cl);
-    setNotes(nt);
-  }
-
   async function reloadChecklist() {
     const cl = await fetch("/api/client/checklist").then((r) => r.json());
     setChecklist(cl);

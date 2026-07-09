@@ -11,6 +11,7 @@ function EnterInner() {
   useEffect(() => {
     const token = params.get("token");
     if (!token) {
+      // eslint-disable-next-line react-hooks/set-state-in-effect
       setError("Missing access token.");
       return;
     }

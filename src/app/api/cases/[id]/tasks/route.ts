@@ -2,6 +2,7 @@ import { NextRequest, NextResponse } from "next/server";
 import { auth } from "@/lib/auth";
 import { prisma } from "@/lib/prisma";
 import { parseBody } from "@/lib/validation";
+import { caseVisibilityFilter, isSameFirmUser } from "@/lib/caseVisibility";
 import { z } from "zod";
 
 const CreateTaskSchema = z.object({
@@ -18,7 +19,9 @@ export async function GET(_req: NextRequest, { params }: { params: Promise<{ id:
   const { id } = await params;
   const firmId = session.user.firmId;
 
-  const rolloverCase = await prisma.rolloverCase.findFirst({ where: { id, firmId } });
+  const rolloverCase = await prisma.rolloverCase.findFirst({
+    where: { id, firmId, ...caseVisibilityFilter(session.user.role, session.user.id) },
+  });
   if (!rolloverCase) return NextResponse.json({ error: "Not found" }, { status: 404 });
 
   const tasks = await prisma.task.findMany({
@@ -45,8 +48,14 @@ export async function POST(request: NextRequest, { params }: { params: Promise<{
   const firmId = session.user.firmId;
   const userId = session.user.id;
 
-  const rolloverCase = await prisma.rolloverCase.findFirst({ where: { id, firmId } });
+  const rolloverCase = await prisma.rolloverCase.findFirst({
+    where: { id, firmId, ...caseVisibilityFilter(session.user.role, userId) },
+  });
   if (!rolloverCase) return NextResponse.json({ error: "Not found" }, { status: 404 });
+
+  if (!(await isSameFirmUser(body.assigneeId, firmId))) {
+    return NextResponse.json({ error: "Assignee must belong to your firm" }, { status: 400 });
+  }
 
   const task = await prisma.task.create({
     data: {

@@ -5,11 +5,18 @@ import { prisma } from "@/lib/prisma";
 import { parseBody } from "@/lib/validation";
 import { sealSecret } from "@/lib/crypto";
 import { getMe, WealthboxError } from "@/lib/wealthbox";
+import { getCrmClient } from "@/lib/crmClient";
+import { suggestBookendStages, upsertBookendMappings } from "@/lib/crmSync";
 import { recordAudit, extractRequestMeta } from "@/lib/audit";
 
 /**
  * Wealthbox connect endpoint: validates the pasted personal access token
- * against Wealthbox's /me and persists the encrypted connection.
+ * against Wealthbox's /me and persists the encrypted connection. Then it pulls
+ * the firm's opportunity stages, auto-detects the two bookend stages by name
+ * (Proposal Accepted → trigger, Won → close), and — if the firm has no bookend
+ * mappings yet — saves them automatically so onboarding is a single paste +
+ * confirm. Re-pasting a token later (rotation) never clobbers existing mappings.
+ *
  * GET/DELETE (view/disconnect) live under /api/integrations/crm.
  */
 
@@ -78,6 +85,38 @@ export async function POST(req: NextRequest) {
     ...meta,
   });
 
+  // Pull stages and auto-detect the bookends. A stage-fetch failure must not
+  // fail the connect — the token is valid and saved; the wizard falls back to
+  // the manual picker with an empty list.
+  let stages: Array<{ id: string; name: string }> = [];
+  let suggested: { triggerStageId: string | null; wonStageId: string | null } = {
+    triggerStageId: null,
+    wonStageId: null,
+  };
+  let autoMapped = false;
+
+  try {
+    const client = getCrmClient(connection);
+    stages = await client.getStages();
+    const { trigger, won } = suggestBookendStages(stages);
+    suggested = { triggerStageId: trigger?.id ?? null, wonStageId: won?.id ?? null };
+
+    // Only auto-save when both bookends are confidently detected AND the firm
+    // has no mappings yet — so a token rotation never overwrites a firm's
+    // hand-tuned mappings.
+    if (trigger && won) {
+      const existing = await prisma.crmStageMapping.count({
+        where: { firmId, riftStatus: { in: ["PROPOSAL_ACCEPTED", "WON"] } },
+      });
+      if (existing === 0) {
+        await upsertBookendMappings(firmId, trigger, won);
+        autoMapped = true;
+      }
+    }
+  } catch {
+    // Best-effort — leave stages empty and let the admin pick manually.
+  }
+
   return NextResponse.json({
     connection: {
       id: connection.id,
@@ -87,5 +126,8 @@ export async function POST(req: NextRequest) {
       connectedUserEmail: connection.connectedUserEmail,
       connectedAt: connection.connectedAt,
     },
+    stages,
+    suggested,
+    autoMapped,
   });
 }

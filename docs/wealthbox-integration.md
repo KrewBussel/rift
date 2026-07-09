@@ -52,13 +52,15 @@ are **three independent triggers** that all converge on the same idempotent
 
 | Trigger | Where it lives | Cadence | Auth |
 |---|---|---|---|
-| External cron | cron-job.org → `POST /api/integrations/wealthbox/poll` | Configurable (currently every 1 min, recommended 10–15 min once page-load polling is live) | `Authorization: Bearer ${CRON_SECRET}` |
-| Page-load auto-sync | `maybePollOnPageLoad(firmId)` from server components on `/dashboard` and `/dashboard/cases` | Throttled to once per 10 s per firm; 2.5 s timeout | Active session (firm-scoped) |
-| Manual button | `WealthboxSyncButton` on cases page; "Sync now" in Settings → Integrations | On click | Active ADMIN session (firm-scoped) |
+| External cron | cron-job.org → `POST /api/integrations/crm/poll` (legacy alias: `/api/integrations/wealthbox/poll`) | Configurable (recommended 10–15 min once page-load polling is live) | `Authorization: Bearer ${CRON_SECRET}` |
+| Page-load auto-sync | `maybePollOnPageLoad(firmId)` from server components on `/dashboard` and `/dashboard/cases` | Throttled to once per 10 s per firm (keyed on `CrmConnection.lastPolledAt`); 2.5 s timeout | Active session (firm-scoped) |
+| Manual button | "Sync Wealthbox" button on the cases page (inline in `CasesView.tsx`); "Sync now" in Settings → Integrations | On click | Active ADMIN session (firm-scoped) |
 
 The poll endpoint dispatches based on auth mode:
-- `Bearer ${CRON_SECRET}` → polls **all** firms
-- Active ADMIN session → polls **own firm only**
+- `Bearer ${CRON_SECRET}` → polls **all** firms. Response includes `totalCreated`, `totalClosed`, and `totalErrors` aggregated across firms, plus the per-firm `results`.
+- Active ADMIN session → polls **own firm only**, returning `{ mode: "manual", result }`.
+
+The page-load throttle keys off `lastPolledAt` — a column written *only* by an inbound scan — rather than `lastHealthCheckAt`, which outbound stage pushes also bump. Keying off the health timestamp would let a recent outbound sync suppress inbound polling.
 
 `pollFirmForNewOpportunities` does both bookend scans in one pass:
 
@@ -141,10 +143,10 @@ case-insensitive, but spell them right):
 
 - `Source Provider` (Text)
 - `Destination Custodian` (Text)
-- `Account Type` (Single-select dropdown). Recognized via `mapAccountType()`:
+- `Account Type` (Single-select dropdown). Recognized via `mapAccountType()`. Order matters — **"403" is checked first** (most-specific wins), so "Roth 403(b)" and "Traditional 403(b)" resolve to `IRA_403B` rather than being misclassified:
+  - any value containing "403" → `IRA_403B`
   - any value containing "traditional" → `TRADITIONAL_IRA_401K`
   - any value containing "roth" → `ROTH_IRA_401K`
-  - any value containing "403" → `IRA_403B`
   - exact "other" → `OTHER`
   - anything else → null → case still created but flagged `needsReview = true`
 
@@ -189,7 +191,7 @@ for every existing firm and for every new firm via `ensureFirmStageConfig`.
 - `ensureFirmStageConfig(firmId)` — idempotent default-seed, called from `GET /api/firm/stages` and `POST /api/firm/onboarding` as a safety net
 
 **Where labels render through the overlay:**
-- Cases list (`CasesView`, `CasesViewBoard`, `CasesViewWorkbench`)
+- Cases list (`CasesView`)
 - Case detail status dropdown (`CaseDetail`)
 - Dashboard pipeline buckets and "needs attention" feed
   (`STATUS_LABELS` is computed at request time from the overlay)
@@ -206,24 +208,43 @@ A new firm hits `/onboarding` on first ADMIN login, gated by
 `Firm.onboardedAt IS NULL`. The dashboard layout redirects ADMIN there;
 non-admins see a "setup in progress" screen until completion.
 
-The wizard has 6 steps (see `src/components/OnboardingWizard.tsx`):
+The wizard has **4 steps** (see `src/components/OnboardingWizard.tsx`):
 
-1. **Choose CRM** — confirms Wealthbox (the only supported CRM)
-2. **Connect** — token paste with inline how-to + an illustrated mock of
-   the Wealthbox API Access screen pointing at the Create Access Token
-   button. Hits `POST /api/integrations/wealthbox`
-3. **Trigger stage** — live-loads the firm's Wealthbox stages, admin
-   picks which one creates Rift cases
-4. **Won stage** — picks the Wealthbox stage to push to when a case is
-   moved to `WON` in Rift. Both mappings save together to
-   `PUT /api/integrations/crm/mapping`
-5. **Rift stages** — the `CaseStageConfig` editor. Bookends locked on,
-   intermediates have rename + enable/disable. Saves to
-   `PUT /api/firm/stages`
-6. **Invite team** — `GET /api/integrations/crm/users` returns Wealthbox
-   account members annotated with `riftStatus: available | in_firm | other_firm`.
-   Admin picks Advisor / Ops / Skip per row. Each invite hits the existing
-   `POST /api/firm/team`
+1. **Workspace URL** — the firm picks its slug for `<slug>.riftira.com`,
+   with a live availability check. Saves via `PUT /api/firm/slug`.
+2. **Connect Wealthbox** — token paste with inline how-to + an illustrated
+   mock of the Wealthbox API Access screen pointing at the Create Access
+   Token button. Hits `POST /api/integrations/wealthbox`, which does more
+   than just store the token (see below).
+3. **Confirm stages** — the connect response pre-fills the trigger
+   (Proposal Accepted) and Won bookends; the admin usually just clicks
+   Continue. Either can be overridden from the stage list. Saves via
+   `PUT /api/integrations/crm/mapping`.
+4. **Finish** — pipeline overview + "what happens next" summary, then
+   `POST /api/firm/onboarding` marks completion.
+
+### Connect-time auto-detection
+
+The heavy lifting happens in step 2. `POST /api/integrations/wealthbox`:
+
+1. Validates the pasted token against Wealthbox `/me` and persists the
+   encrypted connection.
+2. Pulls the firm's opportunity stages and runs `suggestBookendStages()`
+   (in `crmSync.ts`) — a name-matching heuristic. Trigger candidates:
+   stages matching "proposal" + "accept", then "proposal", "accepted",
+   "signed". Won candidates: exact "won"/"closed won"/"closed - won", then
+   "closed"+"won", then "won". If both heuristics collide on the same
+   stage, the Won suggestion is dropped so the admin picks it explicitly.
+3. If **both** bookends are confidently detected **and** the firm has no
+   existing bookend mappings, it auto-saves them via
+   `upsertBookendMappings()` and returns `autoMapped: true`. A token
+   *rotation* never overwrites a firm's hand-tuned mappings (the "no
+   existing mappings" guard).
+
+The response shape is `{ connection, stages, suggested: { triggerStageId,
+wonStageId }, autoMapped }`. A stage-fetch failure never fails the connect —
+the token is valid and saved; the confirm step just falls back to the
+manual picker with an empty list.
 
 `POST /api/firm/onboarding` is the completion endpoint. It enforces:
 - A CRM must be connected
@@ -233,27 +254,51 @@ The wizard has 6 steps (see `src/components/OnboardingWizard.tsx`):
 On success it sets `Firm.onboardedAt = now()` and unlocks the dashboard.
 
 The wizard is idempotent on refresh — `GET /api/firm/onboarding` returns
-the current state, and the wizard lands on the first not-yet-done step.
+the current state, and if a connection already exists the wizard resumes on
+the confirm step with the mappings pre-filled.
 
 ---
 
-## CRM team import (post-onboarding)
+## Post-onboarding: Settings → Integrations
 
-The same Wealthbox-team-fetch path used in the wizard's step 6 is also
-exposed in **Settings → Team → Import from Wealthbox**:
+CRM connection management and Rift-stage configuration moved out of the
+wizard into **Settings → Integrations** (`IntegrationsSec` in
+`src/components/Settings.tsx`). The settings page honors `?tab=` deep-links
+(`src/app/dashboard/settings/page.tsx` reads `searchParams` and passes
+`initialTab`), so the wizard's exit redirect to
+`/dashboard/settings?tab=integrations` lands directly on this panel.
 
-- Hidden when no CRM is connected
-- Lazy-loads on click ("Load list") so opening Settings doesn't ping
-  Wealthbox unnecessarily
-- Annotates each row with Rift status:
-  - `available` — eligible to invite
-  - `in_firm` — already on this firm's team (locked, shows green pill with current role)
-  - `other_firm` — email is taken by a Rift user at a different firm (locked, shows red pill)
-- Bulk-invite button respects `Firm.seatsLimit`
-- Each invite fires `POST /api/firm/team` sequentially with per-row outcome status
+When a CRM is connected, the panel shows four cards:
 
-The connected admin themselves is filtered out client-side by email match
-against `CrmConnection.connectedUserEmail`.
+- **Connection** — health status (`Healthy` / `Sync error` from
+  `lastHealthOk`), the connected Wealthbox user, and the last error if any.
+  Actions:
+  - **Sync now** → `POST /api/integrations/crm/poll` (own-firm manual poll)
+  - **Rotate token** → re-paste flow hitting `POST /api/integrations/wealthbox`
+    (leaves stage mappings untouched)
+  - **Disconnect** → `DELETE /api/integrations/crm` (clears the token + stage
+    mappings and unlinks cases; case data stays)
+- **Stage sync** — edit the two bookend mappings. Loads stages via
+  `GET /api/integrations/crm/stages`, saves via `PUT /api/integrations/crm/mapping`.
+- **Rift stages** — the `CaseStageConfig` editor: rename or disable the five
+  intermediate stages (bookends locked on). Loads/saves via
+  `GET`/`PUT /api/firm/stages`.
+- **Custom fields** — a reference card listing the three required Wealthbox
+  opportunity custom fields.
+
+When no CRM is connected, the panel shows a single connect card.
+
+### Team invites
+
+Team invites live in **Settings → Team** (`/dashboard/team`,
+`src/components/TeamPage.tsx`), separate from Integrations. Invites go
+through `POST /api/firm/team` (single, seat-gated by `Firm.seatsLimit`).
+
+The `GET /api/integrations/crm/users` endpoint — which returns Wealthbox
+account members annotated with `riftStatus: available | in_firm |
+other_firm` — still exists and is covered by tests, but **no UI currently
+consumes it**. The old bulk "Import from Wealthbox" panel was removed along
+with the wizard's team step; the endpoint remains for future/API use.
 
 ---
 
@@ -263,7 +308,7 @@ Currently using **cron-job.org** (free, sub-minute granularity):
 
 1. Free account at cron-job.org
 2. New cronjob:
-   - URL: `https://<your-vercel-app>.vercel.app/api/integrations/wealthbox/poll`
+   - URL: `https://<your-vercel-app>.vercel.app/api/integrations/crm/poll` (the legacy `/api/integrations/wealthbox/poll` alias still forwards here)
    - Method: `POST`
    - Header: `Authorization: Bearer <CRON_SECRET>` — value lives in Vercel's env vars
    - Schedule: every 10–15 min recommended (page-load polling covers active-user moments; cron only needs to cover off-hours and reverse-Won timeliness)
@@ -291,17 +336,18 @@ from git history and add `CRON_SECRET` + `RIFT_BASE_URL` as repo secrets.
 | Polling endpoint | `src/app/api/integrations/crm/poll/route.ts` (legacy alias: `wealthbox/poll`) |
 | Wealthbox API client | `src/lib/wealthbox.ts` |
 | Normalizing CRM client adapter | `src/lib/crmClient.ts` (`getCrmClient`) |
-| CRM org users (team import) | `src/lib/wealthbox.ts` (`getOrgUsers`) → `crmClient.ts` → `/api/integrations/crm/users` |
+| CRM org users (unused by UI) | `src/lib/wealthbox.ts` (`getOrgUsers`) → `crmClient.ts` → `/api/integrations/crm/users` |
+| Bookend auto-detect + auto-save | `src/lib/crmSync.ts` (`suggestBookendStages`, `upsertBookendMappings`); called from `src/app/api/integrations/wealthbox/route.ts` |
 | Custom field name constants | `src/lib/crmSync.ts` (`WEALTHBOX_CUSTOM_FIELDS`) |
 | Account type mapper | `src/lib/crmSync.ts` (`mapAccountType`) |
 | Stage config helpers | `src/lib/stageConfig.ts`, `src/components/casesDesignTokens.ts` |
 | Onboarding wizard | `src/components/OnboardingWizard.tsx`, `src/app/onboarding/page.tsx` |
 | Onboarding completion | `src/app/api/firm/onboarding/route.ts` |
 | Stage config API | `src/app/api/firm/stages/route.ts` |
-| Settings UI (mapping + sync + stages) | `src/components/SettingsForm.tsx`, `src/components/settings/IntegrationsSection*` |
-| CRM team import in Settings | `src/components/settings/TeamSection.tsx` (`CrmTeamImportPanel`) |
+| Settings → Integrations UI (connection + mapping + sync + Rift stages) | `src/components/Settings.tsx` (`IntegrationsSec`); deep-linked via `src/app/dashboard/settings/page.tsx` (`initialTab`) |
+| Team invites | `src/components/TeamPage.tsx`, `src/app/dashboard/team/page.tsx` |
 | Sync button on cases page | inline in `src/components/CasesView.tsx` (header "Sync Wealthbox" button) |
-| Review badge / banner | `src/components/CasesView.tsx`, `src/components/CasesViewWorkbench.tsx`, `src/components/CaseDetail.tsx` |
+| Review badge / banner | `src/components/CasesView.tsx`, `src/components/CaseDetail.tsx` |
 
 ---
 
@@ -312,6 +358,8 @@ from git history and add `CRON_SECRET` + `RIFT_BASE_URL` as repo secrets.
 | `tests/api/wealthbox.test.ts` | crypto seal/open, connect/disconnect, mapping CRUD, per-case link/unlink, `syncOpportunityStage` outbound (200 / 500 / no_mapping / not_linked) |
 | `tests/api/wealthbox-poll-isolation.test.ts` | tenant isolation on inbound poll, per-firm token usage, idempotency, `needsReview` flagging, missing-mapping no-op, opportunity metadata + client phone population, reverse Won bookend, `maybePollOnPageLoad` throttle + run-window |
 | `tests/api/crm-users.test.ts` | `/api/integrations/crm/users` — ADVISOR rejection, no-CRM rejection, `riftStatus` annotation, name parsing fallback, 502 on Wealthbox errors |
+| `tests/api/crm-mapping-unit.test.ts` | Pure-unit coverage of `mapAccountType` (incl. the "403" ordering — "Roth 403(b)" → `IRA_403B`) and `suggestBookendStages` (name heuristics + same-stage collision handling) |
+| `tests/api/case-visibility.test.ts` | Intra-firm assignment gate — non-admins can't read/mutate an unassigned same-firm case; assignment IDs validated same-firm (`caseVisibilityFilter` + `isSameFirmUser`) |
 | `tests/api/firm-stages.test.ts` | `CaseStageConfig` API — auto-seed defaults, tenant isolation, bookend `isEnabled` enforcement, label + disable persistence |
 | `tests/api/firm-onboarding.test.ts` | `/api/firm/onboarding` — ADVISOR rejection, no-CRM rejection, missing-bookend rejection, success path, tenant isolation |
 
@@ -332,9 +380,9 @@ End-to-end smoke test for the full integration:
 
 1. `npm run dev` starts cleanly
 2. New firm with `onboardedAt = NULL` → ADMIN login → redirected to `/onboarding`
-3. Walk all 6 wizard steps. After step 6, redirected to dashboard
-4. Settings → Integrations shows Wealthbox connected, both bookend mappings populated
-5. Settings → Team shows the "Import from Wealthbox" panel; "Load list" pulls account members
+3. Walk all 4 wizard steps (workspace → connect → confirm → finish). On the connect step, confirm the bookends come back pre-filled and `autoMapped` is set; after finish, redirected to dashboard
+4. Settings → Integrations shows Wealthbox connected (Healthy), both bookend mappings populated, and the Rift-stages editor
+5. Settings → Team lists the firm's users; invite a teammate via `POST /api/firm/team`
 6. In Wealthbox: create a new opportunity, link to a contact, fill the three custom fields, move to your trigger stage
 7. Either wait one cron cycle, refresh the cases page, or click "Sync Wealthbox" — case appears
 8. Verify the new case has: contact name + email + phone, opportunity name, amount, target close, probability, opp createdAt, source provider, destination custodian, account type
@@ -355,8 +403,6 @@ End-to-end smoke test for the full integration:
   npx prisma migrate deploy
   ```
 - **Pooled URL gives ECONNREFUSED for ad-hoc tsx scripts.** Use `DIRECT_URL`.
-- **`@dnd-kit` IDs cause hydration warnings** unless gated by a `mounted` flag.
-  See `CasesViewBoard.tsx` for the working pattern.
 - **`CardSection` already wraps a `Card`.** Nesting them produces "doubled-up"
   bordered boxes. Use `Card` directly with manual padding when you don't need
   the title/description block.

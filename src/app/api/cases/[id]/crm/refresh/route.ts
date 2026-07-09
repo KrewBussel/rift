@@ -1,6 +1,7 @@
 import { NextRequest, NextResponse } from "next/server";
 import { auth } from "@/lib/auth";
 import { prisma } from "@/lib/prisma";
+import { caseVisibilityFilter } from "@/lib/caseVisibility";
 import { refreshCaseFromCrm } from "@/lib/crmSync";
 import { recordAudit, extractRequestMeta } from "@/lib/audit";
 
@@ -20,7 +21,9 @@ export async function POST(req: NextRequest, { params }: { params: Promise<{ id:
   const { id: caseId } = await params;
   const firmId = session.user.firmId;
 
-  const rolloverCase = await prisma.rolloverCase.findFirst({ where: { id: caseId, firmId } });
+  const rolloverCase = await prisma.rolloverCase.findFirst({
+    where: { id: caseId, firmId, ...caseVisibilityFilter(session.user.role, session.user.id) },
+  });
   if (!rolloverCase) return NextResponse.json({ error: "Not found" }, { status: 404 });
 
   const result = await refreshCaseFromCrm(caseId, session.user.id);
