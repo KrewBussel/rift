@@ -5,21 +5,26 @@
  */
 
 export const T = {
-  // Surfaces — layered warm cream
-  page:        "#faf9f5",
-  sidebar:     "#f4f2ea",
+  // Surfaces — layered warm cream. The page canvas sits noticeably darker
+  // than the near-white cards so panels read as distinct surfaces rather
+  // than white-on-white.
+  page:        "#f2efe6",
+  sidebar:     "#ebe7da",
   surface1:    "#fdfcf7",
-  surface2:    "#f7f5ec",
+  surface2:    "#f5f2e8",
   surface3:    "#e3dcc5",
   input:       "#fdfcf7",
-  inputAlt:    "#f7f5ec",
+  inputAlt:    "#f5f2e8",
   striped:     "#f5f3ec",
 
-  // Hairline borders — warm sand
-  border:      "#e6e3d4",
-  borderSoft:  "#ece9dc",
-  borderStrong:"#d4d0bd",
+  // Hairline borders — warm sand, strong enough to hold an edge on cream
+  border:      "#dcd7c3",
+  borderSoft:  "#e5e1d1",
+  borderStrong:"#c9c4ad",
   borderFocus: "#c96442",
+
+  // Soft elevation for cards sitting on the page canvas
+  cardShadow:  "0 1px 2px rgba(31,30,26,0.05), 0 2px 8px rgba(31,30,26,0.04)",
 
   // Ink — warm dark to faint
   text:         "#1f1e1a",
@@ -96,6 +101,22 @@ export function avatarColor(seed: string): string {
   let h = 0;
   for (let i = 0; i < seed.length; i++) h = (h * 31 + seed.charCodeAt(i)) >>> 0;
   return AVATAR_COLORS[h % AVATAR_COLORS.length];
+}
+
+/**
+ * Format a US phone number as (XXX)-XXX-XXXX. Handles an optional leading +1/1
+ * and preserves extensions ("x123"). Anything that isn't a 10-digit US number
+ * is returned unchanged rather than mangled.
+ */
+export function fmtPhone(raw: string | null | undefined): string {
+  if (!raw) return "—";
+  const [numberPart, ...extParts] = raw.split(/x/i);
+  const digits = numberPart.replace(/\D/g, "");
+  const ten = digits.length === 11 && digits.startsWith("1") ? digits.slice(1) : digits;
+  if (ten.length !== 10) return raw;
+  const ext = extParts.join("x").trim();
+  const formatted = `(${ten.slice(0, 3)})-${ten.slice(3, 6)}-${ten.slice(6)}`;
+  return ext ? `${formatted} x${ext}` : formatted;
 }
 
 export function fmtMoney(n: number | null | undefined): string {

@@ -108,6 +108,7 @@ export function Card({
         background: T.surface1,
         border: `1px solid ${T.border}`,
         borderRadius: 10,
+        boxShadow: T.cardShadow,
         padding: padded ? 20 : 0,
         ...style,
       }}

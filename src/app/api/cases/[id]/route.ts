@@ -67,6 +67,16 @@ export async function GET(request: NextRequest, { params }: { params: Promise<{ 
         include: { actor: { select: { id: true, firstName: true, lastName: true } } },
         orderBy: { createdAt: "asc" },
       },
+      // Must match the include in dashboard/cases/[id]/page.tsx — CaseDetail
+      // replaces its entire state with this response on refresh, so a missing
+      // relation here crashes the page after any save.
+      tasks: {
+        include: {
+          assignee: { select: { id: true, firstName: true, lastName: true } },
+          createdBy: { select: { id: true, firstName: true, lastName: true } },
+        },
+        orderBy: [{ status: "asc" }, { dueDate: "asc" }, { createdAt: "asc" }],
+      },
     },
   });
 

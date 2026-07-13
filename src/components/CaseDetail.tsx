@@ -3,7 +3,7 @@
 import { useState } from "react";
 import { useRouter } from "next/navigation";
 import Link from "next/link";
-import { T, STAGE_HUE, STAGE_COLOR, fmtMoney, timeAgo, HEADLINE_STACK, TAB_NUM_STYLE } from "./tokens";
+import { T, STAGE_HUE, STAGE_COLOR, fmtMoney, fmtPhone, timeAgo, TAB_NUM_STYLE } from "./tokens";
 import { Card, Pill, Btn, Icon, Avatar, TextInput, SelectInput } from "./primitives";
 import {
   resolveStageLabel,
@@ -42,6 +42,25 @@ interface Task {
   assignee: { id: string; firstName: string; lastName: string } | null;
   createdAt: string;
 }
+interface DocumentReviewShape {
+  status: "PENDING" | "COMPLETE" | "FAILED";
+  verdict: "PASS" | "ISSUES_FOUND" | "UNREADABLE" | null;
+  summary: string | null;
+  findings: Array<{
+    page: number | null;
+    field: string;
+    issue: string;
+    detail: string;
+    confidence: string;
+  }> | null;
+  error: string | null;
+}
+interface ChecklistDocument {
+  id: string;
+  name: string;
+  fileType: string;
+  review: DocumentReviewShape | null;
+}
 interface ChecklistItem {
   id: string;
   name: string;
@@ -49,6 +68,7 @@ interface ChecklistItem {
   status: "NOT_STARTED" | "REQUESTED" | "RECEIVED" | "REVIEWED" | "COMPLETE";
   notes: string | null;
   sortOrder: number;
+  documents?: ChecklistDocument[];
 }
 interface CaseShape {
   id: string;
@@ -67,6 +87,7 @@ interface CaseShape {
   statusUpdatedAt: string;
   createdAt: string;
   updatedAt: string;
+  wealthboxOpportunityId: string | null;
   wealthboxOpportunityName: string | null;
   wealthboxAmount: number | null;
   wealthboxTargetClose: string | null;
@@ -229,6 +250,21 @@ export default function CaseDetailV2({
     await refresh();
   }
 
+  const [scanningDocs, setScanningDocs] = useState<Set<string>>(new Set());
+  async function scanDocument(docId: string) {
+    setScanningDocs((prev) => new Set(prev).add(docId));
+    try {
+      await fetch(`/api/documents/${docId}/review`, { method: "POST" });
+    } finally {
+      setScanningDocs((prev) => {
+        const next = new Set(prev);
+        next.delete(docId);
+        return next;
+      });
+      router.refresh();
+    }
+  }
+
   async function setChecklistStatus(itemId: string, status: string) {
     await fetch(`/api/checklist/${itemId}`, {
       method: "PATCH",
@@ -289,8 +325,11 @@ export default function CaseDetailV2({
     }
   }
 
-  const openTasks = c.tasks.filter((t) => t.status !== "COMPLETED");
-  const doneTasks = c.tasks.filter((t) => t.status === "COMPLETED");
+  // Null-safe: state is replaced wholesale by GET /api/cases/[id] on refresh;
+  // if that response ever omits a relation, degrade instead of crashing.
+  const tasks = c.tasks ?? [];
+  const openTasks = tasks.filter((t) => t.status !== "COMPLETED");
+  const doneTasks = tasks.filter((t) => t.status === "COMPLETED");
   const checklistDone = initialChecklist.filter((k) => k.status === "COMPLETE").length;
   const checklistPct =
     initialChecklist.length === 0 ? 0 : Math.round((checklistDone / initialChecklist.length) * 100);
@@ -348,11 +387,10 @@ export default function CaseDetailV2({
               <h1
                 style={{
                   margin: 0,
-                  fontSize: 28,
-                  fontWeight: 600,
+                  fontSize: 26,
+                  fontWeight: 650,
                   color: T.text,
-                  letterSpacing: -0.5,
-                  fontFamily: HEADLINE_STACK,
+                  letterSpacing: -0.4,
                 }}
               >
                 {c.clientFirstName} {c.clientLastName}
@@ -389,7 +427,13 @@ export default function CaseDetailV2({
               {c.clientPhone && (
                 <>
                   <span style={{ color: T.textDisabled }}>·</span>
-                  <span>{c.clientPhone}</span>
+                  <a
+                    href={`tel:${c.clientPhone.replace(/[^+0-9x]/gi, "")}`}
+                    style={{ color: "inherit", textDecoration: "none" }}
+                    title="Call client"
+                  >
+                    {fmtPhone(c.clientPhone)}
+                  </a>
                 </>
               )}
               <span style={{ color: T.textDisabled }}>·</span>
@@ -402,10 +446,9 @@ export default function CaseDetailV2({
               <div
                 style={{
                   fontSize: 22,
-                  fontWeight: 600,
+                  fontWeight: 650,
                   color: T.text,
-                  letterSpacing: -0.4,
-                  fontFamily: HEADLINE_STACK,
+                  letterSpacing: -0.3,
                   ...TAB_NUM_STYLE,
                 }}
               >
@@ -922,6 +965,15 @@ export default function CaseDetailV2({
                             {k.notes}
                           </div>
                         )}
+                        {(k.documents ?? []).map((d) => (
+                          <DocumentReviewRow
+                            key={d.id}
+                            doc={d}
+                            busy={scanningDocs.has(d.id)}
+                            canScan={userRole === "ADMIN" || userRole === "OPS"}
+                            onScan={() => scanDocument(d.id)}
+                          />
+                        ))}
                       </div>
                       <div style={{ display: "flex", gap: 6, alignItems: "center", minWidth: 160 }}>
                         <SelectInput
@@ -991,7 +1043,23 @@ export default function CaseDetailV2({
                   <Icon name="spark" size={12} /> Ask Claude
                 </Btn>
               </Link>
-              {canManageClientLink && clientLinkActive ? (
+              {c.wealthboxOpportunityId ? (
+                <a
+                  href={`https://app.crmworkspace.com/opportunities/${c.wealthboxOpportunityId}`}
+                  target="_blank"
+                  rel="noopener noreferrer"
+                  style={{ textDecoration: "none" }}
+                >
+                  <Btn small title="Open the linked opportunity in Wealthbox">
+                    <Icon name="ext" size={12} /> Open in CRM
+                  </Btn>
+                </a>
+              ) : (
+                <Btn small disabled title="This case isn't linked to a Wealthbox opportunity yet">
+                  <Icon name="ext" size={12} /> Open in CRM
+                </Btn>
+              )}
+              {canManageClientLink && clientLinkActive && (
                 <Btn
                   small
                   danger
@@ -1001,10 +1069,6 @@ export default function CaseDetailV2({
                 >
                   <Icon name="x" size={12} />{" "}
                   {clientLinkBusy === "revoking" ? "Revoking…" : "Revoke access"}
-                </Btn>
-              ) : (
-                <Btn small disabled>
-                  <Icon name="ext" size={12} /> Open in CRM
                 </Btn>
               )}
             </div>
@@ -1299,6 +1363,84 @@ function DetailField({
       >
         {children}
       </div>
+    </div>
+  );
+}
+
+/**
+ * One uploaded document under a checklist item, with its AI QA-scan state:
+ * verdict pill, findings list, and a scan/re-scan button for ADMIN/OPS.
+ * The scan itself runs server-side on Bedrock (see src/lib/documentReview.ts).
+ */
+function DocumentReviewRow({
+  doc,
+  busy,
+  canScan,
+  onScan,
+}: {
+  doc: ChecklistDocument;
+  busy: boolean;
+  canScan: boolean;
+  onScan: () => void;
+}) {
+  const reviewable = doc.fileType === "application/pdf" || doc.fileType.startsWith("image/");
+  const r = doc.review;
+  const findings = r?.findings ?? [];
+
+  const pill = busy || r?.status === "PENDING"
+    ? { hue: "slate" as const, label: "Scanning…" }
+    : r?.status === "FAILED"
+    ? { hue: "red" as const, label: "Scan failed" }
+    : r?.verdict === "PASS"
+    ? { hue: "green" as const, label: "Looks complete" }
+    : r?.verdict === "ISSUES_FOUND"
+    ? { hue: "amber" as const, label: `${findings.length} issue${findings.length === 1 ? "" : "s"}` }
+    : r?.verdict === "UNREADABLE"
+    ? { hue: "red" as const, label: "Unreadable" }
+    : null;
+
+  return (
+    <div style={{ marginTop: 7 }}>
+      <div style={{ display: "flex", alignItems: "center", gap: 8, flexWrap: "wrap" }}>
+        <Icon name="file" size={12} color={T.textTertiary} />
+        <span style={{ fontSize: 12, color: T.textSecondary, maxWidth: 220, overflow: "hidden", textOverflow: "ellipsis", whiteSpace: "nowrap" }}>
+          {doc.name}
+        </span>
+        {pill && <Pill hue={pill.hue} dot>{pill.label}</Pill>}
+        {canScan && reviewable && !busy && r?.status !== "PENDING" && (
+          <Btn small onClick={onScan} title="Run the AI paperwork check on this document">
+            {r ? "Re-scan" : "Scan"}
+          </Btn>
+        )}
+      </div>
+      {r?.status === "COMPLETE" && r.verdict === "ISSUES_FOUND" && findings.length > 0 && (
+        <div
+          style={{
+            marginTop: 6,
+            padding: "8px 10px",
+            background: T.warningSoft,
+            border: `1px solid ${T.warningBorder}`,
+            borderRadius: 8,
+          }}
+        >
+          {findings.map((f, i) => (
+            <div key={i} style={{ fontSize: 11.5, color: T.text, padding: "2px 0", display: "flex", gap: 6 }}>
+              <span style={{ color: T.warning, fontWeight: 600, flexShrink: 0 }}>
+                {f.page ? `p.${f.page}` : "—"}
+              </span>
+              <span>
+                <strong>{f.field}:</strong> {f.detail}
+              </span>
+            </div>
+          ))}
+        </div>
+      )}
+      {r?.status === "COMPLETE" && r.verdict === "PASS" && r.summary && (
+        <div style={{ marginTop: 4, fontSize: 11.5, color: T.textTertiary }}>{r.summary}</div>
+      )}
+      {r?.status === "FAILED" && r.error && (
+        <div style={{ marginTop: 4, fontSize: 11.5, color: T.danger }}>{r.error}</div>
+      )}
     </div>
   );
 }
