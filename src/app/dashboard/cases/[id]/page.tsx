@@ -55,7 +55,10 @@ export default async function CaseDetailPage({ params }: { params: Promise<{ id:
       where: { caseId: id },
       include: {
         documents: {
-          include: { uploadedBy: { select: { id: true, firstName: true, lastName: true } } },
+          include: {
+            uploadedBy: { select: { id: true, firstName: true, lastName: true } },
+            review: true,
+          },
           orderBy: { createdAt: "desc" },
         },
       },
@@ -120,7 +123,27 @@ export default async function CaseDetailPage({ params }: { params: Promise<{ id:
     ...item,
     createdAt: item.createdAt.toISOString(),
     updatedAt: item.updatedAt.toISOString(),
-    documents: item.documents.map((d) => ({ ...d, createdAt: d.createdAt.toISOString(), checklistItem: null as { id: string; name: string } | null })),
+    documents: item.documents.map((d) => ({
+      ...d,
+      createdAt: d.createdAt.toISOString(),
+      checklistItem: null as { id: string; name: string } | null,
+      review: d.review
+        ? {
+            status: d.review.status,
+            verdict: d.review.verdict,
+            summary: d.review.summary,
+            error: d.review.error,
+            findings:
+              (d.review.findings as Array<{
+                page: number | null;
+                field: string;
+                issue: string;
+                detail: string;
+                confidence: string;
+              }> | null) ?? null,
+          }
+        : null,
+    })),
   }));
 
   const serializedDocuments = documents.map((d) => ({

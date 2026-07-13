@@ -1,8 +1,10 @@
 import { NextRequest, NextResponse } from "next/server";
+import { after } from "next/server";
 import { z } from "zod";
 import { prisma } from "@/lib/prisma";
 import { parseBody } from "@/lib/validation";
 import { requireClientSession, requireScope } from "@/lib/client-auth";
+import { reviewDocument, isReviewableType } from "@/lib/documentReview";
 
 const ConfirmSchema = z
   .object({
@@ -84,6 +86,12 @@ export async function POST(request: NextRequest) {
       eventDetails: `Client uploaded: "${name}"`,
     },
   });
+
+  // Client uploads are the main QA-scan trigger: scan right after the upload
+  // confirms, so findings are waiting for ops by the time they open the case.
+  if (isReviewableType(fileType)) {
+    after(() => reviewDocument(document.id));
+  }
 
   return NextResponse.json(document, { status: 201 });
 }

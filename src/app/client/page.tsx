@@ -1,6 +1,10 @@
 import { redirect } from "next/navigation";
+import { GetObjectCommand } from "@aws-sdk/client-s3";
+import { getSignedUrl } from "@aws-sdk/s3-request-presigner";
 import { prisma } from "@/lib/prisma";
 import { getClientSessionFromCookie } from "@/lib/client-auth";
+import { ensureCaseChecklist } from "@/lib/checklist";
+import { s3, S3_BUCKET } from "@/lib/s3";
 import ClientPortal from "@/components/ClientPortal";
 
 const STATUS_LABELS: Record<string, string> = {
@@ -35,6 +39,24 @@ export default async function ClientHomePage() {
   });
 
   if (!rolloverCase) redirect("/client/expired");
+
+  // A case with no checklist gives the client nothing to act on (and no
+  // upload targets) — seed the defaults before rendering.
+  await ensureCaseChecklist(session.caseId);
+
+  // Firm logos are stored as S3 keys, not URLs — presign for the browser.
+  let logoUrl = rolloverCase.firm.logoUrl;
+  if (logoUrl && !/^https?:\/\//i.test(logoUrl)) {
+    try {
+      logoUrl = await getSignedUrl(
+        s3,
+        new GetObjectCommand({ Bucket: S3_BUCKET, Key: logoUrl }),
+        { expiresIn: 3600 },
+      );
+    } catch {
+      logoUrl = null; // fall back to the monogram
+    }
+  }
 
   const [checklist, notes] = await Promise.all([
     prisma.checklistItem.findMany({
@@ -76,6 +98,7 @@ export default async function ClientHomePage() {
     <ClientPortal
       rolloverCase={{
         ...rolloverCase,
+        firm: { ...rolloverCase.firm, logoUrl },
         statusLabel: STATUS_LABELS[rolloverCase.status] ?? rolloverCase.status,
         statusUpdatedAt: rolloverCase.statusUpdatedAt.toISOString(),
         createdAt: rolloverCase.createdAt.toISOString(),

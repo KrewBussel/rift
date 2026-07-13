@@ -1,8 +1,10 @@
 import { NextRequest, NextResponse } from "next/server";
+import { after } from "next/server";
 import { auth } from "@/lib/auth";
 import { prisma } from "@/lib/prisma";
 import { parseBody } from "@/lib/validation";
 import { caseVisibilityFilter } from "@/lib/caseVisibility";
+import { reviewDocument, isReviewableType } from "@/lib/documentReview";
 import { z } from "zod";
 
 const ConfirmUploadSchema = z.object({
@@ -96,6 +98,12 @@ export async function POST(request: NextRequest, { params }: { params: Promise<{
       eventDetails: `File uploaded: "${name}"`,
     },
   });
+
+  // Kick off the paperwork QA scan after the response is sent. Non-throwing —
+  // a scan failure lands on the DocumentReview row, never on the upload.
+  if (isReviewableType(fileType)) {
+    after(() => reviewDocument(document.id));
+  }
 
   return NextResponse.json(document, { status: 201 });
 }

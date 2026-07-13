@@ -2,6 +2,7 @@
 
 import { useEffect, useMemo, useRef, useState } from "react";
 import { useRouter } from "next/navigation";
+import { T, HEADLINE_STACK, PILL_HUES, type Hue } from "./tokens";
 
 interface ChecklistDoc {
   id: string;
@@ -92,15 +93,12 @@ const STAGE_COPY: Record<string, { headline: string; sub: string }> = {
   },
 };
 
-const ITEM_STATUS_THEME: Record<
-  ChecklistItem["status"],
-  { label: string; bg: string; fg: string; ring: string }
-> = {
-  NOT_STARTED: { label: "Not started", bg: "rgba(125,133,144,0.12)", fg: "#a4abb7", ring: "rgba(125,133,144,0.3)" },
-  REQUESTED:   { label: "Action needed", bg: "rgba(245,158,11,0.12)", fg: "#fbbf24", ring: "rgba(245,158,11,0.4)" },
-  RECEIVED:    { label: "Received", bg: "rgba(59,130,246,0.14)", fg: "#7dd3fc", ring: "rgba(59,130,246,0.4)" },
-  REVIEWED:    { label: "Reviewed", bg: "rgba(167,139,250,0.14)", fg: "#c4b5fd", ring: "rgba(167,139,250,0.4)" },
-  COMPLETE:    { label: "Complete", bg: "rgba(52,211,153,0.14)", fg: "#6ee7b7", ring: "rgba(52,211,153,0.4)" },
+const ITEM_STATUS: Record<ChecklistItem["status"], { label: string; hue: Hue }> = {
+  NOT_STARTED: { label: "Not started", hue: "slate" },
+  REQUESTED:   { label: "Action needed", hue: "amber" },
+  RECEIVED:    { label: "Received", hue: "blue" },
+  REVIEWED:    { label: "Reviewed", hue: "violet" },
+  COMPLETE:    { label: "Complete", hue: "green" },
 };
 
 const ALLOWED_MIME = [
@@ -110,6 +108,12 @@ const ALLOWED_MIME = [
   "image/webp",
   "application/vnd.openxmlformats-officedocument.wordprocessingml.document",
 ];
+
+const CARD: React.CSSProperties = {
+  background: T.surface1,
+  border: `1px solid ${T.border}`,
+  boxShadow: T.cardShadow,
+};
 
 function formatBytes(bytes: number) {
   if (bytes < 1024) return `${bytes} B`;
@@ -130,17 +134,18 @@ function formatRelative(iso: string): string {
 }
 
 function FileIcon({ fileType }: { fileType: string }) {
-  const tone = fileType === "application/pdf"
-    ? { bg: "rgba(248,113,113,0.12)", fg: "#fca5a5", border: "rgba(248,113,113,0.25)" }
+  const hue: Hue = fileType === "application/pdf"
+    ? "red"
     : fileType.startsWith("image/")
-    ? { bg: "rgba(196,181,253,0.12)", fg: "#c4b5fd", border: "rgba(196,181,253,0.25)" }
+    ? "violet"
     : fileType.includes("word")
-    ? { bg: "rgba(96,165,250,0.12)", fg: "#93c5fd", border: "rgba(96,165,250,0.25)" }
-    : { bg: "rgba(125,133,144,0.12)", fg: "#a4abb7", border: "rgba(125,133,144,0.25)" };
+    ? "blue"
+    : "slate";
+  const tone = PILL_HUES[hue];
   return (
     <div
       className="w-9 h-9 rounded-lg flex items-center justify-center flex-shrink-0"
-      style={{ background: tone.bg, border: `1px solid ${tone.border}` }}
+      style={{ background: tone.bg, border: `1px solid ${tone.line}` }}
     >
       <svg width="16" height="16" viewBox="0 0 16 16" fill="none" style={{ color: tone.fg }}>
         <path
@@ -151,6 +156,44 @@ function FileIcon({ fileType }: { fileType: string }) {
         />
         <path d="M9.5 1.5V5h3.5" stroke="currentColor" strokeWidth="1.3" strokeLinejoin="round" />
       </svg>
+    </div>
+  );
+}
+
+function StatusPill({ status }: { status: ChecklistItem["status"] }) {
+  const cfg = ITEM_STATUS[status];
+  const tone = PILL_HUES[cfg.hue];
+  return (
+    <span
+      className="text-[11px] font-medium px-2 py-0.5 rounded-full inline-flex items-center gap-1.5"
+      style={{ background: tone.bg, color: tone.fg, border: `1px solid ${tone.line}` }}
+    >
+      <span className="w-1.5 h-1.5 rounded-full" style={{ background: tone.dot }} />
+      {cfg.label}
+    </span>
+  );
+}
+
+function FirmLogo({ name, logoUrl }: { name: string; logoUrl: string | null }) {
+  const [broken, setBroken] = useState(false);
+  if (logoUrl && !broken) {
+    return (
+      // eslint-disable-next-line @next/next/no-img-element
+      <img
+        src={logoUrl}
+        alt={name}
+        onError={() => setBroken(true)}
+        className="w-9 h-9 rounded-lg object-cover flex-shrink-0"
+        style={{ border: `1px solid ${T.border}`, background: T.surface1 }}
+      />
+    );
+  }
+  return (
+    <div
+      className="w-9 h-9 rounded-lg flex items-center justify-center flex-shrink-0 text-sm font-semibold"
+      style={{ background: T.accentSoft, border: `1px solid ${T.accentBorder}`, color: T.accent }}
+    >
+      {name.charAt(0)}
     </div>
   );
 }
@@ -181,11 +224,9 @@ export default function ClientPortal({
   const canUpload = scope === "UPLOAD" || scope === "FULL";
   const canMessage = scope === "FULL";
 
-  // Pipeline state
   const currentStageIndex = STAGE_ORDER.indexOf(rolloverCase.status as (typeof STAGE_ORDER)[number]);
   const stageCopy = STAGE_COPY[rolloverCase.status] ?? STAGE_COPY.PROPOSAL_ACCEPTED;
 
-  // Checklist progress
   const { completedCount, totalCount, openCount } = useMemo(() => {
     const total = checklist.length;
     const completed = checklist.filter((i) => i.status === "COMPLETE" || i.status === "REVIEWED" || i.status === "RECEIVED").length;
@@ -193,7 +234,6 @@ export default function ClientPortal({
     return { completedCount: completed, totalCount: total, openCount: open };
   }, [checklist]);
 
-  // Auto-scroll the messages panel to the bottom on new messages
   useEffect(() => {
     messagesEndRef.current?.scrollTo({ top: messagesEndRef.current.scrollHeight, behavior: "smooth" });
   }, [notes.length]);
@@ -282,7 +322,7 @@ export default function ClientPortal({
     if (!messageDraft.trim()) return;
     setSendingMessage(true);
     const draft = messageDraft;
-    setMessageDraft(""); // optimistic clear
+    setMessageDraft("");
     const res = await fetch("/api/client/messages", {
       method: "POST",
       headers: { "Content-Type": "application/json" },
@@ -293,7 +333,7 @@ export default function ClientPortal({
       const newNotes = await fetch("/api/client/messages").then((r) => r.json());
       setNotes(newNotes);
     } else {
-      setMessageDraft(draft); // restore on failure
+      setMessageDraft(draft);
       showError("Couldn't send message — please try again.");
     }
   }
@@ -308,39 +348,17 @@ export default function ClientPortal({
     : "";
 
   return (
-    <div
-      className="min-h-screen"
-      style={{
-        background:
-          "radial-gradient(ellipse 1200px 600px at top, rgba(59,130,246,0.06), transparent 60%), #0a0d12",
-        color: "#e4e6ea",
-      }}
-    >
+    <div className="min-h-screen" style={{ background: T.page, color: T.text }}>
       <div className="max-w-4xl mx-auto px-4 sm:px-6 py-8 sm:py-12">
         {/* ── Header ─────────────────────────────────────────────────────── */}
         <header className="flex items-center justify-between mb-8 sm:mb-10">
           <div className="flex items-center gap-3 min-w-0">
-            {rolloverCase.firm.logoUrl ? (
-              // eslint-disable-next-line @next/next/no-img-element
-              <img
-                src={rolloverCase.firm.logoUrl}
-                alt={rolloverCase.firm.name}
-                className="w-9 h-9 rounded-lg object-cover flex-shrink-0"
-                style={{ border: "1px solid #252b38" }}
-              />
-            ) : (
-              <div
-                className="w-9 h-9 rounded-lg flex items-center justify-center flex-shrink-0 text-sm font-semibold"
-                style={{ background: "linear-gradient(135deg,#1e293b,#0f172a)", border: "1px solid #252b38", color: "#93c5fd" }}
-              >
-                {rolloverCase.firm.name.charAt(0)}
-              </div>
-            )}
+            <FirmLogo name={rolloverCase.firm.name} logoUrl={rolloverCase.firm.logoUrl} />
             <div className="min-w-0">
-              <p className="text-xs font-medium" style={{ color: "#7d8590" }}>
+              <p className="text-xs font-medium" style={{ color: T.textTertiary }}>
                 {rolloverCase.firm.name}
               </p>
-              <p className="text-sm font-medium truncate" style={{ color: "#e4e6ea" }}>
+              <p className="text-sm font-medium truncate" style={{ color: T.text }}>
                 Client portal
               </p>
             </div>
@@ -348,65 +366,46 @@ export default function ClientPortal({
           <button
             onClick={handleLogout}
             className="text-xs px-3 py-1.5 rounded-md transition-colors flex-shrink-0"
-            style={{ background: "transparent", border: "1px solid #252b38", color: "#9ca3af" }}
-            onMouseEnter={(e) => {
-              (e.currentTarget as HTMLElement).style.borderColor = "#3b3f49";
-              (e.currentTarget as HTMLElement).style.color = "#e4e6ea";
-            }}
-            onMouseLeave={(e) => {
-              (e.currentTarget as HTMLElement).style.borderColor = "#252b38";
-              (e.currentTarget as HTMLElement).style.color = "#9ca3af";
-            }}
+            style={{ background: T.surface1, border: `1px solid ${T.border}`, color: T.textSecondary }}
           >
             Sign out
           </button>
         </header>
 
         {/* ── Hero / Status card ─────────────────────────────────────────── */}
-        <section
-          className="rounded-2xl p-6 sm:p-8 mb-6 relative overflow-hidden"
-          style={{
-            background: "linear-gradient(180deg, rgba(59,130,246,0.05), transparent 60%), #141a24",
-            border: "1px solid #252b38",
-          }}
-        >
-          <div
-            className="absolute top-0 right-0 w-64 h-64 rounded-full blur-3xl pointer-events-none"
-            style={{ background: "rgba(59,130,246,0.08)", transform: "translate(30%, -40%)" }}
-            aria-hidden
-          />
-          <p className="text-xs uppercase tracking-wider mb-3 font-medium" style={{ color: "#60a5fa" }}>
+        <section className="rounded-2xl p-6 sm:p-8 mb-6" style={CARD}>
+          <p className="text-xs uppercase tracking-wider mb-3 font-semibold" style={{ color: T.accent }}>
             {STAGE_LABELS[rolloverCase.status] ?? rolloverCase.statusLabel}
           </p>
           <h1
-            className="text-2xl sm:text-3xl font-semibold leading-tight"
-            style={{ color: "#e4e6ea" }}
+            className="text-2xl sm:text-3xl leading-tight"
+            style={{ color: T.text, fontFamily: HEADLINE_STACK, fontWeight: 600, letterSpacing: -0.4 }}
           >
             Hi {rolloverCase.clientFirstName}, {stageCopy.headline.toLowerCase()}
           </h1>
-          <p className="text-sm mt-3 leading-relaxed" style={{ color: "#9ca3af" }}>
+          <p className="text-sm mt-3 leading-relaxed" style={{ color: T.textSecondary }}>
             {stageCopy.sub}
           </p>
 
           <div
             className="grid grid-cols-2 sm:grid-cols-3 gap-3 mt-6 pt-6"
-            style={{ borderTop: "1px solid #252b38" }}
+            style={{ borderTop: `1px solid ${T.borderSoft}` }}
           >
             <div>
-              <p className="text-xs" style={{ color: "#7d8590" }}>From</p>
-              <p className="text-sm font-medium mt-0.5 truncate" style={{ color: "#e4e6ea" }}>
+              <p className="text-xs" style={{ color: T.textTertiary }}>From</p>
+              <p className="text-sm font-medium mt-0.5 truncate" style={{ color: T.text }}>
                 {rolloverCase.sourceProvider}
               </p>
             </div>
             <div>
-              <p className="text-xs" style={{ color: "#7d8590" }}>To</p>
-              <p className="text-sm font-medium mt-0.5 truncate" style={{ color: "#e4e6ea" }}>
+              <p className="text-xs" style={{ color: T.textTertiary }}>To</p>
+              <p className="text-sm font-medium mt-0.5 truncate" style={{ color: T.text }}>
                 {rolloverCase.destinationCustodian}
               </p>
             </div>
             <div className="col-span-2 sm:col-span-1">
-              <p className="text-xs" style={{ color: "#7d8590" }}>Last update</p>
-              <p className="text-sm font-medium mt-0.5" style={{ color: "#e4e6ea" }}>
+              <p className="text-xs" style={{ color: T.textTertiary }}>Last update</p>
+              <p className="text-sm font-medium mt-0.5" style={{ color: T.text }}>
                 {formatRelative(rolloverCase.statusUpdatedAt)}
               </p>
             </div>
@@ -414,17 +413,13 @@ export default function ClientPortal({
         </section>
 
         {/* ── Pipeline timeline ─────────────────────────────────────────── */}
-        <section
-          className="rounded-2xl p-5 sm:p-6 mb-6"
-          style={{ background: "#141a24", border: "1px solid #252b38" }}
-        >
+        <section className="rounded-2xl p-5 sm:p-6 mb-6" style={CARD}>
           <div className="flex items-center justify-between mb-4">
-            <h2 className="text-sm font-semibold" style={{ color: "#e4e6ea" }}>Progress</h2>
-            <p className="text-xs" style={{ color: "#7d8590" }}>
+            <h2 className="text-sm font-semibold" style={{ color: T.text }}>Progress</h2>
+            <p className="text-xs" style={{ color: T.textTertiary }}>
               Step {Math.max(1, currentStageIndex + 1)} of {STAGE_ORDER.length}
             </p>
           </div>
-          {/* Mobile: vertical stepper. Desktop: horizontal. */}
           <div className="hidden sm:flex items-center gap-1.5">
             {STAGE_ORDER.map((stage, idx) => {
               const isDone = idx < currentStageIndex;
@@ -436,28 +431,27 @@ export default function ClientPortal({
                     <div
                       className="h-1 flex-1 rounded-full transition-colors"
                       style={{
-                        background: idx === 0 ? "transparent" : isDone || isCurrent ? "#3b82f6" : "#252b38",
+                        background: idx === 0 ? "transparent" : isDone || isCurrent ? T.accent : T.borderSoft,
                       }}
                     />
                     <div
                       className="w-3.5 h-3.5 rounded-full mx-1 flex-shrink-0 transition-all"
                       style={{
-                        background: isDone ? "#3b82f6" : isCurrent ? "#60a5fa" : "#1f2937",
-                        border: isCurrent ? "2px solid rgba(96,165,250,0.4)" : "none",
-                        boxShadow: isCurrent ? "0 0 0 4px rgba(96,165,250,0.15)" : "none",
+                        background: isDone ? T.accent : isCurrent ? T.accent : T.surface3,
+                        boxShadow: isCurrent ? `0 0 0 4px ${T.accentSoft}` : "none",
                       }}
                     />
                     <div
                       className="h-1 flex-1 rounded-full transition-colors"
                       style={{
-                        background: idx === STAGE_ORDER.length - 1 ? "transparent" : isDone ? "#3b82f6" : "#252b38",
+                        background: idx === STAGE_ORDER.length - 1 ? "transparent" : isDone ? T.accent : T.borderSoft,
                       }}
                     />
                   </div>
                   <p
                     className="text-[10px] mt-2 font-medium text-center"
                     style={{
-                      color: isCurrent ? "#e4e6ea" : isDone ? "#9ca3af" : isFuture ? "#5b6471" : "#9ca3af",
+                      color: isCurrent ? T.text : isDone ? T.textSecondary : isFuture ? T.textDisabled : T.textSecondary,
                     }}
                   >
                     {STAGE_LABELS[stage]}
@@ -475,14 +469,14 @@ export default function ClientPortal({
                   <div
                     className="w-2.5 h-2.5 rounded-full flex-shrink-0"
                     style={{
-                      background: isDone ? "#3b82f6" : isCurrent ? "#60a5fa" : "#1f2937",
-                      boxShadow: isCurrent ? "0 0 0 3px rgba(96,165,250,0.2)" : "none",
+                      background: isDone || isCurrent ? T.accent : T.surface3,
+                      boxShadow: isCurrent ? `0 0 0 3px ${T.accentSoft}` : "none",
                     }}
                   />
                   <p
                     className="text-xs"
                     style={{
-                      color: isCurrent ? "#e4e6ea" : isDone ? "#9ca3af" : "#5b6471",
+                      color: isCurrent ? T.text : isDone ? T.textSecondary : T.textDisabled,
                       fontWeight: isCurrent ? 500 : 400,
                     }}
                   >
@@ -499,9 +493,9 @@ export default function ClientPortal({
           <div
             className="rounded-lg px-4 py-3 mb-6 text-sm flex items-start gap-3"
             style={{
-              background: errorTone === "error" ? "rgba(248,113,113,0.08)" : "rgba(52,211,153,0.08)",
-              border: `1px solid ${errorTone === "error" ? "rgba(248,113,113,0.25)" : "rgba(52,211,153,0.25)"}`,
-              color: errorTone === "error" ? "#fca5a5" : "#6ee7b7",
+              background: errorTone === "error" ? T.dangerSoft : T.successSoft,
+              border: `1px solid ${errorTone === "error" ? T.dangerBorder : T.successBorder}`,
+              color: errorTone === "error" ? T.danger : T.success,
             }}
             role={errorTone === "error" ? "alert" : "status"}
           >
@@ -517,36 +511,30 @@ export default function ClientPortal({
         )}
 
         {/* ── Checklist / items needed ──────────────────────────────────── */}
-        <section
-          className="rounded-2xl p-5 sm:p-6 mb-6"
-          style={{ background: "#141a24", border: "1px solid #252b38" }}
-        >
+        <section className="rounded-2xl p-5 sm:p-6 mb-6" style={CARD}>
           <div className="flex items-center justify-between mb-1">
-            <h2 className="text-base font-semibold" style={{ color: "#e4e6ea" }}>
+            <h2 className="text-base font-semibold" style={{ color: T.text }}>
               Your checklist
             </h2>
             {totalCount > 0 && (
-              <p className="text-xs" style={{ color: "#7d8590" }}>
+              <p className="text-xs" style={{ color: T.textTertiary }}>
                 {completedCount} of {totalCount} done
               </p>
             )}
           </div>
-          <p className="text-xs mb-5" style={{ color: "#7d8590" }}>
+          <p className="text-xs mb-5" style={{ color: T.textTertiary }}>
             {openCount > 0
               ? `${openCount} item${openCount === 1 ? "" : "s"} need your attention.`
               : "You're all caught up — nothing needed from you right now."}
           </p>
 
           {totalCount > 0 && (
-            <div
-              className="h-1.5 rounded-full mb-5 overflow-hidden"
-              style={{ background: "#1c2128" }}
-            >
+            <div className="h-1.5 rounded-full mb-5 overflow-hidden" style={{ background: T.surface2 }}>
               <div
                 className="h-full rounded-full transition-all duration-500"
                 style={{
                   width: totalCount === 0 ? "0%" : `${(completedCount / totalCount) * 100}%`,
-                  background: "linear-gradient(90deg, #3b82f6, #60a5fa)",
+                  background: T.accent,
                 }}
               />
             </div>
@@ -555,9 +543,9 @@ export default function ClientPortal({
           {checklist.length === 0 && (
             <div
               className="rounded-xl p-6 text-center"
-              style={{ background: "#0d1117", border: "1px dashed #252b38" }}
+              style={{ background: T.surface2, border: `1px dashed ${T.border}` }}
             >
-              <p className="text-sm" style={{ color: "#9ca3af" }}>
+              <p className="text-sm" style={{ color: T.textSecondary }}>
                 Nothing needed right now. Your team will reach out if anything comes up.
               </p>
             </div>
@@ -565,7 +553,9 @@ export default function ClientPortal({
 
           <ul className="space-y-2.5">
             {checklist.map((item) => {
-              const theme = ITEM_STATUS_THEME[item.status];
+              // Clients can upload until ops signs off on the item — this
+              // includes RECEIVED so corrected versions can be re-submitted.
+              const uploadable = item.status !== "REVIEWED" && item.status !== "COMPLETE";
               const actionable = item.status === "REQUESTED" || item.status === "NOT_STARTED";
               const isUploading = uploadingFor === item.id;
               const isDragOver = dragOverItem === item.id;
@@ -575,17 +565,17 @@ export default function ClientPortal({
                   key={item.id}
                   className="rounded-xl transition-colors"
                   style={{
-                    background: isDragOver ? "rgba(59,130,246,0.06)" : "#0d1117",
-                    border: `1px solid ${isDragOver ? "rgba(96,165,250,0.4)" : "#1c2128"}`,
+                    background: isDragOver ? T.accentSoft : T.surface2,
+                    border: `1px solid ${isDragOver ? T.accentBorder : T.borderSoft}`,
                   }}
                   onDragOver={(e) => {
-                    if (!actionable || !canUpload) return;
+                    if (!uploadable || !canUpload) return;
                     e.preventDefault();
                     setDragOverItem(item.id);
                   }}
                   onDragLeave={() => setDragOverItem((curr) => (curr === item.id ? null : curr))}
                   onDrop={(e) => {
-                    if (!actionable || !canUpload) return;
+                    if (!uploadable || !canUpload) return;
                     e.preventDefault();
                     setDragOverItem(null);
                     const f = e.dataTransfer.files?.[0];
@@ -595,36 +585,31 @@ export default function ClientPortal({
                   <div className="p-4 flex items-start justify-between gap-3 flex-wrap sm:flex-nowrap">
                     <div className="min-w-0 flex-1">
                       <div className="flex items-center gap-2 flex-wrap">
-                        <p className="text-sm font-medium" style={{ color: "#e4e6ea" }}>
+                        <p className="text-sm font-medium" style={{ color: T.text }}>
                           {item.name}
                         </p>
                         {item.required && (
                           <span
                             className="text-[10px] uppercase tracking-wider font-semibold px-1.5 py-0.5 rounded"
-                            style={{ background: "rgba(248,113,113,0.1)", color: "#fca5a5" }}
+                            style={{ background: T.dangerSoft, color: T.danger }}
                           >
                             Required
                           </span>
                         )}
-                        <span
-                          className="text-[11px] font-medium px-2 py-0.5 rounded-full"
-                          style={{ background: theme.bg, color: theme.fg, border: `1px solid ${theme.ring}` }}
-                        >
-                          {theme.label}
-                        </span>
+                        <StatusPill status={item.status} />
                       </div>
-                      {actionable && canUpload && (
-                        <p className="text-xs mt-1.5" style={{ color: "#7d8590" }}>
+                      {uploadable && canUpload && (
+                        <p className="text-xs mt-1.5" style={{ color: T.textTertiary }}>
                           Drag a file here, or click upload. PDF / image / Word, up to 20 MB.
                         </p>
                       )}
                     </div>
                     <div className="flex items-center gap-2 flex-shrink-0">
-                      {actionable && canUpload && (
+                      {uploadable && canUpload && (
                         <label
-                          className="text-xs px-3 py-1.5 rounded-md cursor-pointer flex items-center gap-1.5 font-medium transition-colors"
+                          className="text-xs px-3 py-1.5 rounded-md cursor-pointer flex items-center gap-1.5 font-semibold transition-colors"
                           style={{
-                            background: isUploading ? "#1f2937" : "#3b82f6",
+                            background: T.accent,
                             color: "#fff",
                             opacity: isUploading ? 0.6 : 1,
                           }}
@@ -661,7 +646,7 @@ export default function ClientPortal({
                         <button
                           onClick={() => handleAcknowledge(item)}
                           className="text-xs px-3 py-1.5 rounded-md font-medium"
-                          style={{ background: "#252b38", border: "1px solid #3b3f49", color: "#e4e6ea" }}
+                          style={{ background: T.surface1, border: `1px solid ${T.borderStrong}`, color: T.text }}
                         >
                           Mark as done
                         </button>
@@ -670,31 +655,25 @@ export default function ClientPortal({
                   </div>
 
                   {item.documents.length > 0 && (
-                    <ul className="px-4 pb-4 space-y-1.5" style={{ borderTop: "1px solid #1c2128", paddingTop: "12px" }}>
+                    <ul
+                      className="px-4 pb-4 space-y-1.5"
+                      style={{ borderTop: `1px solid ${T.borderSoft}`, paddingTop: "12px" }}
+                    >
                       {item.documents.map((d) => (
-                        <li
-                          key={d.id}
-                          className="flex items-center gap-3 rounded-md px-2 py-1.5 transition-colors"
-                          onMouseEnter={(e) => ((e.currentTarget as HTMLElement).style.background = "#161c26")}
-                          onMouseLeave={(e) => ((e.currentTarget as HTMLElement).style.background = "transparent")}
-                        >
+                        <li key={d.id} className="flex items-center gap-3 rounded-md px-2 py-1.5">
                           <FileIcon fileType={d.fileType} />
                           <div className="min-w-0 flex-1">
                             <button
                               onClick={() => handleDownload(d.id)}
                               disabled={downloadingId === d.id}
-                              className="text-sm font-medium block text-left truncate w-full transition-colors"
-                              style={{ color: "#e4e6ea" }}
-                              onMouseEnter={(e) => ((e.currentTarget as HTMLElement).style.color = "#93c5fd")}
-                              onMouseLeave={(e) => ((e.currentTarget as HTMLElement).style.color = "#e4e6ea")}
+                              className="text-sm font-medium block text-left truncate w-full hover:underline"
+                              style={{ color: T.text }}
                             >
                               {d.name}
                             </button>
-                            <p className="text-[11px] mt-0.5" style={{ color: "#7d8590" }}>
+                            <p className="text-[11px] mt-0.5" style={{ color: T.textTertiary }}>
                               {formatBytes(d.fileSize)} ·{" "}
-                              <span
-                                style={{ color: d.uploadedByClient ? "#6ee7b7" : "#93c5fd" }}
-                              >
+                              <span style={{ color: d.uploadedByClient ? T.success : T.info }}>
                                 {d.uploadedByClient ? "You uploaded" : "Shared by your team"}
                               </span>{" "}
                               · {formatRelative(d.createdAt)}
@@ -703,10 +682,8 @@ export default function ClientPortal({
                           <button
                             onClick={() => handleDownload(d.id)}
                             disabled={downloadingId === d.id}
-                            className="text-xs px-2 py-1 rounded transition-colors flex-shrink-0"
-                            style={{ color: "#7d8590" }}
-                            onMouseEnter={(e) => ((e.currentTarget as HTMLElement).style.color = "#93c5fd")}
-                            onMouseLeave={(e) => ((e.currentTarget as HTMLElement).style.color = "#7d8590")}
+                            className="text-xs px-2 py-1 rounded flex-shrink-0 hover:underline"
+                            style={{ color: T.textSecondary }}
                             aria-label={`Download ${d.name}`}
                           >
                             {downloadingId === d.id ? "Opening…" : "Download"}
@@ -723,59 +700,48 @@ export default function ClientPortal({
 
         {/* ── Messages ───────────────────────────────────────────────────── */}
         {canMessage && (
-          <section
-            className="rounded-2xl p-5 sm:p-6 mb-6"
-            style={{ background: "#141a24", border: "1px solid #252b38" }}
-          >
+          <section className="rounded-2xl p-5 sm:p-6 mb-6" style={CARD}>
             <div className="flex items-center justify-between mb-4">
-              <h2 className="text-base font-semibold" style={{ color: "#e4e6ea" }}>Messages</h2>
+              <h2 className="text-base font-semibold" style={{ color: T.text }}>Messages</h2>
               {rolloverCase.assignedAdvisor && (
                 <div className="flex items-center gap-2">
                   <div
                     className="w-7 h-7 rounded-full flex items-center justify-center text-xs font-semibold"
-                    style={{ background: "linear-gradient(135deg,#3b82f6,#1d4ed8)", color: "#fff" }}
+                    style={{ background: T.accent, color: "#fff" }}
                   >
                     {advisorInitials}
                   </div>
-                  <p className="text-xs" style={{ color: "#9ca3af" }}>
+                  <p className="text-xs" style={{ color: T.textSecondary }}>
                     {rolloverCase.assignedAdvisor.firstName} {rolloverCase.assignedAdvisor.lastName}
                   </p>
                 </div>
               )}
             </div>
 
-            <div
-              ref={messagesEndRef}
-              className="space-y-2.5 mb-4 max-h-96 overflow-y-auto pr-1"
-            >
+            <div ref={messagesEndRef} className="space-y-2.5 mb-4 max-h-96 overflow-y-auto pr-1">
               {notes.length === 0 ? (
                 <div
                   className="rounded-xl p-6 text-center"
-                  style={{ background: "#0d1117", border: "1px dashed #252b38" }}
+                  style={{ background: T.surface2, border: `1px dashed ${T.border}` }}
                 >
-                  <p className="text-sm" style={{ color: "#9ca3af" }}>
+                  <p className="text-sm" style={{ color: T.textSecondary }}>
                     Your team will respond here. Send a message any time.
                   </p>
                 </div>
               ) : (
                 notes.map((note) => (
-                  <div
-                    key={note.id}
-                    className={`flex ${note.fromClient ? "justify-end" : "justify-start"}`}
-                  >
+                  <div key={note.id} className={`flex ${note.fromClient ? "justify-end" : "justify-start"}`}>
                     <div
                       className="max-w-[85%] rounded-2xl px-3.5 py-2.5"
                       style={{
-                        background: note.fromClient
-                          ? "linear-gradient(135deg,#3b82f6,#2563eb)"
-                          : "#0d1117",
-                        border: note.fromClient ? "none" : "1px solid #252b38",
-                        color: note.fromClient ? "#fff" : "#e4e6ea",
+                        background: note.fromClient ? T.accent : T.surface2,
+                        border: note.fromClient ? "none" : `1px solid ${T.borderSoft}`,
+                        color: note.fromClient ? "#fff" : T.text,
                       }}
                     >
                       <p
                         className="text-[11px] mb-1"
-                        style={{ color: note.fromClient ? "rgba(255,255,255,0.7)" : "#7d8590" }}
+                        style={{ color: note.fromClient ? "rgba(255,255,255,0.75)" : T.textTertiary }}
                       >
                         {note.fromClient
                           ? "You"
@@ -803,54 +769,41 @@ export default function ClientPortal({
                 }}
                 placeholder="Type a message…"
                 className="flex-1 rounded-xl px-3 py-2.5 text-sm resize-none focus:outline-none transition-colors"
-                style={{
-                  background: "#0d1117",
-                  border: "1px solid #252b38",
-                  color: "#e4e6ea",
-                }}
-                onFocus={(e) => ((e.currentTarget as HTMLElement).style.borderColor = "#3b82f680")}
-                onBlur={(e) => ((e.currentTarget as HTMLElement).style.borderColor = "#252b38")}
+                style={{ background: T.input, border: `1px solid ${T.border}`, color: T.text }}
+                onFocus={(e) => ((e.currentTarget as HTMLElement).style.borderColor = T.borderFocus)}
+                onBlur={(e) => ((e.currentTarget as HTMLElement).style.borderColor = T.border)}
                 rows={2}
               />
               <button
                 type="submit"
                 disabled={sendingMessage || !messageDraft.trim()}
-                className="text-sm px-4 py-2.5 rounded-xl font-medium disabled:opacity-50 disabled:cursor-not-allowed transition-colors"
-                style={{ background: "#3b82f6", color: "#fff" }}
+                className="text-sm px-4 py-2.5 rounded-xl font-semibold disabled:opacity-50 disabled:cursor-not-allowed"
+                style={{ background: T.accent, color: "#fff" }}
                 aria-label="Send message"
               >
                 {sendingMessage ? "Sending…" : "Send"}
               </button>
             </form>
-            <p className="text-[10px] mt-2" style={{ color: "#5b6471" }}>
+            <p className="text-[10px] mt-2" style={{ color: T.textDisabled }}>
               Tip: press ⌘/Ctrl + Enter to send.
             </p>
           </section>
         )}
 
         {/* ── Footer ─────────────────────────────────────────────────────── */}
-        <footer
-          className="rounded-2xl p-5 text-center"
-          style={{ background: "#141a24", border: "1px solid #252b38" }}
-        >
-          <p className="text-sm font-medium" style={{ color: "#e4e6ea" }}>
+        <footer className="rounded-2xl p-5 text-center" style={CARD}>
+          <p className="text-sm font-medium" style={{ color: T.text }}>
             Need help?
           </p>
-          <p className="text-xs mt-1.5" style={{ color: "#9ca3af" }}>
+          <p className="text-xs mt-1.5" style={{ color: T.textSecondary }}>
             Reach out to {rolloverCase.firm.name} directly:
           </p>
           <div className="flex flex-wrap items-center justify-center gap-3 mt-3 text-xs">
             {rolloverCase.firm.supportEmail && (
               <a
                 href={`mailto:${rolloverCase.firm.supportEmail}`}
-                className="px-3 py-1.5 rounded-md transition-colors"
-                style={{ background: "#0d1117", border: "1px solid #252b38", color: "#93c5fd" }}
-                onMouseEnter={(e) => {
-                  (e.currentTarget as HTMLElement).style.background = "#1c2128";
-                }}
-                onMouseLeave={(e) => {
-                  (e.currentTarget as HTMLElement).style.background = "#0d1117";
-                }}
+                className="px-3 py-1.5 rounded-md"
+                style={{ background: T.surface2, border: `1px solid ${T.border}`, color: T.accent }}
               >
                 {rolloverCase.firm.supportEmail}
               </a>
@@ -858,20 +811,14 @@ export default function ClientPortal({
             {rolloverCase.firm.supportPhone && (
               <a
                 href={`tel:${rolloverCase.firm.supportPhone}`}
-                className="px-3 py-1.5 rounded-md transition-colors"
-                style={{ background: "#0d1117", border: "1px solid #252b38", color: "#93c5fd" }}
-                onMouseEnter={(e) => {
-                  (e.currentTarget as HTMLElement).style.background = "#1c2128";
-                }}
-                onMouseLeave={(e) => {
-                  (e.currentTarget as HTMLElement).style.background = "#0d1117";
-                }}
+                className="px-3 py-1.5 rounded-md"
+                style={{ background: T.surface2, border: `1px solid ${T.border}`, color: T.accent }}
               >
                 {rolloverCase.firm.supportPhone}
               </a>
             )}
           </div>
-          <p className="text-[10px] mt-4" style={{ color: "#5b6471" }}>
+          <p className="text-[10px] mt-4" style={{ color: T.textDisabled }}>
             Secure portal · Your information is private
           </p>
         </footer>

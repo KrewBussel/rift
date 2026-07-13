@@ -242,6 +242,25 @@ model Document {
   checklistItem             ChecklistItem? @relation(fields: [checklistItemId], references: [id])
   uploadedBy                User?          @relation(fields: [uploadedById], references: [id])
   uploadedByClientSession   ClientSession? @relation(fields: [uploadedByClientSessionId], references: [id], onDelete: SetNull)
+  review                    DocumentReview?
+}
+
+// AI paperwork QA result for one document. One row per document (re-scans
+// overwrite). Written only by src/lib/documentReview.ts — runs on Bedrock so
+// document contents never leave AWS. `findings` holds field names and issue
+// types only, never transcribed values (PII minimization).
+model DocumentReview {
+  id         String                 @id @default(cuid())
+  documentId String                 @unique
+  status     DocumentReviewStatus   @default(PENDING)
+  verdict    DocumentReviewVerdict?
+  findings   Json?
+  summary    String?
+  error      String?
+  modelUsed  String?
+  createdAt  DateTime               @default(now())
+  updatedAt  DateTime               @updatedAt
+  document   Document               @relation(fields: [documentId], references: [id], onDelete: Cascade)
 }
 
 model Custodian {
@@ -522,4 +541,16 @@ enum ChecklistStatus {
   RECEIVED
   REVIEWED
   COMPLETE
+}
+
+enum DocumentReviewStatus {
+  PENDING
+  COMPLETE
+  FAILED
+}
+
+enum DocumentReviewVerdict {
+  PASS
+  ISSUES_FOUND
+  UNREADABLE
 }
