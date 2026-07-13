@@ -90,7 +90,15 @@ export async function checkRateLimit(
 
   if (!limiter) return { ok: true, remaining: Number.POSITIVE_INFINITY, reset: 0 };
 
-  const result = await limiter.limit(identifier);
+  // Fail open: if Redis is unreachable (network error, deleted database, DNS
+  // failure), a broken rate limiter must not lock every user out of the app.
+  let result;
+  try {
+    result = await limiter.limit(identifier);
+  } catch (err) {
+    console.error(`[ratelimit] Redis check failed for ${kind} — allowing request.`, err);
+    return { ok: true, remaining: Number.POSITIVE_INFINITY, reset: 0 };
+  }
   if (result.success) return { ok: true, remaining: result.remaining, reset: result.reset };
 
   const retryAfterSeconds = Math.max(1, Math.ceil((result.reset - Date.now()) / 1000));
