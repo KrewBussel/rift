@@ -4,12 +4,14 @@ import { Prisma } from "@prisma/client";
 import type { CaseStatus, AccountType } from "@prisma/client";
 
 /**
- * Stages that have a CRM mapping. Intermediate Rift-only stages
+ * The two bookend stages that sync with the CRM. Intermediate Rift-only stages
  * (AWAITING_CLIENT_ACTION, READY_TO_SUBMIT, SUBMITTED, PROCESSING, IN_TRANSIT)
- * never push to or pull from the CRM. Keep this in sync with the API
- * validation in /api/integrations/crm/mapping.
+ * never push to or pull from the CRM. This is the single source of truth —
+ * the Zod enum in /api/integrations/crm/mapping imports it.
  */
-const MAPPABLE_STATUSES: ReadonlySet<CaseStatus> = new Set(["PROPOSAL_ACCEPTED", "WON"]);
+export const MAPPABLE_STATUSES = ["PROPOSAL_ACCEPTED", "WON"] as const;
+
+const MAPPABLE_STATUS_SET: ReadonlySet<CaseStatus> = new Set(MAPPABLE_STATUSES);
 
 /**
  * Wealthbox custom-field names the inbound poller reads off an opportunity.
@@ -34,6 +36,27 @@ export function mapAccountType(value: string | null): AccountType | null {
   if (v.includes("roth")) return "ROTH_IRA_401K";
   if (v === "other") return "OTHER";
   return null;
+}
+
+/**
+ * Read the three Rift-required custom fields off a hydrated opportunity.
+ * Shared by inbound case creation and the per-case "Refresh from CRM" path so
+ * the two can never drift on how fields are looked up or mapped.
+ */
+function readCustomCaseFields(opp: OpportunityHydrated): {
+  sourceProvider: string | null;
+  destinationCustodian: string | null;
+  accountTypeRaw: string | null;
+  accountType: AccountType | null;
+} {
+  const get = (name: string) => opp.customFields[name.toLowerCase()] ?? null;
+  const accountTypeRaw = get(WEALTHBOX_CUSTOM_FIELDS.accountType);
+  return {
+    sourceProvider: get(WEALTHBOX_CUSTOM_FIELDS.sourceProvider),
+    destinationCustodian: get(WEALTHBOX_CUSTOM_FIELDS.destinationCustodian),
+    accountTypeRaw,
+    accountType: mapAccountType(accountTypeRaw),
+  };
 }
 
 /**
@@ -136,7 +159,7 @@ async function syncOpportunityStageImpl(caseId: string): Promise<SyncStageResult
 
   // Intermediate stages are deliberately not synced — silently skip without
   // writing wealthboxLastSyncError so the case doesn't show a fake failure.
-  if (!MAPPABLE_STATUSES.has(rolloverCase.status)) {
+  if (!MAPPABLE_STATUS_SET.has(rolloverCase.status)) {
     return { ok: false, reason: "rift_only_stage" };
   }
 
@@ -243,27 +266,54 @@ export async function refreshCaseFromCrm(caseId: string, actorUserId: string): P
   const oldStatus = rolloverCase.status;
   const newStatus = mapping.riftStatus;
 
-  // Always refresh the CRM-shadowed fields. We deliberately don't touch
-  // user-mutable fields (sourceProvider, destinationCustodian, accountType,
-  // clientFirstName/LastName/Email) on refresh once the user has filled them
-  // in — at that point we treat Rift as the source of truth for case data.
-  //
-  // Exception: a case that was auto-created with placeholder values
-  // ("Unknown" / "") because the CRM opportunity didn't yet have the data
-  // available is *eligible* for a one-time backfill on refresh. Once the
-  // case has real values, the next refresh leaves them alone.
-  const wasPlaceholderName =
+  // Case data (names, email, source, destination, account type) is Rift-owned:
+  // once it holds real values, refresh never overwrites it. The one exception
+  // is placeholder backfill — a case auto-created before the CRM opportunity
+  // was fully populated carries "Unknown"/"" placeholders, and those may fill
+  // in from the CRM once. `next` is what each field will be after this refresh.
+  const fields = readCustomCaseFields(hydrated);
+  const hasPlaceholderName =
     rolloverCase.clientFirstName === "Unknown" && rolloverCase.clientLastName === "Unknown";
-  const wasPlaceholderEmail = rolloverCase.clientEmail === "";
-  const wasPlaceholderSource = rolloverCase.sourceProvider === "";
-  const wasPlaceholderDest = rolloverCase.destinationCustodian === "";
+  const next = {
+    clientFirstName:
+      hasPlaceholderName && hydrated.contact?.firstName
+        ? hydrated.contact.firstName
+        : rolloverCase.clientFirstName,
+    clientLastName:
+      hasPlaceholderName && hydrated.contact?.lastName
+        ? hydrated.contact.lastName
+        : rolloverCase.clientLastName,
+    clientEmail:
+      rolloverCase.clientEmail === "" && hydrated.contact?.email
+        ? hydrated.contact.email
+        : rolloverCase.clientEmail,
+    sourceProvider:
+      rolloverCase.sourceProvider === "" && fields.sourceProvider
+        ? fields.sourceProvider
+        : rolloverCase.sourceProvider,
+    destinationCustodian:
+      rolloverCase.destinationCustodian === "" && fields.destinationCustodian
+        ? fields.destinationCustodian
+        : rolloverCase.destinationCustodian,
+    accountType:
+      rolloverCase.accountType === "OTHER" && fields.accountType
+        ? fields.accountType
+        : rolloverCase.accountType,
+  };
 
-  const sourceProviderRaw = hydrated.customFields[WEALTHBOX_CUSTOM_FIELDS.sourceProvider.toLowerCase()] ?? null;
-  const destinationRaw = hydrated.customFields[WEALTHBOX_CUSTOM_FIELDS.destinationCustodian.toLowerCase()] ?? null;
-  const accountTypeRaw = hydrated.customFields[WEALTHBOX_CUSTOM_FIELDS.accountType.toLowerCase()] ?? null;
-  const accountType = mapAccountType(accountTypeRaw);
+  // If the refresh resolved every reason the case was flagged for review, drop
+  // the flag so the user doesn't have to chase it manually.
+  const fullyResolved =
+    rolloverCase.needsReview &&
+    !!next.clientFirstName && next.clientFirstName !== "Unknown" &&
+    !!next.clientLastName && next.clientLastName !== "Unknown" &&
+    next.clientEmail !== "" &&
+    next.sourceProvider !== "" &&
+    next.destinationCustodian !== "" &&
+    next.accountType !== "OTHER";
 
   const refreshedFields = {
+    // CRM-shadowed metadata always refreshes — that's the point of the button.
     wealthboxOpportunityName: hydrated.name,
     wealthboxAmount: hydrated.amount,
     wealthboxAmountCurrency: hydrated.amountCurrency,
@@ -272,51 +322,10 @@ export async function refreshCaseFromCrm(caseId: string, actorUserId: string): P
     wealthboxOppCreatedAt: hydrated.oppCreatedAt,
     // Phone is the one client-data field we re-pull, since it changes more
     // often than name/email and isn't typically edited in Rift.
-    ...(hydrated.contact?.phone !== undefined && { clientPhone: hydrated.contact.phone }),
-    // Backfill placeholders only.
-    ...(wasPlaceholderName && hydrated.contact?.firstName && {
-      clientFirstName: hydrated.contact.firstName,
-    }),
-    ...(wasPlaceholderName && hydrated.contact?.lastName && {
-      clientLastName: hydrated.contact.lastName,
-    }),
-    ...(wasPlaceholderEmail && hydrated.contact?.email && {
-      clientEmail: hydrated.contact.email,
-    }),
-    ...(wasPlaceholderSource && sourceProviderRaw && { sourceProvider: sourceProviderRaw }),
-    ...(wasPlaceholderDest && destinationRaw && { destinationCustodian: destinationRaw }),
-    ...(rolloverCase.accountType === "OTHER" && accountType && { accountType }),
+    ...(hydrated.contact ? { clientPhone: hydrated.contact.phone } : {}),
+    ...next,
+    ...(fullyResolved ? { needsReview: false, reviewReason: null } : {}),
   };
-
-  // If the refresh resolved every reason a case was flagged for review, drop
-  // the flag so the user doesn't have to chase it manually after the CRM is
-  // populated.
-  const willHaveName =
-    (refreshedFields as { clientFirstName?: string }).clientFirstName ?? rolloverCase.clientFirstName;
-  const willHaveLast =
-    (refreshedFields as { clientLastName?: string }).clientLastName ?? rolloverCase.clientLastName;
-  const willHaveEmail =
-    (refreshedFields as { clientEmail?: string }).clientEmail ?? rolloverCase.clientEmail;
-  const willHaveSource =
-    (refreshedFields as { sourceProvider?: string }).sourceProvider ?? rolloverCase.sourceProvider;
-  const willHaveDest =
-    (refreshedFields as { destinationCustodian?: string }).destinationCustodian ?? rolloverCase.destinationCustodian;
-  const willHaveAccountType =
-    (refreshedFields as { accountType?: AccountType }).accountType ?? rolloverCase.accountType;
-  const fullyResolved =
-    rolloverCase.needsReview &&
-    willHaveName &&
-    willHaveName !== "Unknown" &&
-    willHaveLast &&
-    willHaveLast !== "Unknown" &&
-    willHaveEmail &&
-    willHaveSource &&
-    willHaveDest &&
-    willHaveAccountType !== "OTHER";
-  const reviewClear = fullyResolved
-    ? { needsReview: false, reviewReason: null }
-    : {};
-  Object.assign(refreshedFields, reviewClear);
 
   if (oldStatus === newStatus) {
     await prisma.rolloverCase.update({
@@ -351,8 +360,6 @@ export async function refreshCaseFromCrm(caseId: string, actorUserId: string): P
 
   return { ok: true, changed: true, oldStatus, newStatus, stageName: hydrated.stage ?? undefined };
 }
-
-export type RiftStatus = CaseStatus;
 
 /**
  * Page-load auto-sync: trigger a Wealthbox poll if (a) the firm has a CRM
@@ -549,11 +556,7 @@ async function createCaseFromOpportunity(
 ): Promise<boolean> {
   const reasons: string[] = [];
 
-  const sourceProviderRaw = opp.customFields[WEALTHBOX_CUSTOM_FIELDS.sourceProvider.toLowerCase()] ?? null;
-  const destinationRaw = opp.customFields[WEALTHBOX_CUSTOM_FIELDS.destinationCustodian.toLowerCase()] ?? null;
-  const accountTypeRaw = opp.customFields[WEALTHBOX_CUSTOM_FIELDS.accountType.toLowerCase()] ?? null;
-  const accountType = mapAccountType(accountTypeRaw);
-
+  const fields = readCustomCaseFields(opp);
   const firstName = opp.contact?.firstName ?? null;
   const lastName = opp.contact?.lastName ?? null;
   const email = opp.contact?.email ?? null;
@@ -562,11 +565,11 @@ async function createCaseFromOpportunity(
   if (!firstName) reasons.push("Contact missing first name");
   if (!lastName) reasons.push("Contact missing last name");
   if (!email) reasons.push("Contact missing email");
-  if (!sourceProviderRaw) reasons.push(`Missing custom field "${WEALTHBOX_CUSTOM_FIELDS.sourceProvider}"`);
-  if (!destinationRaw) reasons.push(`Missing custom field "${WEALTHBOX_CUSTOM_FIELDS.destinationCustodian}"`);
-  if (!accountType) {
-    if (!accountTypeRaw) reasons.push(`Missing custom field "${WEALTHBOX_CUSTOM_FIELDS.accountType}"`);
-    else reasons.push(`Account type "${accountTypeRaw}" is not recognized`);
+  if (!fields.sourceProvider) reasons.push(`Missing custom field "${WEALTHBOX_CUSTOM_FIELDS.sourceProvider}"`);
+  if (!fields.destinationCustodian) reasons.push(`Missing custom field "${WEALTHBOX_CUSTOM_FIELDS.destinationCustodian}"`);
+  if (!fields.accountType) {
+    if (!fields.accountTypeRaw) reasons.push(`Missing custom field "${WEALTHBOX_CUSTOM_FIELDS.accountType}"`);
+    else reasons.push(`Account type "${fields.accountTypeRaw}" is not recognized`);
   }
 
   // Fast-path dedup: skip if a case already links this opportunity. This alone
@@ -588,9 +591,9 @@ async function createCaseFromOpportunity(
         clientLastName: lastName ?? "Unknown",
         clientEmail: email ?? "",
         clientPhone: opp.contact?.phone ?? null,
-        sourceProvider: sourceProviderRaw ?? "",
-        destinationCustodian: destinationRaw ?? "",
-        accountType: accountType ?? "OTHER",
+        sourceProvider: fields.sourceProvider ?? "",
+        destinationCustodian: fields.destinationCustodian ?? "",
+        accountType: fields.accountType ?? "OTHER",
         status: "PROPOSAL_ACCEPTED",
         firmId,
         wealthboxOpportunityId: opp.id,

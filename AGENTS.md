@@ -27,7 +27,7 @@ Every new firm-scoped resource needs an isolation test in `tests/api/*-isolation
 
 - Sync functions in `src/lib/crmSync.ts` are **non-throwing**. Failures land on the case row (`wealthboxLastSyncError`) and the connection (`lastHealthOk`). They never block the upstream user action.
 - The poll endpoint at `/api/integrations/wealthbox/poll` is **idempotent**. Duplicate triggers are safe — the function checks `wealthboxOpportunityId` against existing rows before inserting.
-- Only the two **bookend** stages (`PROPOSAL_ACCEPTED`, `WON`) sync to/from Wealthbox. Intermediate stages are Rift-only. The `MAPPABLE_STATUSES` constant in `crmSync.ts` and the Zod enum in `/api/integrations/crm/mapping/route.ts` must stay in sync.
+- Only the two **bookend** stages (`PROPOSAL_ACCEPTED`, `WON`) sync to/from Wealthbox. Intermediate stages are Rift-only. `MAPPABLE_STATUSES` is defined once in `crmSync.ts`; the Zod enum in `/api/integrations/crm/mapping/route.ts` imports it — don't redefine it.
 - The CRM is never the source of truth for **Rift access**. CRM team imports populate the invite UI, but the admin always picks who and what role. See CLAUDE.md's "Firm onboarding flow" for the rationale.
 
 ## Stage labels respect the firm overlay

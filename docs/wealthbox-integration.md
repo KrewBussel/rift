@@ -262,8 +262,9 @@ the confirm step with the mappings pre-filled.
 ## Post-onboarding: Settings → Integrations
 
 CRM connection management and Rift-stage configuration moved out of the
-wizard into **Settings → Integrations** (`IntegrationsSec` in
-`src/components/Settings.tsx`). The settings page honors `?tab=` deep-links
+wizard into **Settings → Integrations**
+(`src/components/SettingsIntegrations.tsx`, rendered by `Settings.tsx`).
+The settings page honors `?tab=` deep-links
 (`src/app/dashboard/settings/page.tsx` reads `searchParams` and passes
 `initialTab`), so the wizard's exit redirect to
 `/dashboard/settings?tab=integrations` lands directly on this panel.
@@ -327,7 +328,7 @@ from git history and add `CRON_SECRET` + `RIFT_BASE_URL` as repo secrets.
 | `CaseStatus` enum + `RolloverCase` Wealthbox fields | `prisma/schema.prisma` |
 | `CaseStageConfig` overlay model | `prisma/schema.prisma` |
 | Firm onboarding gate (`onboardedAt`) | `prisma/schema.prisma` (Firm model), `src/app/dashboard/layout.tsx` (redirect) |
-| Mappable-statuses constant | `src/lib/crmSync.ts` (`MAPPABLE_STATUSES`) |
+| Mappable-statuses constant | `src/lib/crmSync.ts` (`MAPPABLE_STATUSES`) — the mapping route's Zod enum imports it |
 | Stage mapping API validation | `src/app/api/integrations/crm/mapping/route.ts` |
 | Inbound poller (both bookends) | `src/lib/crmSync.ts` (`pollFirmForNewOpportunities`) |
 | Page-load auto-sync | `src/lib/crmSync.ts` (`maybePollOnPageLoad`) — called from `src/app/dashboard/page.tsx` and `src/app/dashboard/cases/page.tsx` |
@@ -344,7 +345,7 @@ from git history and add `CRON_SECRET` + `RIFT_BASE_URL` as repo secrets.
 | Onboarding wizard | `src/components/OnboardingWizard.tsx`, `src/app/onboarding/page.tsx` |
 | Onboarding completion | `src/app/api/firm/onboarding/route.ts` |
 | Stage config API | `src/app/api/firm/stages/route.ts` |
-| Settings → Integrations UI (connection + mapping + sync + Rift stages) | `src/components/Settings.tsx` (`IntegrationsSec`); deep-linked via `src/app/dashboard/settings/page.tsx` (`initialTab`) |
+| Settings → Integrations UI (connection + mapping + sync + Rift stages) | `src/components/SettingsIntegrations.tsx`; rendered by `Settings.tsx`, deep-linked via `src/app/dashboard/settings/page.tsx` (`initialTab`) |
 | Team invites | `src/components/TeamPage.tsx`, `src/app/dashboard/team/page.tsx` |
 | Sync button on cases page | inline in `src/components/CasesView.tsx` (header "Sync Wealthbox" button) |
 | Review badge / banner | `src/components/CasesView.tsx`, `src/components/CaseDetail.tsx` |

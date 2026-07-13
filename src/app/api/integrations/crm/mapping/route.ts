@@ -4,12 +4,11 @@ import { auth } from "@/lib/auth";
 import { prisma } from "@/lib/prisma";
 import { parseBody } from "@/lib/validation";
 import { recordAudit, extractRequestMeta } from "@/lib/audit";
-
-// Only the bookend stages map to CRM. Intermediate Rift-only stages
-// (AWAITING_CLIENT_ACTION, READY_TO_SUBMIT, SUBMITTED, PROCESSING, IN_TRANSIT)
-// are not synced — PROPOSAL_ACCEPTED is the inbound entry point and WON is the
-// outbound close trigger.
-const MAPPABLE_STATUSES = ["PROPOSAL_ACCEPTED", "WON"] as const;
+// Only the two bookend stages (PROPOSAL_ACCEPTED inbound, WON outbound) map to
+// the CRM; intermediate stages are Rift-only. MAPPABLE_STATUSES is defined
+// once in crmSync.ts and shared here so the sync engine and this validation
+// can't drift apart.
+import { MAPPABLE_STATUSES } from "@/lib/crmSync";
 
 const MappingSchema = z.object({
   mappings: z.array(z.object({
