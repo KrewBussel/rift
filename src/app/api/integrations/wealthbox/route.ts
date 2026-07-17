@@ -5,7 +5,7 @@ import { prisma } from "@/lib/prisma";
 import { parseBody } from "@/lib/validation";
 import { sealSecret } from "@/lib/crypto";
 import { getMe, WealthboxError } from "@/lib/wealthbox";
-import { getCrmClient } from "@/lib/crmClient";
+import { getCrmClient, type Stage } from "@/lib/crmClient";
 import { suggestBookendStages, upsertBookendMappings } from "@/lib/crmSync";
 import { recordAudit, extractRequestMeta } from "@/lib/audit";
 
@@ -88,7 +88,7 @@ export async function POST(req: NextRequest) {
   // Pull stages and auto-detect the bookends. A stage-fetch failure must not
   // fail the connect — the token is valid and saved; the wizard falls back to
   // the manual picker with an empty list.
-  let stages: Array<{ id: string; name: string }> = [];
+  let stages: Stage[] = [];
   let suggested: { triggerStageId: string | null; wonStageId: string | null } = {
     triggerStageId: null,
     wonStageId: null,

@@ -53,4 +53,29 @@ describe("suggestBookendStages", () => {
     expect(trigger?.id).toBe("x");
     expect(won).toBeNull();
   });
+
+  it("restricts both bookends to a rollover-named pipeline when one exists", () => {
+    // Stage names repeat across Wealthbox pipelines; the default pipeline's
+    // identically-named stages must never win over the rollover pipeline's.
+    const { trigger, won } = suggestBookendStages([
+      { id: "d1", name: "Proposal Accepted", pipelineName: "Default Pipeline" },
+      { id: "d2", name: "Won", pipelineName: "Default Pipeline" },
+      { id: "r1", name: "Proposal Accepted", pipelineName: "Rollover" },
+      { id: "r2", name: "Won", pipelineName: "Rollover" },
+    ]);
+    expect(trigger?.id).toBe("r1");
+    expect(won?.id).toBe("r2");
+  });
+
+  it("never falls back to other pipelines when the rollover pipeline lacks a match", () => {
+    // Falling back would map a stage every non-rollover opportunity flows
+    // through — the admin must pick manually instead.
+    const { trigger, won } = suggestBookendStages([
+      { id: "d1", name: "Proposal Accepted", pipelineName: "Default Pipeline" },
+      { id: "d2", name: "Won", pipelineName: "Default Pipeline" },
+      { id: "r1", name: "Paperwork", pipelineName: "Rollover" },
+    ]);
+    expect(trigger).toBeNull();
+    expect(won).toBeNull();
+  });
 });

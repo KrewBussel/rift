@@ -49,6 +49,12 @@ export interface WealthboxStage {
   id: number;
   name: string;
   document_type: string; // "Opportunity" for opportunity stages
+  pipeline?: number | null; // id of the owning opportunity pipeline
+}
+
+export interface WealthboxPipeline {
+  id: number;
+  name: string;
 }
 
 /**
@@ -71,7 +77,16 @@ export interface WealthboxOpportunity {
   stage_id?: number | null;
   stage_name?: string | null;
   probability?: number | null;
-  amounts?: Array<{ amount: number; currency: string; kind?: string }>;
+  // Live responses return `amount` as a formatted string ("$689,000") and omit
+  // `currency` entirely, even though the API docs show a numeric amount + a
+  // `currency` symbol. Both shapes are handled by pickOpportunityAmount below.
+  amounts?: Array<{
+    id?: number;
+    amount: number | string;
+    currency?: string | null;
+    basis_points?: number | null;
+    kind?: string;
+  }>;
   target_close?: string | null;
   linked_to?: Array<{ id: number; name?: string; type?: string }>;
   custom_fields?: WealthboxCustomField[];
@@ -145,6 +160,24 @@ export async function getOpportunityStages(token: string): Promise<WealthboxStag
   return [];
 }
 
+/**
+ * Opportunity pipelines are a Customizable Category (plural endpoint), same
+ * wrapper-key tolerance as stages. Firms on multi-pipeline plans can have
+ * several; each stage row carries the id of its owning pipeline.
+ */
+export async function getOpportunityPipelines(token: string): Promise<WealthboxPipeline[]> {
+  const res = await request<unknown>(token, "/categories/opportunity_pipelines");
+  if (Array.isArray(res)) return res as WealthboxPipeline[];
+  if (res && typeof res === "object") {
+    const r = res as Record<string, unknown>;
+    for (const key of ["opportunity_pipelines", "pipelines", "categories", "data"]) {
+      const v = r[key];
+      if (Array.isArray(v)) return v as WealthboxPipeline[];
+    }
+  }
+  return [];
+}
+
 export async function searchOpportunities(token: string, opts: { query?: string; limit?: number; page?: number } = {}): Promise<WealthboxOpportunityList> {
   const qs = new URLSearchParams();
   if (opts.query) qs.set("name", opts.query);
@@ -204,6 +237,45 @@ export function pickPrimaryPhone(contact: WealthboxContact): string | null {
   return ext ? `${chosen.address} x${ext}` : chosen.address;
 }
 
+/** Map a leading currency symbol to an ISO 4217 code (what Intl.NumberFormat wants). */
+const CURRENCY_SYMBOL_TO_CODE: Record<string, string> = {
+  $: "USD",
+  "£": "GBP",
+  "€": "EUR",
+  "¥": "JPY",
+};
+
+/**
+ * Parse a Wealthbox amount into a real number. The API is inconsistent: the
+ * docs show a numeric `amount` (56.76) but live responses return a formatted
+ * string like "$689,000" with a symbol and thousands separators. Strip
+ * everything except digits, a decimal point, and a leading minus so both shapes
+ * yield a number. Unparseable / non-finite → 0.
+ */
+export function parseWealthboxAmount(raw: number | string | null | undefined): number {
+  if (typeof raw === "number") return Number.isFinite(raw) ? raw : 0;
+  if (typeof raw !== "string") return 0;
+  const cleaned = raw.replace(/[^0-9.-]/g, "");
+  const n = Number.parseFloat(cleaned);
+  return Number.isFinite(n) ? n : 0;
+}
+
+/**
+ * Resolve a row's currency to an ISO code. Prefer an explicit `currency` field
+ * (normalizing a bare symbol like "$" → "USD"); otherwise infer from a leading
+ * symbol on a string amount; default USD (this is a US rollover product).
+ */
+function rowCurrency(a: { amount: number | string; currency?: string | null }): string {
+  const explicit = a.currency?.trim();
+  if (explicit) return CURRENCY_SYMBOL_TO_CODE[explicit] ?? explicit;
+  if (typeof a.amount === "string") {
+    for (const [sym, code] of Object.entries(CURRENCY_SYMBOL_TO_CODE)) {
+      if (a.amount.includes(sym)) return code;
+    }
+  }
+  return "USD";
+}
+
 /** Sum opportunity amounts across the (often single-entry) `amounts` array. */
 export function pickOpportunityAmount(opp: WealthboxOpportunity): { amount: number; currency: string } | null {
   const amounts = opp.amounts ?? [];
@@ -211,10 +283,10 @@ export function pickOpportunityAmount(opp: WealthboxOpportunity): { amount: numb
   // Wealthbox supports multiple currency rows on one opp; in practice it's one
   // entry. If we ever see mixed currencies, we keep the first row's currency
   // and total only the matching ones to avoid silently mixing units.
-  const currency = amounts[0].currency || "USD";
+  const currency = rowCurrency(amounts[0]);
   const total = amounts
-    .filter((a) => (a.currency || "USD") === currency)
-    .reduce((sum, a) => sum + (typeof a.amount === "number" ? a.amount : 0), 0);
+    .filter((a) => rowCurrency(a) === currency)
+    .reduce((sum, a) => sum + parseWealthboxAmount(a.amount), 0);
   return { amount: total, currency };
 }
 
@@ -241,7 +313,13 @@ export async function updateOpportunityStage(token: string, id: number | string,
     target_close: existing.target_close ?? defaultTargetClose(),
     probability: existing.probability ?? 50,
     stage: Number(stageId),
-    amounts: existing.amounts?.length ? existing.amounts : DEFAULT_AMOUNTS,
+    // Wealthbox returns `amount` as a formatted string ("$689,000") on read but
+    // expects a number on write, so coerce each row before echoing it back —
+    // otherwise the outbound Won-close PUT can be rejected. Other fields
+    // (currency, kind, id) pass through untouched.
+    amounts: existing.amounts?.length
+      ? existing.amounts.map((a) => ({ ...a, amount: parseWealthboxAmount(a.amount) }))
+      : DEFAULT_AMOUNTS,
   };
   return request<WealthboxOpportunity>(token, `/opportunities/${id}`, {
     method: "PUT",

@@ -206,6 +206,8 @@ Account Type values funnel through `mapAccountType()`:
 
 Plus: for the Won outbound push to actually close the opportunity natively, the firm's Won-mapped Wealthbox stage needs its win type set to "won".
 
+**Firms whose opportunities are not all rollovers** (the common case) use a dedicated Wealthbox **opportunity pipeline** (e.g. "Rollover") so only rollover opps ever reach the mapped bookend stages. This works because Wealthbox stage ids are pipeline-scoped — each pipeline has its own "Proposal Accepted"/"Won" with distinct ids, and the inbound poll filters by exact stage id. Support in code: stage rows carry `pipeline` (id) from `/categories/opportunity_pipelines` + `/categories/opportunity_stages`; `crmClient.getStages()` annotates each stage with `pipelineId`/`pipelineName`; `suggestBookendStages()` restricts auto-detection to a pipeline named like "rollover"/"rift" when one exists (and deliberately does NOT fall back to other pipelines — a wrong fallback would sync every non-rollover opp); stage pickers prefix options with the pipeline name whenever stages span multiple pipelines (`src/components/crmStageOptions.ts`). Note the number of pipelines a firm can create depends on their Wealthbox plan tier.
+
 #### Stage configuration overlay (`CaseStageConfig`)
 
 Per-firm overlay on the `CaseStatus` enum:

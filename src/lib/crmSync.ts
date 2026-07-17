@@ -65,14 +65,25 @@ function readCustomCaseFields(opp: OpportunityHydrated): {
  * on stage name. Used to pre-fill the onboarding "confirm your stages" screen so
  * the admin usually just clicks Continue instead of hunting through a list.
  * Returns null for either bookend when no confident match exists.
+ *
+ * Pipeline-aware: firms whose Wealthbox mixes rollover and non-rollover
+ * opportunities keep rollovers in a dedicated pipeline (e.g. "Rollover") so
+ * only that pipeline's stages feed Rift. When such a pipeline exists, both
+ * bookends are matched ONLY within it — falling back to other pipelines would
+ * silently map a stage every non-rollover opportunity flows through, which is
+ * exactly the flood this pattern exists to prevent. No match inside the
+ * rollover pipeline means the admin picks manually.
  */
 export function suggestBookendStages(
-  stages: Array<{ id: string; name: string }>,
+  stages: Array<{ id: string; name: string; pipelineName?: string | null }>,
 ): { trigger: { id: string; name: string } | null; won: { id: string; name: string } | null } {
+  const rolloverPipeline = stages.filter((s) => /rollover|rift/i.test(s.pipelineName ?? ""));
+  const pool = rolloverPipeline.length > 0 ? rolloverPipeline : stages;
+
   const norm = (s: string) => s.trim().toLowerCase();
   const findFirst = (preds: Array<(n: string) => boolean>): { id: string; name: string } | null => {
     for (const pred of preds) {
-      const hit = stages.find((s) => pred(norm(s.name)));
+      const hit = pool.find((s) => pred(norm(s.name)));
       if (hit) return { id: hit.id, name: hit.name };
     }
     return null;

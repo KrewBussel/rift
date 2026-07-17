@@ -11,6 +11,15 @@ import * as wb from "./wealthbox";
 export interface Stage {
   id: string;     // Wealthbox stage id, stringified
   name: string;   // human label
+  /**
+   * Owning opportunity pipeline, when the CRM scopes stages to pipelines
+   * (Wealthbox multi-pipeline plans). Null on single-pipeline accounts or when
+   * the pipeline lookup fails. Stage names are NOT unique across pipelines
+   * ("Won" exists in every pipeline), so pickers must label by pipeline
+   * whenever more than one is present.
+   */
+  pipelineId: string | null;
+  pipelineName: string | null;
 }
 
 export interface OpportunitySummary {
@@ -78,14 +87,28 @@ export function getCrmClient(connection: CrmConnection): CrmClient {
   });
   return {
     async getStages() {
-      const raw = await wb.getOpportunityStages(token);
+      // Pipeline names are display-only decoration — a lookup failure must not
+      // take down the stage list, so it degrades to null names.
+      const [raw, pipelines] = await Promise.all([
+        wb.getOpportunityStages(token),
+        wb.getOpportunityPipelines(token).catch(() => [] as wb.WealthboxPipeline[]),
+      ]);
+      const pipelineNames = new Map(pipelines.map((p) => [String(p.id), p.name]));
       return raw
         // Defense-in-depth: this endpoint is opportunity-stage-specific, but if
         // Wealthbox ever returns mixed category rows we only surface Opportunity
         // stages so a bookend can never be mapped to a stage opportunities can't
         // occupy (which would silently break inbound scanning and outbound push).
         .filter((s) => !s.document_type || s.document_type.trim().toLowerCase() === "opportunity")
-        .map((s) => ({ id: String(s.id), name: s.name }));
+        .map((s) => {
+          const pipelineId = s.pipeline != null ? String(s.pipeline) : null;
+          return {
+            id: String(s.id),
+            name: s.name,
+            pipelineId,
+            pipelineName: pipelineId ? pipelineNames.get(pipelineId) ?? null : null,
+          };
+        });
     },
     async searchOpportunities(query?: string) {
       const list = await wb.searchOpportunities(token, { query, limit: 25 });

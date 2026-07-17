@@ -18,6 +18,7 @@
 import { useState, useEffect } from "react";
 import { T } from "./tokens";
 import { STATUSES, type StageConfigRow } from "./casesDesignTokens";
+import { stageOptions, type CrmStage } from "./crmStageOptions";
 import {
   CardSection,
   FieldRow,
@@ -50,7 +51,7 @@ type CrmState = { connection: CrmConnectionInfo | null; mappings: CrmMapping[] }
  * (autoMapped) — otherwise we keep the suggestions to pre-fill the pickers.
  */
 type ConnectResult = {
-  stages: Array<{ id: string; name: string }>;
+  stages: CrmStage[];
   suggested: { triggerStageId: string | null; wonStageId: string | null };
   autoMapped: boolean;
 };
@@ -295,11 +296,11 @@ function BookendCard({
   /** Bookends detected by name at connect time; used to pre-select when not auto-saved. */
   suggested?: { triggerStageId: string | null; wonStageId: string | null } | null;
   /** Stages returned by the connect call, so a fresh connect skips the extra fetch. */
-  initialStages?: Array<{ id: string; name: string }>;
+  initialStages?: CrmStage[];
   autoMapped?: boolean;
   onSaved: () => void;
 }) {
-  const [stages, setStages] = useState<Array<{ id: string; name: string }>>(initialStages ?? []);
+  const [stages, setStages] = useState<CrmStage[]>(initialStages ?? []);
   const [stagesErr, setStagesErr] = useState<string | null>(null);
   // Saved mappings win; otherwise fall back to what connect-time detection suggested.
   const [triggerId, setTriggerId] = useState(
@@ -324,14 +325,14 @@ function BookendCard({
         setStagesErr(body.error ?? "Couldn't load Wealthbox stages.");
         return;
       }
-      const body = (await res.json()) as { stages: Array<{ id: string; name: string }> };
+      const body = (await res.json()) as { stages: CrmStage[] };
       setStages(body.stages ?? []);
     })();
     // Mount-only: initialStages never changes without this card remounting.
     // eslint-disable-next-line react-hooks/exhaustive-deps
   }, []);
 
-  const options = [{ value: "", label: "Select a stage…" }, ...stages.map((s) => ({ value: s.id, label: s.name }))];
+  const options = [{ value: "", label: "Select a stage…" }, ...stageOptions(stages)];
 
   async function save() {
     setError(null);
@@ -384,6 +385,15 @@ function BookendCard({
             <FieldRow label="Detected">
               <span style={{ fontSize: 12.5, color: T.textSecondary }}>
                 We pre-selected the stages that look right below — review and hit Save to confirm.
+              </span>
+            </FieldRow>
+          )}
+          {new Set(stages.map((s) => s.pipelineId).filter(Boolean)).size > 1 && (
+            <FieldRow label="Pipelines">
+              <span style={{ fontSize: 12.5, color: T.textSecondary }}>
+                Multiple Wealthbox pipelines detected. Map the bookends to your rollover
+                pipeline (options are labeled “Pipeline · Stage”) so only rollover
+                opportunities sync into Rift.
               </span>
             </FieldRow>
           )}

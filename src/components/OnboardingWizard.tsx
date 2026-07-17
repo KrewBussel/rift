@@ -4,8 +4,7 @@ import { useEffect, useState } from "react";
 import { useRouter } from "next/navigation";
 import { STATUSES } from "./casesDesignTokens";
 import { getRootDomain, slugify, validateSlug } from "@/lib/firmDomain";
-
-type CrmStage = { id: string; name: string };
+import { stageOptions, type CrmStage } from "./crmStageOptions";
 
 type WizardStep = "workspace" | "connect" | "confirm" | "done";
 
@@ -596,6 +595,16 @@ function StepConfirm({
         </p>
       ) : (
         <div className="mt-5 space-y-4">
+          {new Set(stages.map((s) => s.pipelineId).filter(Boolean)).size > 1 && (
+            <div
+              className="rounded-lg p-3 text-xs"
+              style={{ background: "#1a1206", border: "1px solid #3a2a10", color: "#f0c674" }}
+            >
+              Your Wealthbox has more than one pipeline. Pick the stages from your
+              rollover pipeline (shown as “Pipeline · Stage”) so only rollover
+              opportunities sync into Rift — not every opportunity.
+            </div>
+          )}
           <div>
             <label className="text-xs font-medium" style={{ color: "#c9d1d9" }}>
               Trigger stage — creates a Rift case
@@ -650,8 +659,8 @@ function StageSelect({
       style={{ background: "#0d1117", border: "1px solid #30363d", color: "#c9d1d9" }}
     >
       <option value="">Select a stage…</option>
-      {stages.map((s) => (
-        <option key={s.id} value={s.id}>{s.name}</option>
+      {stageOptions(stages).map((o) => (
+        <option key={o.value} value={o.value}>{o.label}</option>
       ))}
     </select>
   );
