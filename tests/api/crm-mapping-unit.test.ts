@@ -78,4 +78,48 @@ describe("suggestBookendStages", () => {
     expect(trigger).toBeNull();
     expect(won).toBeNull();
   });
+
+  it("an explicitly selected pipeline outranks a rollover-named one", () => {
+    // The admin's choice is the whole point of the picker — a pipeline that
+    // merely *looks* like the rollover one must not override it.
+    const { trigger, won } = suggestBookendStages(
+      [
+        { id: "d1", name: "Proposal Accepted", pipelineId: "p-default", pipelineName: "Default" },
+        { id: "d2", name: "Won", pipelineId: "p-default", pipelineName: "Default" },
+        { id: "r1", name: "Proposal Accepted", pipelineId: "p-roll", pipelineName: "Rollover" },
+        { id: "r2", name: "Won", pipelineId: "p-roll", pipelineName: "Rollover" },
+      ],
+      "p-default",
+    );
+    expect(trigger?.id).toBe("d1");
+    expect(won?.id).toBe("d2");
+  });
+
+  it("never looks outside the selected pipeline, even with no match inside it", () => {
+    const { trigger, won } = suggestBookendStages(
+      [
+        { id: "d1", name: "Paperwork", pipelineId: "p-default", pipelineName: "Default" },
+        { id: "r1", name: "Proposal Accepted", pipelineId: "p-roll", pipelineName: "Rollover" },
+        { id: "r2", name: "Won", pipelineId: "p-roll", pipelineName: "Rollover" },
+      ],
+      "p-default",
+    );
+    expect(trigger).toBeNull();
+    expect(won).toBeNull();
+  });
+
+  it("single-pipeline accounts still auto-detect (the capped-plan case)", () => {
+    // A firm on a plan that only allows "Default" selects it explicitly; name
+    // matching must still work inside it.
+    const { trigger, won } = suggestBookendStages(
+      [
+        { id: "s1", name: "Lead", pipelineId: "p1", pipelineName: "Default" },
+        { id: "s2", name: "Proposal Accepted", pipelineId: "p1", pipelineName: "Default" },
+        { id: "s3", name: "Closed Won", pipelineId: "p1", pipelineName: "Default" },
+      ],
+      "p1",
+    );
+    expect(trigger?.id).toBe("s2");
+    expect(won?.id).toBe("s3");
+  });
 });

@@ -66,19 +66,35 @@ function readCustomCaseFields(opp: OpportunityHydrated): {
  * the admin usually just clicks Continue instead of hunting through a list.
  * Returns null for either bookend when no confident match exists.
  *
- * Pipeline-aware: firms whose Wealthbox mixes rollover and non-rollover
- * opportunities keep rollovers in a dedicated pipeline (e.g. "Rollover") so
- * only that pipeline's stages feed Rift. When such a pipeline exists, both
- * bookends are matched ONLY within it — falling back to other pipelines would
- * silently map a stage every non-rollover opportunity flows through, which is
- * exactly the flood this pattern exists to prevent. No match inside the
- * rollover pipeline means the admin picks manually.
+ * Pipeline-aware, in priority order:
+ *
+ *   1. `selectedPipelineId` — the pipeline the admin explicitly chose in
+ *      Settings → Integrations. An explicit choice always wins; we never look
+ *      outside it, even if it yields no match.
+ *   2. A pipeline named like "rollover"/"rift" — firms who can create extra
+ *      pipelines keep rollovers in a dedicated one so only its stages feed
+ *      Rift. Matching outside it would silently map a stage every non-rollover
+ *      opportunity flows through, which is exactly the flood the dedicated
+ *      pipeline exists to prevent.
+ *   3. Every stage — the fallback for accounts capped at a single "Default"
+ *      pipeline, where there is nothing else to choose from.
+ *
+ * No match within the chosen pool means the admin picks manually.
  */
 export function suggestBookendStages(
-  stages: Array<{ id: string; name: string; pipelineName?: string | null }>,
+  stages: Array<{ id: string; name: string; pipelineId?: string | null; pipelineName?: string | null }>,
+  selectedPipelineId?: string | null,
 ): { trigger: { id: string; name: string } | null; won: { id: string; name: string } | null } {
+  const selected = selectedPipelineId
+    ? stages.filter((s) => s.pipelineId === selectedPipelineId)
+    : [];
   const rolloverPipeline = stages.filter((s) => /rollover|rift/i.test(s.pipelineName ?? ""));
-  const pool = rolloverPipeline.length > 0 ? rolloverPipeline : stages;
+  const pool =
+    selectedPipelineId
+      ? selected
+      : rolloverPipeline.length > 0
+        ? rolloverPipeline
+        : stages;
 
   const norm = (s: string) => s.trim().toLowerCase();
   const findFirst = (preds: Array<(n: string) => boolean>): { id: string; name: string } | null => {
@@ -424,6 +440,13 @@ export interface PollResult {
   scanned: number;
   created: number;
   skipped: number;
+  /**
+   * Opportunities passed over by the `requireRolloverFields` filter because
+   * they carry none of Rift's custom fields. Reported separately from `skipped`
+   * (already-linked / tombstoned) so a filter that's silently swallowing
+   * everything is visible rather than looking like an idle sync.
+   */
+  filtered: number;
   /** Cases auto-closed because their linked opportunity reached the Won stage in the CRM. */
   closed: number;
   errors: Array<{ opportunityId: string; message: string }>;
@@ -441,7 +464,7 @@ export interface PollResult {
  * and don't abort the run.
  */
 export async function pollFirmForNewOpportunities(firmId: string): Promise<PollResult> {
-  const result: PollResult = { firmId, scanned: 0, created: 0, skipped: 0, closed: 0, errors: [] };
+  const result: PollResult = { firmId, scanned: 0, created: 0, skipped: 0, filtered: 0, closed: 0, errors: [] };
 
   const connection = await prisma.crmConnection.findUnique({ where: { firmId } });
   if (!connection) return result;
@@ -475,22 +498,36 @@ export async function pollFirmForNewOpportunities(firmId: string): Promise<PollR
   result.scanned = summaries.length;
 
   if (summaries.length > 0) {
-    // Skip opportunities already linked to a Rift case (idempotency).
-    const existing = await prisma.rolloverCase.findMany({
-      where: { firmId, wealthboxOpportunityId: { in: summaries.map((s) => s.id) } },
-      select: { wealthboxOpportunityId: true },
-    });
+    const summaryIds = summaries.map((s) => s.id);
+    // Skip opportunities already linked to a Rift case (idempotency), and those
+    // whose case was deliberately deleted (tombstoned) — otherwise a deleted
+    // case reappears on the next poll, since the opportunity is still sitting
+    // in the mapped Proposal Accepted stage.
+    const [existing, tombstoned] = await Promise.all([
+      prisma.rolloverCase.findMany({
+        where: { firmId, wealthboxOpportunityId: { in: summaryIds } },
+        select: { wealthboxOpportunityId: true },
+      }),
+      prisma.deletedCrmOpportunity.findMany({
+        where: { firmId, opportunityId: { in: summaryIds } },
+        select: { opportunityId: true },
+      }),
+    ]);
     const linked = new Set(existing.map((c) => c.wealthboxOpportunityId).filter(Boolean) as string[]);
+    const deleted = new Set(tombstoned.map((t) => t.opportunityId));
 
     for (const summary of summaries) {
-      if (linked.has(summary.id)) {
+      if (linked.has(summary.id) || deleted.has(summary.id)) {
         result.skipped += 1;
         continue;
       }
       try {
         const hydrated = await client.getOpportunityHydrated(summary.id);
-        const created = await createCaseFromOpportunity(firmId, hydrated);
-        if (created) result.created += 1;
+        const outcome = await createCaseFromOpportunity(firmId, hydrated, {
+          requireRolloverFields: connection.requireRolloverFields,
+        });
+        if (outcome === "created") result.created += 1;
+        else if (outcome === "filtered") result.filtered += 1;
         else result.skipped += 1;
       } catch (err) {
         const message = err instanceof Error ? err.message : "Unknown error";
@@ -560,14 +597,40 @@ export async function pollFirmForNewOpportunities(firmId: string): Promise<PollR
   return result;
 }
 
-/** Insert a Rift case from a hydrated Wealthbox opportunity. */
+/**
+ * True when an opportunity carries none of the markers that identify it as a
+ * rollover. Used only in `requireRolloverFields` mode, where the firm's trigger
+ * stage sits in a shared pipeline that non-rollover business flows through too.
+ *
+ * Presence is the rollover signal; validity is a separate question. An
+ * opportunity with an Account Type of "Rollover IRA — Beneficiary" that Rift
+ * can't map is still plainly a rollover, so it's created and flagged for review
+ * rather than dropped. Only an *absent* field means "not one of ours".
+ */
+function looksLikeRollover(fields: ReturnType<typeof readCustomCaseFields>): boolean {
+  return Boolean(fields.sourceProvider && fields.destinationCustodian && fields.accountTypeRaw);
+}
+
+/**
+ * Insert a Rift case from a hydrated Wealthbox opportunity.
+ *
+ * "skipped"  — already linked or tombstoned; nothing to do.
+ * "filtered" — `requireRolloverFields` mode rejected it as non-rollover.
+ */
 async function createCaseFromOpportunity(
   firmId: string,
   opp: OpportunityHydrated,
-): Promise<boolean> {
+  opts: { requireRolloverFields?: boolean } = {},
+): Promise<"created" | "skipped" | "filtered"> {
   const reasons: string[] = [];
 
   const fields = readCustomCaseFields(opp);
+
+  // Filter mode: the trigger stage lives in a pipeline shared with non-rollover
+  // work, so an opportunity that carries none of Rift's custom fields is
+  // someone else's deal, not a rollover missing its paperwork. Skip silently —
+  // the poll result reports the count so the admin can see it happening.
+  if (opts.requireRolloverFields && !looksLikeRollover(fields)) return "filtered";
   const firstName = opp.contact?.firstName ?? null;
   const lastName = opp.contact?.lastName ?? null;
   const email = opp.contact?.email ?? null;
@@ -592,7 +655,15 @@ async function createCaseFromOpportunity(
     where: { firmId, wealthboxOpportunityId: opp.id },
     select: { id: true },
   });
-  if (dup) return false;
+  if (dup) return "skipped";
+
+  // Second line of defence behind the caller's tombstone filter, so any future
+  // caller can't resurrect a deliberately deleted case.
+  const tombstone = await prisma.deletedCrmOpportunity.findUnique({
+    where: { firmId_opportunityId: { firmId, opportunityId: opp.id } },
+    select: { id: true },
+  });
+  if (tombstone) return "skipped";
 
   let newCase;
   try {
@@ -624,7 +695,7 @@ async function createCaseFromOpportunity(
     // A concurrent poll inserted the same opportunity first — unique violation
     // on (firmId, wealthboxOpportunityId). Treat as skipped, not an error.
     if (err instanceof Prisma.PrismaClientKnownRequestError && err.code === "P2002") {
-      return false;
+      return "skipped";
     }
     throw err;
   }
@@ -637,5 +708,5 @@ async function createCaseFromOpportunity(
     },
   });
 
-  return true;
+  return "created";
 }

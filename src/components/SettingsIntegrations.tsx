@@ -40,6 +40,9 @@ type CrmConnectionInfo = {
   lastHealthOk: boolean;
   lastHealthError: string | null;
   lastHealthCheckAt: string | null;
+  pipelineId: string | null;
+  pipelineName: string | null;
+  requireRolloverFields: boolean;
 };
 type CrmState = { connection: CrmConnectionInfo | null; mappings: CrmMapping[] };
 
@@ -54,6 +57,8 @@ type ConnectResult = {
   stages: CrmStage[];
   suggested: { triggerStageId: string | null; wonStageId: string | null };
   autoMapped: boolean;
+  /** Set when the account had exactly one pipeline and the server picked it. */
+  selectedPipelineId: string | null;
 };
 
 export default function SettingsIntegrations() {
@@ -94,6 +99,7 @@ export default function SettingsIntegrations() {
                 mappings={state.mappings}
                 suggested={connectResult?.suggested ?? null}
                 initialStages={connectResult?.stages}
+                initialPipelineId={connectResult?.selectedPipelineId ?? state.connection.pipelineId}
                 autoMapped={connectResult?.autoMapped ?? false}
                 onSaved={load}
               />
@@ -210,10 +216,18 @@ function ConnectionCard({ connection, onChanged }: { connection: CrmConnectionIn
     try {
       const res = await fetch("/api/integrations/crm/poll", { method: "POST" });
       if (res.ok) {
-        const body = (await res.json().catch(() => ({}))) as { result?: { created: number; closed: number } };
+        const body = (await res.json().catch(() => ({}))) as {
+          result?: { created: number; closed: number; filtered?: number };
+        };
         const created = body.result?.created ?? 0;
         const closed = body.result?.closed ?? 0;
-        setSyncMsg(`Synced — ${created} new, ${closed} closed.`);
+        const filtered = body.result?.filtered ?? 0;
+        // Surface the filter's work explicitly — a "Rollovers only" setting
+        // that's quietly rejecting everything otherwise looks like a dead sync.
+        setSyncMsg(
+          `Synced — ${created} new, ${closed} closed` +
+            (filtered > 0 ? `, ${filtered} skipped (missing Rift fields).` : "."),
+        );
         onChanged();
       } else {
         setSyncMsg("Sync failed. Check the connection health below.");
@@ -289,6 +303,7 @@ function BookendCard({
   mappings,
   suggested,
   initialStages,
+  initialPipelineId,
   autoMapped,
   onSaved,
 }: {
@@ -297,11 +312,16 @@ function BookendCard({
   suggested?: { triggerStageId: string | null; wonStageId: string | null } | null;
   /** Stages returned by the connect call, so a fresh connect skips the extra fetch. */
   initialStages?: CrmStage[];
+  /** Pipeline auto-selected at connect time when the account only has one. */
+  initialPipelineId?: string | null;
   autoMapped?: boolean;
   onSaved: () => void;
 }) {
   const [stages, setStages] = useState<CrmStage[]>(initialStages ?? []);
+  const [pipelines, setPipelines] = useState<Array<{ id: string; name: string }>>([]);
   const [stagesErr, setStagesErr] = useState<string | null>(null);
+  const [pipelineId, setPipelineId] = useState<string>(initialPipelineId ?? "");
+  const [requireFields, setRequireFields] = useState(false);
   // Saved mappings win; otherwise fall back to what connect-time detection suggested.
   const [triggerId, setTriggerId] = useState(
     mappings.find((m) => m.riftStatus === "PROPOSAL_ACCEPTED")?.crmStageId ?? suggested?.triggerStageId ?? "",
@@ -317,22 +337,51 @@ function BookendCard({
   const hasSuggestion = !!(suggested?.triggerStageId || suggested?.wonStageId);
 
   useEffect(() => {
-    if (initialStages?.length) return; // fresh connect already delivered them
     void (async () => {
       const res = await fetch("/api/integrations/crm/stages");
       if (!res.ok) {
         const body = (await res.json().catch(() => ({}))) as { error?: string };
-        setStagesErr(body.error ?? "Couldn't load Wealthbox stages.");
+        // A fresh connect already handed us stages — a later fetch failure
+        // shouldn't blank a picker that's already usable.
+        if (!initialStages?.length) setStagesErr(body.error ?? "Couldn't load Wealthbox stages.");
         return;
       }
-      const body = (await res.json()) as { stages: CrmStage[] };
+      const body = (await res.json()) as {
+        stages: CrmStage[];
+        pipelines?: Array<{ id: string; name: string }>;
+        selectedPipelineId?: string | null;
+        requireRolloverFields?: boolean;
+      };
       setStages(body.stages ?? []);
+      setPipelines(body.pipelines ?? []);
+      setPipelineId((prev) => prev || body.selectedPipelineId || "");
+      setRequireFields(body.requireRolloverFields ?? false);
     })();
     // Mount-only: initialStages never changes without this card remounting.
     // eslint-disable-next-line react-hooks/exhaustive-deps
   }, []);
 
-  const options = [{ value: "", label: "Select a stage…" }, ...stageOptions(stages)];
+  // Stages the pickers offer. Choosing a pipeline narrows them to that
+  // pipeline's stages — Wealthbox names aren't unique across pipelines, so an
+  // unscoped list is where mis-mappings come from.
+  const visibleStages = pipelineId ? stages.filter((s) => s.pipelineId === pipelineId) : stages;
+  const options = [{ value: "", label: "Select a stage…" }, ...stageOptions(visibleStages)];
+
+  // A saved stage from a different pipeline would otherwise sit invisibly
+  // selected while the dropdown shows something else entirely.
+  const triggerOutsidePipeline = !!triggerId && !visibleStages.some((s) => s.id === triggerId);
+  const wonOutsidePipeline = !!wonId && !visibleStages.some((s) => s.id === wonId);
+
+  function changePipeline(next: string) {
+    setPipelineId(next);
+    setError(null);
+    // Drop selections that no longer exist in the chosen pipeline.
+    if (next) {
+      const inPipeline = new Set(stages.filter((s) => s.pipelineId === next).map((s) => s.id));
+      if (triggerId && !inPipeline.has(triggerId)) setTriggerId("");
+      if (wonId && !inPipeline.has(wonId)) setWonId("");
+    }
+  }
 
   async function save() {
     setError(null);
@@ -342,6 +391,24 @@ function BookendCard({
     if (trigger.id === won.id) return setError("The trigger and Won stages must be different.");
     setSaving(true);
     try {
+      // Connection-level sync settings first: if the mapping save then fails,
+      // the pipeline choice that scopes the pickers is already persisted, so a
+      // retry starts from the same list the admin was just looking at.
+      const settingsRes = await fetch("/api/integrations/crm", {
+        method: "PATCH",
+        headers: { "content-type": "application/json" },
+        body: JSON.stringify({
+          pipelineId: pipelineId || null,
+          pipelineName: pipelines.find((p) => p.id === pipelineId)?.name ?? null,
+          requireRolloverFields: requireFields,
+        }),
+      });
+      if (!settingsRes.ok) {
+        const body = (await settingsRes.json().catch(() => ({}))) as { error?: string };
+        setError(body.error ?? "Couldn't save your sync settings.");
+        return;
+      }
+
       const res = await fetch("/api/integrations/crm/mapping", {
         method: "PUT",
         headers: { "content-type": "application/json" },
@@ -388,12 +455,30 @@ function BookendCard({
               </span>
             </FieldRow>
           )}
-          {new Set(stages.map((s) => s.pipelineId).filter(Boolean)).size > 1 && (
-            <FieldRow label="Pipelines">
-              <span style={{ fontSize: 12.5, color: T.textSecondary }}>
-                Multiple Wealthbox pipelines detected. Map the bookends to your rollover
-                pipeline (options are labeled “Pipeline · Stage”) so only rollover
-                opportunities sync into Rift.
+          {pipelines.length > 0 && (
+            <FieldRow
+              label="Source pipeline"
+              hint={
+                pipelines.length === 1
+                  ? "Your Wealthbox plan has a single pipeline, so Rift reads its stages."
+                  : "Only this pipeline's stages feed Rift. Pick the one your rollovers live in."
+              }
+            >
+              <SelectInput
+                value={pipelineId}
+                onChange={changePipeline}
+                options={[
+                  { value: "", label: "All pipelines" },
+                  ...pipelines.map((p) => ({ value: p.id, label: p.name })),
+                ]}
+              />
+            </FieldRow>
+          )}
+          {(triggerOutsidePipeline || wonOutsidePipeline) && (
+            <FieldRow label="">
+              <span style={{ fontSize: 12.5, color: T.warning }}>
+                A stage you had mapped belongs to a different pipeline and was cleared. Pick
+                its replacement below before saving.
               </span>
             </FieldRow>
           )}
@@ -402,6 +487,12 @@ function BookendCard({
           </FieldRow>
           <FieldRow label="Won stage" hint="Marking a case Won moves the opportunity here.">
             <SelectInput value={wonId} onChange={setWonId} options={options} />
+          </FieldRow>
+          <FieldRow
+            label="Rollovers only"
+            hint="Turn this on when the pipeline above also carries non-rollover business. An opportunity reaching the trigger stage only becomes a case if Source Provider, Destination Custodian, and Account Type are all filled in."
+          >
+            <Toggle value={requireFields} onChange={setRequireFields} />
           </FieldRow>
           <FieldRow label="" isLast>
             <div style={{ display: "flex", alignItems: "center", gap: 10 }}>

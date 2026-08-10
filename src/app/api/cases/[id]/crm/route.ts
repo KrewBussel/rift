@@ -68,6 +68,11 @@ export async function POST(req: NextRequest, { params }: { params: Promise<{ id:
     },
   });
 
+  // If this opportunity was tombstoned by an earlier case deletion, linking it
+  // again is an explicit "I do want this one" — drop the tombstone so the
+  // poller resumes treating it normally.
+  await prisma.deletedCrmOpportunity.deleteMany({ where: { firmId, opportunityId } });
+
   const syncResult = await syncOpportunityStage(caseId);
 
   const meta = extractRequestMeta(req);

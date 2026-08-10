@@ -22,6 +22,7 @@ export async function truncateAll() {
     "ClientAccessToken",
     "CrmStageMapping",
     "CrmConnection",
+    "DeletedCrmOpportunity",
     "RolloverCase",
     "ReminderLog",
     "AuditLog",

@@ -151,6 +151,13 @@ export default function CaseDetailV2({
   const [taskInput, setTaskInput] = useState("");
   const [noteInput, setNoteInput] = useState("");
 
+  // Deleting a case destroys its paperwork and activity trail — admin only,
+  // matching the DELETE /api/cases/[id] guard.
+  const canDeleteCase = userRole === "ADMIN";
+  const [deleteOpen, setDeleteOpen] = useState(false);
+  const [deleting, setDeleting] = useState(false);
+  const [deleteError, setDeleteError] = useState<string | null>(null);
+
   const canManageClientLink = userRole === "ADMIN" || userRole === "OPS";
   const [clientLinkActive, setClientLinkActive] = useState(clientLinkActiveInitial);
   const [clientLinkBusy, setClientLinkBusy] = useState<"idle" | "issuing" | "revoking">("idle");
@@ -325,6 +332,22 @@ export default function CaseDetailV2({
     }
   }
 
+  async function deleteCase() {
+    setDeleting(true);
+    setDeleteError(null);
+    const res = await fetch(`/api/cases/${c.id}`, { method: "DELETE" });
+    if (res.ok) {
+      // Leave before clearing `deleting` — the case is gone, so re-enabling the
+      // button would only invite a second 404'ing request.
+      router.push("/dashboard/cases");
+      router.refresh();
+      return;
+    }
+    setDeleting(false);
+    const body = (await res.json().catch(() => null)) as { error?: string } | null;
+    setDeleteError(body?.error ?? "Couldn't delete this case. Try again.");
+  }
+
   // Null-safe: state is replaced wholesale by GET /api/cases/[id] on refresh;
   // if that response ever omits a relation, degrade instead of crashing.
   const tasks = c.tasks ?? [];
@@ -339,6 +362,119 @@ export default function CaseDetailV2({
 
   return (
     <div style={{ flex: 1, display: "flex", flexDirection: "column", minHeight: 0, background: T.page }}>
+      {/* Delete confirmation */}
+      {deleteOpen && (
+        <div
+          role="dialog"
+          aria-modal="true"
+          aria-labelledby="delete-case-title"
+          onClick={() => !deleting && setDeleteOpen(false)}
+          style={{
+            position: "fixed",
+            inset: 0,
+            zIndex: 100,
+            background: "rgba(31,30,26,0.42)",
+            display: "flex",
+            alignItems: "center",
+            justifyContent: "center",
+            padding: 20,
+          }}
+        >
+          <div
+            onClick={(e) => e.stopPropagation()}
+            style={{
+              width: "100%",
+              maxWidth: 440,
+              background: T.surface1,
+              border: `1px solid ${T.borderStrong}`,
+              borderRadius: 12,
+              padding: 24,
+              boxShadow: "0 12px 40px rgba(60,55,40,0.22)",
+            }}
+          >
+            <div style={{ display: "flex", alignItems: "center", gap: 10 }}>
+              <span
+                style={{
+                  width: 30,
+                  height: 30,
+                  borderRadius: 8,
+                  background: T.dangerSoft,
+                  border: `1px solid ${T.dangerBorder}`,
+                  display: "inline-flex",
+                  alignItems: "center",
+                  justifyContent: "center",
+                  color: T.danger,
+                  flexShrink: 0,
+                }}
+              >
+                <Icon name="warn" size={15} />
+              </span>
+              <h2
+                id="delete-case-title"
+                style={{ margin: 0, fontSize: 16, fontWeight: 650, color: T.text, letterSpacing: -0.2 }}
+              >
+                Delete this case?
+              </h2>
+            </div>
+
+            <p style={{ margin: "14px 0 0", fontSize: 13, lineHeight: 1.6, color: T.textSecondary }}>
+              This permanently deletes the case for{" "}
+              <strong style={{ color: T.text, fontWeight: 600 }}>
+                {c.clientFirstName} {c.clientLastName}
+              </strong>{" "}
+              along with its {tasks.length === 1 ? "1 task" : `${tasks.length} tasks`},{" "}
+              {(c.notes ?? []).length === 1 ? "1 note" : `${(c.notes ?? []).length} notes`}, activity
+              history, checklist, and every uploaded document. It cannot be undone.
+            </p>
+
+            {c.wealthboxOpportunityId && (
+              <p
+                style={{
+                  margin: "12px 0 0",
+                  padding: "10px 12px",
+                  borderRadius: 8,
+                  background: T.surface2,
+                  border: `1px solid ${T.border}`,
+                  fontSize: 12.5,
+                  lineHeight: 1.55,
+                  color: T.textSecondary,
+                }}
+              >
+                The linked Wealthbox opportunity is <strong style={{ color: T.text }}>not</strong>{" "}
+                deleted — it stays in your CRM. Rift will stop syncing it and won&apos;t re-create
+                this case on the next sync.
+              </p>
+            )}
+
+            {deleteError && (
+              <p
+                role="alert"
+                style={{
+                  margin: "12px 0 0",
+                  padding: "10px 12px",
+                  borderRadius: 8,
+                  background: T.dangerSoft,
+                  border: `1px solid ${T.dangerBorder}`,
+                  fontSize: 12.5,
+                  color: T.danger,
+                }}
+              >
+                {deleteError}
+              </p>
+            )}
+
+            <div style={{ marginTop: 20, display: "flex", justifyContent: "flex-end", gap: 8 }}>
+              <Btn ghost disabled={deleting} onClick={() => setDeleteOpen(false)}>
+                Cancel
+              </Btn>
+              <Btn danger disabled={deleting} onClick={deleteCase}>
+                <Icon name="trash" size={12} /> {deleting ? "Deleting…" : "Delete case"}
+              </Btn>
+            </div>
+          </div>
+        </div>
+      )}
+
       {/* Breadcrumb */}
       <div
         style={{
@@ -376,6 +512,20 @@ export default function CaseDetailV2({
           {c.clientFirstName} {c.clientLastName}
         </span>
         <div style={{ flex: 1 }} />
+        {canDeleteCase && (
+          <Btn
+            small
+            ghost
+            onClick={() => {
+              setDeleteError(null);
+              setDeleteOpen(true);
+            }}
+            title="Delete this case"
+            style={{ color: T.danger }}
+          >
+            <Icon name="trash" size={12} /> Delete case
+          </Btn>
+        )}
       </div>
 
       {/* Header */}

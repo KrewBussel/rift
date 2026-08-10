@@ -94,11 +94,34 @@ export async function POST(req: NextRequest) {
     wonStageId: null,
   };
   let autoMapped = false;
+  let pipelineId: string | null = null;
 
   try {
     const client = getCrmClient(connection);
     stages = await client.getStages();
-    const { trigger, won } = suggestBookendStages(stages);
+
+    // Auto-select the source pipeline when there's only one to choose from —
+    // the common case on Wealthbox plans that cap pipelines at "Default". With
+    // several, the admin picks in Settings → Integrations and we leave it null
+    // so name-based detection still gets its shot below. A rotation never
+    // overwrites an existing choice.
+    pipelineId = connection.pipelineId;
+    if (!pipelineId) {
+      const distinct = new Map<string, string>();
+      for (const s of stages) {
+        if (s.pipelineId) distinct.set(s.pipelineId, s.pipelineName ?? "Unnamed pipeline");
+      }
+      if (distinct.size === 1) {
+        const [[onlyId, onlyName]] = [...distinct];
+        await prisma.crmConnection.update({
+          where: { firmId },
+          data: { pipelineId: onlyId, pipelineName: onlyName },
+        });
+        pipelineId = onlyId;
+      }
+    }
+
+    const { trigger, won } = suggestBookendStages(stages, pipelineId);
     suggested = { triggerStageId: trigger?.id ?? null, wonStageId: won?.id ?? null };
 
     // Only auto-save when both bookends are confidently detected AND the firm
@@ -129,5 +152,6 @@ export async function POST(req: NextRequest) {
     stages,
     suggested,
     autoMapped,
+    selectedPipelineId: pipelineId,
   });
 }

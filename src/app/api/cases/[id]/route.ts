@@ -1,9 +1,12 @@
 import { NextRequest, NextResponse } from "next/server";
+import { DeleteObjectCommand } from "@aws-sdk/client-s3";
 import { auth } from "@/lib/auth";
 import { prisma } from "@/lib/prisma";
 import { parseBody } from "@/lib/validation";
 import { caseVisibilityFilter, isSameFirmUser } from "@/lib/caseVisibility";
 import { syncOpportunityStage } from "@/lib/crmSync";
+import { recordAudit, extractRequestMeta } from "@/lib/audit";
+import { s3, S3_BUCKET } from "@/lib/s3";
 import { z } from "zod";
 
 const CaseStatusSchema = z.enum([
@@ -155,4 +158,80 @@ export async function PATCH(request: NextRequest, { params }: { params: Promise<
   }
 
   return NextResponse.json(updated);
+}
+
+// DELETE — admin only; permanently removes the case and everything hanging off
+// it. Notes, tasks, activity events, checklist items, documents, and client
+// portal tokens/sessions all cascade at the DB level (see schema.prisma), so the
+// only manual cleanup is the S3 objects behind the document rows.
+export async function DELETE(request: NextRequest, { params }: { params: Promise<{ id: string }> }) {
+  const session = await auth();
+  if (!session?.user) return NextResponse.json({ error: "Unauthorized" }, { status: 401 });
+
+  // Deleting a case destroys client paperwork and the audit-relevant activity
+  // trail, so this is tighter than document deletion (which allows OPS too).
+  if (session.user.role !== "ADMIN") {
+    return NextResponse.json({ error: "Forbidden" }, { status: 403 });
+  }
+
+  const { id } = await params;
+  const firmId = session.user.firmId;
+  const userId = session.user.id;
+
+  const existing = await prisma.rolloverCase.findFirst({
+    where: { id, firmId, ...caseVisibilityFilter(session.user.role, userId) },
+    include: { documents: { select: { id: true, storagePath: true } } },
+  });
+  if (!existing) return NextResponse.json({ error: "Not found" }, { status: 404 });
+
+  // Best-effort S3 cleanup. A failure here must not block the delete — an
+  // orphaned object costs pennies, a case that won't delete costs the user.
+  let orphanedObjects = 0;
+  for (const doc of existing.documents) {
+    try {
+      await s3.send(new DeleteObjectCommand({ Bucket: S3_BUCKET, Key: doc.storagePath }));
+    } catch (err) {
+      orphanedObjects += 1;
+      console.error("[cases.delete] S3 delete failed", doc.storagePath, err);
+    }
+  }
+
+  // Tombstone the linked opportunity before dropping the row. Without this the
+  // next inbound poll sees an unlinked opportunity sitting in the mapped
+  // Proposal Accepted stage and re-creates the case within seconds.
+  if (existing.wealthboxOpportunityId) {
+    await prisma.deletedCrmOpportunity.upsert({
+      where: {
+        firmId_opportunityId: { firmId, opportunityId: existing.wealthboxOpportunityId },
+      },
+      create: { firmId, opportunityId: existing.wealthboxOpportunityId, deletedById: userId },
+      update: { deletedAt: new Date(), deletedById: userId },
+    });
+  }
+
+  await prisma.rolloverCase.delete({ where: { id } });
+
+  // The case's own ActivityEvent rows are gone with it — the audit log is the
+  // only surviving record that this case ever existed.
+  const meta = extractRequestMeta(request);
+  await recordAudit({
+    firmId,
+    actorUserId: userId,
+    action: "case.deleted",
+    resource: "RolloverCase",
+    resourceId: id,
+    metadata: {
+      clientName: `${existing.clientFirstName} ${existing.clientLastName}`,
+      clientEmail: existing.clientEmail,
+      status: existing.status,
+      sourceProvider: existing.sourceProvider,
+      destinationCustodian: existing.destinationCustodian,
+      documentCount: existing.documents.length,
+      wealthboxOpportunityId: existing.wealthboxOpportunityId,
+      orphanedObjects,
+    },
+    ...meta,
+  });
+
+  return new NextResponse(null, { status: 204 });
 }

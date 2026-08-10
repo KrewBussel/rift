@@ -192,10 +192,152 @@ describe("pollFirmForNewOpportunities — tenant isolation", () => {
     const { pollFirmForNewOpportunities } = await import("@/lib/crmSync");
     const result = await pollFirmForNewOpportunities(world.a.firmId);
 
-    expect(result).toEqual({ firmId: world.a.firmId, scanned: 0, created: 0, skipped: 0, closed: 0, errors: [] });
+    expect(result).toEqual({
+      firmId: world.a.firmId,
+      scanned: 0,
+      created: 0,
+      skipped: 0,
+      filtered: 0,
+      closed: 0,
+      errors: [],
+    });
     const cases = await prisma.rolloverCase.count({ where: { firmId: world.a.firmId } });
     // Only the seeded one — nothing new created.
     expect(cases).toBe(1);
+  });
+});
+
+/**
+ * `requireRolloverFields` is the opt-in for firms whose trigger stage sits in a
+ * pipeline shared with non-rollover business — the norm on Wealthbox plans
+ * capped at a single "Default" pipeline. Presence of Rift's custom fields is
+ * the rollover signal; validity is a separate, non-blocking question.
+ */
+describe("pollFirmForNewOpportunities — requireRolloverFields filter", () => {
+  /** An opportunity at the trigger stage carrying the given custom fields. */
+  function stubOppWithFields(oppId: number, customFields: Array<{ name: string; value: string }>) {
+    vi.stubGlobal(
+      "fetch",
+      vi.fn(async (input: RequestInfo | URL) => {
+        const url = typeof input === "string" ? input : input.toString();
+        const stage = {
+          id: oppId,
+          name: "Filter test opp",
+          stage: { id: Number(STAGE_ID), name: "Proposal Accepted" },
+          stage_id: Number(STAGE_ID),
+          stage_name: "Proposal Accepted",
+        };
+        if (url.match(/\/opportunities\/\d+/)) {
+          return jsonResponse({ ...stage, linked_to: [], custom_fields: customFields });
+        }
+        if (url.includes("/opportunities")) {
+          return jsonResponse({ opportunities: [stage] });
+        }
+        return new Response("not stubbed: " + url, { status: 404 });
+      }),
+    );
+  }
+
+  const FULL_FIELDS = [
+    { name: "Source Provider", value: "Fidelity" },
+    { name: "Destination Custodian", value: "Schwab" },
+    { name: "Account Type", value: "Traditional IRA" },
+  ];
+
+  it("skips an opportunity carrying none of the Rift fields, counting it as filtered", async () => {
+    await prisma.crmConnection.update({
+      where: { firmId: world.a.firmId },
+      data: { requireRolloverFields: true },
+    });
+    stubOppWithFields(8500, []);
+
+    const { pollFirmForNewOpportunities } = await import("@/lib/crmSync");
+    const result = await pollFirmForNewOpportunities(world.a.firmId);
+
+    expect(result.created).toBe(0);
+    expect(result.filtered).toBe(1);
+    expect(result.skipped).toBe(0);
+    expect(
+      await prisma.rolloverCase.findFirst({
+        where: { firmId: world.a.firmId, wealthboxOpportunityId: "8500" },
+      }),
+    ).toBeNull();
+  });
+
+  it("skips when only some of the three fields are present", async () => {
+    await prisma.crmConnection.update({
+      where: { firmId: world.a.firmId },
+      data: { requireRolloverFields: true },
+    });
+    stubOppWithFields(8501, [{ name: "Source Provider", value: "Fidelity" }]);
+
+    const { pollFirmForNewOpportunities } = await import("@/lib/crmSync");
+    const result = await pollFirmForNewOpportunities(world.a.firmId);
+
+    expect(result.created).toBe(0);
+    expect(result.filtered).toBe(1);
+  });
+
+  it("creates the case when all three fields are present", async () => {
+    await prisma.crmConnection.update({
+      where: { firmId: world.a.firmId },
+      data: { requireRolloverFields: true },
+    });
+    stubOppWithFields(8502, FULL_FIELDS);
+
+    const { pollFirmForNewOpportunities } = await import("@/lib/crmSync");
+    const result = await pollFirmForNewOpportunities(world.a.firmId);
+
+    expect(result.created).toBe(1);
+    expect(result.filtered).toBe(0);
+
+    const row = await prisma.rolloverCase.findFirst({
+      where: { firmId: world.a.firmId, wealthboxOpportunityId: "8502" },
+    });
+    expect(row).not.toBeNull();
+    expect(row!.sourceProvider).toBe("Fidelity");
+  });
+
+  it("still creates — flagged for review — when a field is present but unmappable", async () => {
+    // An Account Type Rift can't map is plainly still a rollover. Dropping it
+    // would silently lose real work; flagging it surfaces the bad value.
+    await prisma.crmConnection.update({
+      where: { firmId: world.a.firmId },
+      data: { requireRolloverFields: true },
+    });
+    stubOppWithFields(8503, [
+      { name: "Source Provider", value: "Fidelity" },
+      { name: "Destination Custodian", value: "Schwab" },
+      { name: "Account Type", value: "Inherited SEP" },
+    ]);
+
+    const { pollFirmForNewOpportunities } = await import("@/lib/crmSync");
+    const result = await pollFirmForNewOpportunities(world.a.firmId);
+
+    expect(result.created).toBe(1);
+    expect(result.filtered).toBe(0);
+
+    const row = await prisma.rolloverCase.findFirst({
+      where: { firmId: world.a.firmId, wealthboxOpportunityId: "8503" },
+    });
+    expect(row!.needsReview).toBe(true);
+    expect(row!.reviewReason).toMatch(/not recognized/);
+  });
+
+  it("is off by default — a bare opportunity is still created and flagged", async () => {
+    // Firms on a dedicated rollover pipeline must keep the old behaviour.
+    stubOppWithFields(8504, []);
+
+    const { pollFirmForNewOpportunities } = await import("@/lib/crmSync");
+    const result = await pollFirmForNewOpportunities(world.a.firmId);
+
+    expect(result.created).toBe(1);
+    expect(result.filtered).toBe(0);
+
+    const row = await prisma.rolloverCase.findFirst({
+      where: { firmId: world.a.firmId, wealthboxOpportunityId: "8504" },
+    });
+    expect(row!.needsReview).toBe(true);
   });
 });
 

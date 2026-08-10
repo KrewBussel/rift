@@ -45,6 +45,7 @@ model Firm {
   crmConnection       CrmConnection?
   crmStageMappings    CrmStageMapping[]
   stageConfigs        CaseStageConfig[]
+  deletedCrmOpportunities DeletedCrmOpportunity[]
 }
 
 model FirmSettings {
@@ -106,6 +107,7 @@ model User {
   ownedCases        RolloverCase[]  @relation("AssignedOps")
   assignedTasks     Task[]          @relation("AssignedTasks")
   createdTasks      Task[]          @relation("CreatedTasks")
+  deletedCrmOpportunities DeletedCrmOpportunity[]
   firm              Firm            @relation(fields: [firmId], references: [id])
 }
 
@@ -446,6 +448,21 @@ model CrmConnection {
   // keys off this (not lastHealthCheckAt, which outbound pushes also bump) so an
   // outbound stage push can't suppress inbound polling.
   lastPolledAt          DateTime?
+  // Which Wealthbox opportunity pipeline feeds Rift. Wealthbox stage ids are
+  // already pipeline-scoped, so this doesn't change what the poller scans — it
+  // makes the choice explicit and auditable, scopes the stage pickers, and
+  // anchors bookend auto-detection to a pipeline the admin actually chose
+  // instead of one whose name happens to match /rollover|rift/. Null on firms
+  // that predate the picker; the name is a display snapshot.
+  pipelineId            String?
+  pipelineName          String?
+  // Opt-in inbound filter for firms whose chosen pipeline also carries
+  // non-rollover business — the norm on Wealthbox plans capped at the single
+  // "Default" pipeline, where a dedicated rollover pipeline isn't available.
+  // When true, an opportunity only becomes a case if all three Rift custom
+  // fields are present. Default false so firms on a dedicated pipeline keep
+  // the existing create-and-flag-for-review behaviour.
+  requireRolloverFields Boolean     @default(false)
   updatedAt             DateTime    @updatedAt
   firm                  Firm        @relation(fields: [firmId], references: [id], onDelete: Cascade)
 }
@@ -480,6 +497,26 @@ model CaseStageConfig {
 
   @@unique([firmId, status])
   @@index([firmId, sortOrder])
+}
+
+// Tombstone for a Wealthbox opportunity whose Rift case was deleted.
+//
+// The inbound poller decides what's "new" by diffing the mapped Proposal
+// Accepted stage against existing RolloverCase rows, so without this a deleted
+// case is re-created on the very next poll (page-load auto-sync fires every
+// 10s). A row here tells the poller to leave that opportunity alone. Manually
+// re-linking a case to the opportunity clears the tombstone — that's an
+// explicit "I do want this one" from the user.
+model DeletedCrmOpportunity {
+  id            String   @id @default(cuid())
+  firmId        String
+  opportunityId String
+  deletedAt     DateTime @default(now())
+  deletedById   String?
+  firm          Firm     @relation(fields: [firmId], references: [id], onDelete: Cascade)
+  deletedBy     User?    @relation(fields: [deletedById], references: [id])
+
+  @@unique([firmId, opportunityId])
 }
 
 enum CrmProvider {

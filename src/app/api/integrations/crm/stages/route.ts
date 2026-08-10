@@ -15,7 +15,25 @@ export async function GET() {
   try {
     const client = getCrmClient(connection);
     const stages = await client.getStages();
-    return NextResponse.json({ stages, provider: connection.provider });
+
+    // Derive the pipeline list from the stages rather than making a second API
+    // call. A pipeline with no stages can't hold a bookend mapping anyway, so
+    // its absence here costs nothing.
+    const pipelines: Array<{ id: string; name: string }> = [];
+    const seen = new Set<string>();
+    for (const s of stages) {
+      if (!s.pipelineId || seen.has(s.pipelineId)) continue;
+      seen.add(s.pipelineId);
+      pipelines.push({ id: s.pipelineId, name: s.pipelineName ?? "Unnamed pipeline" });
+    }
+
+    return NextResponse.json({
+      stages,
+      pipelines,
+      selectedPipelineId: connection.pipelineId,
+      requireRolloverFields: connection.requireRolloverFields,
+      provider: connection.provider,
+    });
   } catch (err) {
     const message = err instanceof Error ? err.message : "Failed to fetch stages";
     return NextResponse.json({ error: message }, { status: 502 });
